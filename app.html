@@ -232,14 +232,20 @@ camera.up.set(0, 0, 1);   // Z-up to match OpenSCAD convention
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.55);
-scene.add(ambient);
-const key = new THREE.DirectionalLight(0xffffff, 0.85);
+// Lighting tuned for Z-up: the "top" surface (clinician's view) faces +Z, so we want
+// the strongest light coming from above with softer fill from below/sides.
+const hemi = new THREE.HemisphereLight(0xffffff, 0xb0b0b0, 1.1);
+hemi.position.set(0, 0, 1);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffffff, 1.2);
 key.position.set(1, 1, 2);
 scene.add(key);
-const fill = new THREE.DirectionalLight(0xffffff, 0.4);
-fill.position.set(-1, -1, 0.5);
+const fill = new THREE.DirectionalLight(0xffffff, 0.6);
+fill.position.set(-1, -0.5, 1);
 scene.add(fill);
+const back = new THREE.DirectionalLight(0xffffff, 0.4);
+back.position.set(0, -1, -0.5);
+scene.add(back);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
@@ -382,8 +388,13 @@ async function openProject() {
     logLine('  no .json file found — only design defaults available');
   }
 
+  // Parse the .scad to build the Customizer schema
+  const customizer = parseCustomizer(scadText);
+  const totalParams = customizer.reduce((n, s) => n + s.params.length, 0);
+  logLine(`  parsed Customizer: ${customizer.length} sections, ${totalParams} parameters`);
+
   project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, files,
-              presetNames, currentPreset: presetNames[0] };
+              presetNames, currentPreset: presetNames[0], customizer, baselineParams: {} };
 
   // UI updates
   document.getElementById('project-folder-label').innerHTML = `📁 <b>${dirHandle.name}</b> — ${scadName}`;
@@ -395,6 +406,11 @@ async function openProject() {
     sel.appendChild(opt);
   }
   sel.value = project.currentPreset;
+
+  // Build form and populate with values from the selected preset
+  buildCustomizerForm(customizer);
+  populateFormFromPreset(project.currentPreset);
+
   logLine(`Project ready — auto-rendering "${project.currentPreset}"...`);
   await doRender();
 }
@@ -427,12 +443,31 @@ async function doRender() {
     }
 
     // Build CLI args: Manifold backend (~100x faster than CGAL),
-    // plus optional preset via -p/-P
+    // optional preset via -p/-P, and -D overrides for any form param that
+    // differs from the preset baseline (these win over -P).
     const args = ['/' + project.scadName, '-o', '/output.stl', '--backend=Manifold'];
     if (project.jsonText && project.currentPreset !== 'design default values') {
       args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
-    logLine(`Running OpenSCAD: ${args.join(' ')}`);
+    if (project.customizer) {
+      const cur = currentFormValues();
+      const baseline = project.baselineParams || {};
+      const typeMap = {};
+      for (const sec of project.customizer)
+        for (const p of sec.params) typeMap[p.name] = p.valueType;
+      let overrideCount = 0;
+      for (const [name, val] of Object.entries(cur)) {
+        if (baseline[name] === val) continue;       // unchanged
+        const t = typeMap[name];
+        let expr;
+        if (t === 'string') expr = `"${String(val).replace(/"/g, '\\"')}"`;
+        else expr = String(val);                    // numbers and vectors pass through
+        args.push('-D', `${name}=${expr}`);
+        overrideCount++;
+      }
+      if (overrideCount) logLine(`  applying ${overrideCount} parameter override(s)`);
+    }
+    logLine(`Running OpenSCAD (${args.length - 4} extra args)`);
 
     const t0 = performance.now();
     const rc = oscad.getInstance().callMain(args);
@@ -482,72 +517,253 @@ document.getElementById('export-main').addEventListener('click', () => {
 // ===== The rest of the original mockup logic follows =====
 
 // ---------- Customizer sections (names from native screenshot) ----------
-const SECTIONS = [
-  'Keyguard Basics',
-  'Tablet',
-  'Tablet Case',
-  'App Layout in px',
-  'App Layout in mm',
-  'Bar Info',
-  'Grid Info',
-  'Grid Special Settings',
-  'Mounting Method',
-  'Velcro Info',
-  'Clip-on Straps Info',
-  'Posts Info',
-  'Shelf Info',
-  'Slide-in Tabs Info',
-  'Raised Tabs Info',
-  'Keyguard Frame Info',
-  'Split Keyguard Info',
-  'Sloped Keyguard Edge Info',
-  'Engraved/Embossed Text',
-  'Cell Inserts',
-  'Free-form and Hybrid Keyguard Openings',
-  'Special Actions and Settings',
-];
+// ===== Customizer parser =====
+// Parses keyguard.scad's top-of-file Customizer declarations into a structured schema.
+// Recognises:
+//   /*[Section Name]*/                          — start of a section
+//   /*[Hidden]*/                                — end of customizer-visible region
+//   name = default;                             — plain param (number, string, vector)
+//   name = default; // [a,b,c]                  — dropdown
+//   name = default; // [a:b]                    — range slider [min:max]
+//   name = default; // [a:b:c]                  — range slider [min:step:max]
+//   name = default; // .1                       — numeric step hint, freeform input
+//   name = default; // any other text           — help/hint shown as tooltip
+// A line starting with `//` immediately above a parameter is captured as its help text.
+function parseCustomizer(scadText) {
+  const lines = scadText.split(/\r?\n/);
+  const sections = [];
+  let currentSection = null;
+  let pendingHelp = [];
 
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line === '') { pendingHelp = []; continue; }
+
+    // Stop at the Hidden section or at the first module/function definition
+    const sectionMatch = line.match(/^\/\*\s*\[(.+?)\]\s*\*\//);
+    if (sectionMatch) {
+      const name = sectionMatch[1].trim();
+      if (name.toLowerCase() === 'hidden') break;
+      currentSection = { name, params: [] };
+      sections.push(currentSection);
+      pendingHelp = [];
+      continue;
+    }
+    if (/^(module|function)\s+\w+/.test(line)) break;
+
+    // Capture preceding help comments
+    if (line.startsWith('//')) {
+      pendingHelp.push(line.replace(/^\/\/\s?/, ''));
+      continue;
+    }
+
+    // Parameter declaration: name = value;  with optional trailing comment
+    const paramMatch = line.match(/^([a-zA-Z_]\w*)\s*=\s*(.+?);\s*(\/\/\s*(.*))?$/);
+    if (paramMatch && currentSection) {
+      const [, name, rawDefault, , trailing] = paramMatch;
+      const def = rawDefault.trim();
+      const help = pendingHelp.join(' ').trim();
+      pendingHelp = [];
+
+      // Determine value type from default
+      let valueType;
+      if (/^".*"$/.test(def)) valueType = 'string';
+      else if (/^\[.*\]$/.test(def)) valueType = 'vector';
+      else if (/^-?\d+(\.\d+)?$/.test(def)) valueType = 'number';
+      else valueType = 'string';   // catch-all
+
+      // Determine control type from trailing comment
+      let control = { kind: valueType };
+      if (trailing) {
+        const t = trailing.trim();
+        const bracketMatch = t.match(/^\[(.*)\]$/);
+        if (bracketMatch) {
+          const inside = bracketMatch[1];
+          // Range: number:number or number:number:number
+          const rangeParts = inside.split(':').map(s => s.trim());
+          const allNumeric = rangeParts.every(p => /^-?\d+(\.\d+)?$/.test(p));
+          if (rangeParts.length === 2 && allNumeric) {
+            control = { kind: 'range', min: +rangeParts[0], max: +rangeParts[1] };
+          } else if (rangeParts.length === 3 && allNumeric) {
+            control = { kind: 'range', min: +rangeParts[0], step: +rangeParts[1], max: +rangeParts[2] };
+          } else {
+            // Comma-separated dropdown values; each may be "value:label" or just "value"
+            const choices = inside.split(',').map(s => {
+              const parts = s.split(':').map(x => x.trim());
+              if (parts.length === 2) return { value: parts[0], label: parts[1] };
+              return { value: parts[0], label: parts[0] };
+            });
+            control = { kind: 'dropdown', choices };
+          }
+        } else if (/^\.\d+$/.test(t) || /^-?\d+(\.\d+)?$/.test(t)) {
+          // numeric step hint like ".1" or "1"
+          control = { kind: 'number', step: +t };
+        } else {
+          // Trailing text becomes additional help if not bracketed
+          // (we'll show it in the help line)
+        }
+      }
+      if (control.kind === 'string' && valueType === 'string' && !trailing) {
+        control = { kind: 'string' };
+      }
+
+      currentSection.params.push({ name, default: def, valueType, control, help });
+    }
+  }
+  return sections;
+}
+
+// ===== Form generation =====
 const container = document.getElementById('cust-sections');
-SECTIONS.forEach((name, idx) => {
-  const section = document.createElement('div');
-  section.className = 'section';
-  // Open the "Special Actions and Settings" section by default to show the include-screenshot param
-  if (name === 'Special Actions and Settings') section.classList.add('open');
-  section.innerHTML = `
-    <div class="section-header"><span class="caret">▶</span>${name}</div>
-    <div class="section-body"></div>
-  `;
-  container.appendChild(section);
-});
 
-// Populate the "Special Actions and Settings" body with a realistic include-screenshot param
-const specialBody = container.querySelectorAll('.section')[SECTIONS.length - 1].querySelector('.section-body');
-specialBody.innerHTML = `
-  <div class="param">
-    <label class="param-label">include screenshot</label>
-    <div class="param-help">set this option to "no" before rendering your design</div>
-    <select>
-      <option>no</option>
-      <option>yes</option>
-    </select>
-  </div>
-  <div class="param">
-    <label class="param-label">screenshot file</label>
-    <div class="param-help">JPG, PNG, or SVG file in the project folder</div>
-    <input type="text" value="default.svg">
-  </div>
-  <div class="param">
-    <label class="param-label">number of facets</label>
-    <div class="param-help">controls $fn — smoothness of circles and arcs</div>
-    <input type="number" value="90">
-  </div>
-`;
+function buildCustomizerForm(sections) {
+  container.innerHTML = '';
+  for (const sec of sections) {
+    const div = document.createElement('div');
+    div.className = 'section';
+    div.dataset.section = sec.name;
+    div.innerHTML = `<div class="section-header"><span class="caret">▶</span>${sec.name}</div>
+                     <div class="section-body"></div>`;
+    const body = div.querySelector('.section-body');
+    for (const p of sec.params) {
+      body.appendChild(buildParamControl(p));
+    }
+    container.appendChild(div);
+  }
+}
+
+function buildParamControl(p) {
+  const wrap = document.createElement('div');
+  wrap.className = 'param';
+  wrap.dataset.paramName = p.name;
+
+  const label = document.createElement('label');
+  label.className = 'param-label';
+  label.textContent = p.name.replace(/_/g, ' ');
+  wrap.appendChild(label);
+
+  if (p.help) {
+    const helpEl = document.createElement('div');
+    helpEl.className = 'param-help';
+    helpEl.textContent = p.help;
+    wrap.appendChild(helpEl);
+  }
+
+  let input;
+  switch (p.control.kind) {
+    case 'dropdown': {
+      input = document.createElement('select');
+      for (const c of p.control.choices) {
+        const opt = document.createElement('option');
+        opt.value = c.value; opt.textContent = c.label;
+        input.appendChild(opt);
+      }
+      break;
+    }
+    case 'range': {
+      input = document.createElement('input');
+      input.type = 'number';
+      input.min = p.control.min;
+      input.max = p.control.max;
+      if (p.control.step != null) input.step = p.control.step;
+      break;
+    }
+    case 'number': {
+      input = document.createElement('input');
+      input.type = 'number';
+      if (p.control.step != null) input.step = p.control.step;
+      break;
+    }
+    case 'vector':
+    case 'string':
+    default: {
+      input = document.createElement('input');
+      input.type = 'text';
+      break;
+    }
+  }
+  input.dataset.paramName = p.name;
+  input.dataset.valueType = p.valueType;
+  wrap.appendChild(input);
+  return wrap;
+}
 
 // Click to expand/collapse
 container.addEventListener('click', e => {
   const header = e.target.closest('.section-header');
   if (!header) return;
   header.parentElement.classList.toggle('open');
+});
+
+// ===== Populate form values from a preset =====
+// Preset values come from the .json file (all strings) or, for "design default values",
+// from the .scad defaults captured during parsing.
+function populateFormFromPreset(presetName) {
+  if (!project || !project.customizer) return;
+  const presets = project.jsonText ? (JSON.parse(project.jsonText).parameterSets || {}) : {};
+  const presetVals = presets[presetName] || null;
+
+  for (const sec of project.customizer) {
+    for (const p of sec.params) {
+      const input = container.querySelector(`[data-param-name="${cssEsc(p.name)}"] input, [data-param-name="${cssEsc(p.name)}"] select`);
+      if (!input) continue;
+      let val;
+      if (presetVals && p.name in presetVals) {
+        val = presetVals[p.name];
+      } else {
+        // Use the .scad default; strip surrounding quotes for strings.
+        val = p.default.replace(/^"|"$/g, '');
+      }
+      input.value = val;
+    }
+  }
+  // Snapshot the baseline so dirty-state comparisons work
+  project.baselineParams = currentFormValues();
+  updateDirty();
+}
+
+function cssEsc(s) { return s.replace(/"/g, '\\"'); }
+
+function currentFormValues() {
+  const out = {};
+  for (const el of container.querySelectorAll('input,select')) {
+    if (!el.dataset.paramName) continue;
+    out[el.dataset.paramName] = el.value;
+  }
+  return out;
+}
+
+// ===== Param change → dirty update + re-render =====
+let renderDebounceTimer = null;
+function scheduleRender() {
+  if (!project) return;
+  clearTimeout(renderDebounceTimer);
+  renderDebounceTimer = setTimeout(() => doRender(), 400);
+}
+
+function updateDirty() {
+  if (!project) return;
+  const cur = currentFormValues();
+  const base = project.baselineParams || {};
+  let dirty = false;
+  for (const k of Object.keys(cur)) {
+    if (String(cur[k]) !== String(base[k] ?? '')) { dirty = true; break; }
+  }
+  document.getElementById('dirty-marker').classList.toggle('visible', dirty);
+  document.getElementById('preset-select').classList.toggle('dirty', dirty);
+  document.getElementById('save-preset-btn').disabled = !dirty;
+  document.getElementById('reset-btn').disabled = !dirty;
+}
+
+container.addEventListener('input', e => {
+  if (!project || !e.target.dataset.paramName) return;
+  updateDirty();
+  scheduleRender();
+});
+container.addEventListener('change', e => {
+  if (!project || !e.target.dataset.paramName) return;
+  updateDirty();
+  scheduleRender();
 });
 
 // ---------- splitter drag logic ----------
@@ -637,93 +853,28 @@ exportMenu.addEventListener('click', e => {
   exportMenu.classList.remove('open');
 });
 
-// ---------- dirty-state tracking ----------
-// Real app: deep-compare current params object vs preset-baseline object.
-// Mockup: track just the include-screenshot dropdown in the open section.
+// ---------- preset select + dirty state ----------
 const presetSelect = document.getElementById('preset-select');
 const dirtyMarker = document.getElementById('dirty-marker');
 const savePresetBtn = document.getElementById('save-preset-btn');
 const resetBtn = document.getElementById('reset-btn');
 
-// Baseline values for each preset (in the real app these come from keyguard.json).
-const presetBaselines = {
-  'design default values':  { includeScreenshot: 'no' },
-  'Smith iPad AAC grid':    { includeScreenshot: 'yes' },
-  'Jones Surface 6-cell':   { includeScreenshot: 'no' },
-};
-let currentParams = { ...presetBaselines[presetSelect.value] };
-
-function paramsEqual(a, b) {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const k of keys) {
-    const av = a[k], bv = b[k];
-    if (typeof av === 'number' && typeof bv === 'number') {
-      if (Math.abs(av - bv) > 1e-4) return false;       // epsilon for floats
-    } else if (av !== bv) return false;
-  }
-  return true;
-}
-function updateDirty() {
-  const baseline = presetBaselines[presetSelect.value];
-  const dirty = !paramsEqual(currentParams, baseline);
-  dirtyMarker.classList.toggle('visible', dirty);
-  presetSelect.classList.toggle('dirty', dirty);
-  savePresetBtn.disabled = !dirty;
-  resetBtn.disabled = !dirty;
-}
-
-// Hook the include-screenshot dropdown in the open section
-const includeScreenshotSelect = specialBody.querySelector('select');
-includeScreenshotSelect.addEventListener('change', e => {
-  currentParams.includeScreenshot = e.target.value;
-  updateDirty();
-});
-
-// Preset-switch protection
-presetSelect.addEventListener('mousedown', e => {
-  // Remember the value before the user picks something new
-  presetSelect.dataset.prev = presetSelect.value;
-});
-presetSelect.addEventListener('change', e => {
-  // Phase 2: when a real project is loaded, the dropdown now reflects real preset names,
-  // so just update which preset will be rendered. Full dirty-tracking returns in Phase 4
-  // when real parameter form controls are added.
-  if (project) {
-    project.currentPreset = presetSelect.value;
-    logLine(`Selected preset: "${presetSelect.value}" — re-rendering...`);
-    doRender();
-    return;
-  }
-  // --- mockup behaviour (no project loaded) -----------------------------
-  const prev = presetSelect.dataset.prev || presetSelect.value;
-  const dirty = !paramsEqual(currentParams, presetBaselines[prev]);
-  if (dirty) {
-    const choice = confirm(
-      `"${prev}" has unsaved changes.\n\n` +
-      `Click OK to discard them and switch to "${e.target.value}".\n` +
-      `Click Cancel to stay on "${prev}".`
-    );
-    if (!choice) {
-      presetSelect.value = prev;
-      return;
-    }
-  }
-  currentParams = { ...presetBaselines[presetSelect.value] };
-  includeScreenshotSelect.value = currentParams.includeScreenshot;
-  updateDirty();
+presetSelect.addEventListener('change', () => {
+  if (!project) return;
+  project.currentPreset = presetSelect.value;
+  populateFormFromPreset(presetSelect.value);
+  logLine(`Selected preset: "${presetSelect.value}" — re-rendering...`);
+  doRender();
 });
 
 resetBtn.addEventListener('click', () => {
-  currentParams = { ...presetBaselines[presetSelect.value] };
-  includeScreenshotSelect.value = currentParams.includeScreenshot;
-  updateDirty();
+  if (!project) return;
+  populateFormFromPreset(project.currentPreset);
+  doRender();
 });
-savePresetBtn.addEventListener('click', () => {
-  // Real app: write currentParams back to keyguard.json for this preset name.
-  presetBaselines[presetSelect.value] = { ...currentParams };
-  updateDirty();
-  alert(`Saved current parameters to preset "${presetSelect.value}".`);
-});
+
+// Save preset / dirty marker: deferred to a later phase (need to write JSON back to disk).
+// For now both controls are inert.
 </script>
 </body>
 </html>
