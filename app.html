@@ -577,7 +577,10 @@ async function openProject() {
   logLine(`  parsed Customizer: ${customizer.length} sections, ${totalParams} parameters`);
 
   project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, oaMtime, files,
-              rawPresetNames, presetNames, currentPreset: presetNames[0], customizer, baselineParams: {} };
+              rawPresetNames, presetNames, currentPreset: presetNames[0], customizer, baselineParams: {},
+              screenshotName: null, screenshotBytes: null, screenshotTexture: null,
+              dims: null, warnedNoScreenshot: false };
+  await rescanScreenshot();
 
   // UI updates
   document.getElementById('project-folder-label').innerHTML = `📁 <b>${dirHandle.name}</b> — ${scadName}`;
@@ -626,6 +629,11 @@ async function doRender() {
       baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
     baseArgs.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+    // include_screenshot is honoured by the spike's Three.js plane overlay,
+    // not by keyguard.scad's own SVG import — the .scad version renders a flat
+    // slab inside the screen recess which fills every cell with a "floor".
+    // Force the .scad's handling off; we add the screenshot ourselves below.
+    baseArgs.push('-D', 'include_screenshot="no"');
     if (project.customizer) {
       const cur = currentFormValues();
       const baseline = project.baselineParams || {};
@@ -636,6 +644,7 @@ async function doRender() {
       for (const [name, val] of Object.entries(cur)) {
         if (baseline[name] === val) continue;
         if (name === 'fudge' || name === 'ff') continue;   // never let UI clobber the workaround
+        if (name === 'include_screenshot') continue;       // spike-managed; .scad must stay "no"
         const t = typeMap[name];
         const expr = (t === 'string')
           ? `"${String(val).replace(/"/g, '\\"')}"`
@@ -649,11 +658,25 @@ async function doRender() {
     // The createOpenSCAD wrapper's callMain triggers exitJS() at the end of
     // every run, which tears down the Emscripten runtime. The instance can
     // therefore only do one render, so we spin up a fresh instance per render.
+    // Captures the swm/shm/sat/kt values emitted by keyguard.scad's
+    // `echo("__SPIKE_DIMS__", ...)` line so the screenshot plane can be sized
+    // and positioned correctly. The echo is on stderr from the wasm.
+    function maybeCaptureDims(line) {
+      if (!line.includes('__SPIKE_DIMS__')) return;
+      const m = line.match(/swm\s*=\s*(-?\d+(?:\.\d+)?)/);
+      const m2 = line.match(/shm\s*=\s*(-?\d+(?:\.\d+)?)/);
+      const m3 = line.match(/sat\s*=\s*(-?\d+(?:\.\d+)?)/);
+      const m4 = line.match(/kt\s*=\s*(-?\d+(?:\.\d+)?)/);
+      if (m && m2 && m3 && m4) {
+        project.dims = { swm: +m[1], shm: +m2[1], sat: +m3[1], kt: +m4[1] };
+      }
+    }
+
     async function runOnce(extraArgs, outPath, label) {
       logLine(`Initializing openscad-wasm for ${label}...`);
       const oscad = await createOpenSCAD({
-        print:    t => logRaw(`[scad ${label}] `     + t),
-        printErr: t => logRaw(`[scad ${label} err] ` + t)
+        print:    t => { logRaw(`[scad ${label}] `     + t); maybeCaptureDims(t); },
+        printErr: t => { logRaw(`[scad ${label} err] ` + t); maybeCaptureDims(t); }
       });
       // Install OpenSCAD's bundled fonts (Liberation Sans + fontconfig)
       // into the virtual FS so text() primitives render. Without this,
@@ -730,6 +753,30 @@ async function doRender() {
       group.add(hlMesh);
     }
 
+    // ---- Optional screenshot plane below the keyguard ----
+    // Sits at the bottom of the screen recess so the clinician sees the
+    // referenced app screenshot through the cell cutouts. Sized to swm × shm
+    // captured from keyguard.scad's __SPIKE_DIMS__ echo. Honours the
+    // include_screenshot Customizer parameter.
+    const cur = currentFormValues();
+    const wantScreenshot = cur.include_screenshot === 'yes';
+    if (wantScreenshot) {
+      if (!project.screenshotName) {
+        if (!project.warnedNoScreenshot) {
+          project.warnedNoScreenshot = true;
+          alert('include_screenshot is "yes" but no .jpg, .jpeg, or .png file was found in the project folder.');
+        }
+      } else if (project.dims && project.screenshotTexture) {
+        const { swm, shm, kt } = project.dims;
+        const plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(swm, shm),
+          new THREE.MeshBasicMaterial({ map: project.screenshotTexture, side: THREE.DoubleSide })
+        );
+        plane.position.set(0, 0, -kt / 2 - 0.05);
+        group.add(plane);
+      }
+    }
+
     if (currentMesh) scene.remove(currentMesh);
     currentMesh = group;
     scene.add(currentMesh);
@@ -788,11 +835,18 @@ async function exportCurrent(fmt) {
       fs.writeFile('/' + name, bytes);
     }
     const outPath = '/keyguard.' + spec.ext;
-    const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold',
-                  '-D', 'fudge=0.05', '-D', 'ff=0.05'];
+    // Order matters: -D values placed after -p/-P win against the preset.
+    // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
+    // clobber our Manifold-precision workaround and leave cell floors in
+    // the exported file.
+    const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold'];
     if (project.jsonText && project.currentPreset !== 'design default values') {
       args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
+    args.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+    // Exports should never bake in the screenshot overlay (it's a viewport-only
+    // alignment aid). Force the .scad's SVG import off regardless of preset/form.
+    args.push('-D', 'include_screenshot="no"');
     if (project.customizer) {
       const cur = currentFormValues();
       const baseline = project.baselineParams || {};
@@ -801,6 +855,8 @@ async function exportCurrent(fmt) {
         for (const p of sec.params) typeMap[p.name] = p.valueType;
       for (const [name, val] of Object.entries(cur)) {
         if (baseline[name] === val) continue;
+        if (name === 'fudge' || name === 'ff') continue;
+        if (name === 'include_screenshot') continue;
         const t = typeMap[name];
         const expr = (t === 'string')
           ? `"${String(val).replace(/"/g, '\\"')}"`
@@ -1119,6 +1175,48 @@ async function checkOAFile() {
   }
 }
 
+// ===== Screenshot-under-keyguard plane =====
+// Scans the project folder for the FIRST .jpg/.jpeg/.png and caches the bytes
+// + a Three.js texture. Called on Open Project, on preset change, and when
+// include_screenshot flips to "yes" — so swapping the image file on disk and
+// switching presets are both reflected on the next render. SVG files are
+// intentionally ignored (Three.js can't texture them without a rasterisation
+// step we've deferred — see project_browser_spike memory note).
+async function rescanScreenshot() {
+  if (!project || !project.dirHandle) return;
+  const old = project.screenshotTexture;
+  project.screenshotName = null;
+  project.screenshotBytes = null;
+  project.screenshotTexture = null;
+  if (old) old.dispose();
+
+  const imageExt = /\.(jpe?g|png)$/i;
+  try {
+    for await (const [name, handle] of project.dirHandle.entries()) {
+      if (handle.kind !== 'file') continue;
+      if (!imageExt.test(name)) continue;
+      const file = await handle.getFile();
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      const tex = await new Promise((resolve, reject) => {
+        new THREE.TextureLoader().load(url, t => { URL.revokeObjectURL(url); resolve(t); },
+          undefined, err => { URL.revokeObjectURL(url); reject(err); });
+      });
+      tex.colorSpace = THREE.SRGBColorSpace;
+      project.screenshotName = name;
+      project.screenshotBytes = bytes;
+      project.screenshotTexture = tex;
+      project.warnedNoScreenshot = false;
+      logLine(`Screenshot: using "${name}"`);
+      return;
+    }
+  } catch (e) {
+    logLine(`Screenshot scan failed: ${e.message}`);
+  }
+  logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+}
+
 function triggerWatchRerender() {
   if (renderInProgress) {
     pendingRerender = true;
@@ -1146,9 +1244,14 @@ container.addEventListener('input', e => {
   updateDirty();
   scheduleRender();
 });
-container.addEventListener('change', e => {
+container.addEventListener('change', async e => {
   if (!project || !e.target.dataset.paramName) return;
   updateDirty();
+  // Rescan for the screenshot when the user flips include_screenshot ON, so
+  // a folder change since Open Project gets picked up.
+  if (e.target.dataset.paramName === 'include_screenshot' && e.target.value === 'yes') {
+    await rescanScreenshot();
+  }
   scheduleRender();
 });
 
@@ -1260,12 +1363,13 @@ const dirtyMarker = document.getElementById('dirty-marker');
 const savePresetBtn = document.getElementById('save-preset-btn');
 const resetBtn = document.getElementById('reset-btn');
 
-presetSelect.addEventListener('change', () => {
+presetSelect.addEventListener('change', async () => {
   if (!project) return;
   project.currentPreset = presetSelect.value;
   populateFormFromPreset(presetSelect.value);
   updateDelPresetButton();
   logLine(`Selected preset: "${presetSelect.value}" — re-rendering...`);
+  await rescanScreenshot();
   doRender();
 });
 

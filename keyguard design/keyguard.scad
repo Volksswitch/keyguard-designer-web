@@ -456,6 +456,13 @@ show_oa_highlights = "no";
 // build has no lib3mf, so the original 3MF-with-color() plan didn't pan out).
 only_oa_highlights = "no";
 
+// Echo the screen-area dimensions and overall thickness so the browser spike
+// can size and position the screenshot-under-keyguard plane in Three.js
+// without needing a second metadata render. OpenSCAD evaluates assignments at
+// parse time regardless of source order, so this echo can reference globals
+// that are defined later in the file.
+echo("__SPIKE_DIMS__", swm=swm, shm=shm, sat=sat, kt=kt);
+
 // IMPORTANT — DECLARATION ORDER IN THIS SECTION
 // ----------------------------------------------
 // OpenSCAD variables are constants evaluated at parse time. In practice this means
