@@ -1,7 +1,3 @@
-# Inputs are copies from the keyguard project; the source of truth lives there.
-# Comment this out if you want the snapshot tracked.
-inputs/
-
 # Render outputs are throwaway.
 outputs/
 

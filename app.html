@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Keyguard Designer (browser, Phase 1)</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  /* ---------- reset / base ---------- */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", -apple-system, sans-serif;
+               font-size: 13px; background: #f0f0f0; color: #222; }
+
+  /* ---------- top menu bar ---------- */
+  #menubar { display: flex; align-items: center; background: #e8e8e8; border-bottom: 1px solid #bbb;
+             padding: 0 6px; height: 26px; flex-shrink: 0; user-select: none; }
+  #menubar .menu { padding: 3px 10px; cursor: default; }
+  #menubar .menu:hover { background: #d0d0d0; }
+  #menubar .title { margin-left: auto; padding-right: 8px; color: #666; font-size: 12px; }
+
+  /* ---------- main layout: row of (left column) + splitter + (right Customizer) ---------- */
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  #main { display: flex; flex: 1; min-height: 0; }
+  #left { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  #right { width: 280px; flex-shrink: 0; background: #fafafa; border-left: 1px solid #bbb;
+           display: flex; flex-direction: column; min-width: 180px; }
+
+  /* the left column is itself (viewport on top + horizontal splitter + console at bottom) */
+  #viewport-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #viewport { flex: 1; background: #fffce0; position: relative; overflow: hidden; min-height: 0; }
+  #three-canvas { display: block; width: 100%; height: 100%; }
+  #viewport-overlay { position: absolute; top: 10px; left: 10px; right: 10px;
+                       pointer-events: none; color: #555; font-size: 12px; }
+  #viewport-status { background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 3px;
+                     display: inline-block; pointer-events: auto; }
+  #viewport-status.rendering { color: #aa6; background: rgba(255,250,200,0.9); }
+  #viewport-status.error { color: #c00; background: rgba(255,220,220,0.9); }
+  #viewport-status.ok { color: #060; background: rgba(220,250,220,0.9); }
+  #viewport-toolbar { height: 32px; background: #e8e8e8; border-top: 1px solid #ccc;
+                      display: flex; align-items: center; gap: 4px; padding: 0 6px; flex-shrink: 0; }
+  .vp-btn { background: none; border: 1px solid transparent; padding: 4px 6px; cursor: pointer;
+            font-size: 14px; border-radius: 2px; color: #333; min-width: 26px; }
+  .vp-btn:hover { background: #d8d8d8; border-color: #aaa; }
+  .vp-sep { width: 1px; background: #bbb; height: 18px; margin: 0 4px; }
+
+  /* ---------- console pane ---------- */
+  #console-wrap { background: #fff; border-top: 1px solid #bbb; display: flex; flex-direction: column;
+                  height: 180px; min-height: 60px; flex-shrink: 0; }
+  #console-toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+                     background: #ececec; border-bottom: 1px solid #ccc; flex-shrink: 0; font-size: 12px; }
+  #console-toolbar .label { font-weight: bold; margin-right: auto; }
+  #console-toolbar button { font-size: 11px; padding: 2px 8px; cursor: pointer; }
+  #console-toolbar label { font-size: 11px; user-select: none; }
+  #console { flex: 1; overflow-y: auto; padding: 6px 10px; font-family: Consolas, Menlo, monospace;
+             font-size: 11.5px; color: #222; white-space: pre; }
+  #console.wrap { white-space: pre-wrap; }
+
+  /* ---------- splitters ---------- */
+  .hsplit { width: 5px; background: #d4d4d4; cursor: col-resize; flex-shrink: 0;
+            border-left: 1px solid #b8b8b8; border-right: 1px solid #b8b8b8; }
+  .hsplit:hover { background: #b0c0e0; }
+  .vsplit { height: 5px; background: #d4d4d4; cursor: row-resize; flex-shrink: 0;
+            border-top: 1px solid #b8b8b8; border-bottom: 1px solid #b8b8b8; }
+  .vsplit:hover { background: #b0c0e0; }
+
+  /* ---------- Customizer ---------- */
+  #cust-header { padding: 8px 10px; border-bottom: 1px solid #ddd; background: #f4f4f4; flex-shrink: 0; }
+  #cust-header h2 { margin: 0 0 6px 0; font-size: 13px; font-weight: bold; }
+  #cust-header .preset-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+  #cust-header select, #cust-header input { flex: 1; min-width: 0; font-size: 12px; padding: 2px 4px; }
+  #cust-header button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
+  #cust-header .preset-btns { display: flex; gap: 4px; }
+  #cust-header .preset-btns button { flex: 1; }
+  #cust-sections { flex: 1; overflow-y: auto; }
+  .section { border-bottom: 1px solid #e0e0e0; }
+  .section-header { padding: 6px 10px; cursor: pointer; user-select: none;
+                    display: flex; align-items: center; gap: 4px; font-weight: bold; font-size: 12px;
+                    background: #fafafa; }
+  .section-header:hover { background: #eef2f7; }
+  .section-header .caret { display: inline-block; width: 10px; transition: transform 0.1s; color: #555; }
+  .section.open .section-header .caret { transform: rotate(90deg); }
+  .section-body { display: none; padding: 8px 10px 10px 10px; background: #fff; font-size: 12px; }
+  .section.open .section-body { display: block; }
+  .param { margin-bottom: 8px; }
+  .param-label { display: block; font-weight: bold; margin-bottom: 2px; }
+  .param-help { color: #777; font-size: 11px; margin-bottom: 3px; }
+  .param select, .param input[type=text], .param input[type=number] {
+    width: 100%; padding: 2px 4px; font-size: 12px; }
+
+  /* ---------- splitter drag overlay (prevents iframe/text selection during drag) ---------- */
+  .dragging, .dragging * { user-select: none !important; cursor: col-resize !important; }
+  .dragging.row, .dragging.row * { cursor: row-resize !important; }
+
+  /* ---------- split button ---------- */
+  .split-btn { position: relative; display: inline-flex; }
+  .split-btn .split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; margin-right: 0; }
+  .split-btn .split-arrow { border-top-left-radius: 0; border-bottom-left-radius: 0;
+                             border-left: 1px solid #ccc; padding-left: 4px; padding-right: 4px;
+                             min-width: 18px; }
+  .split-menu { display: none; position: absolute; bottom: 100%; right: 0; background: #fff;
+                border: 1px solid #aaa; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 10;
+                min-width: 220px; padding: 3px 0; }
+  .split-menu.open { display: block; }
+  .split-item { padding: 5px 12px; cursor: pointer; font-size: 12px; display: flex;
+                justify-content: space-between; align-items: center; gap: 12px; }
+  .split-item:hover { background: #e8f0fc; }
+  .split-item .hint { color: #888; font-size: 11px; font-weight: normal; }
+
+  /* ---------- dirty indicator ---------- */
+  .preset-row select.dirty { font-style: italic; color: #a33; }
+  #dirty-marker { color: #a33; font-weight: bold; margin-left: 4px; display: none; }
+  #dirty-marker.visible { display: inline; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ MAIN ROW: left column + Customizer ============ -->
+  <div id="main">
+
+    <!-- LEFT COLUMN: viewport on top, console at bottom -->
+    <div id="left">
+      <div id="viewport-wrap">
+        <div id="viewport">
+          <canvas id="three-canvas"></canvas>
+          <div id="viewport-overlay">
+            <div id="viewport-status">Click <b>⟳ Render</b> to generate the keyguard.</div>
+          </div>
+        </div>
+        <div id="viewport-toolbar">
+          <button class="vp-btn" title="View All (fit to window)">⛶</button>
+          <div class="vp-sep"></div>
+          <button class="vp-btn" title="Top view">⬒</button>
+          <button class="vp-btn" title="Bottom view">⬓</button>
+          <button class="vp-btn" title="Front view">▤</button>
+          <button class="vp-btn" title="Back view">▥</button>
+          <button class="vp-btn" title="Left view">◧</button>
+          <button class="vp-btn" title="Right view">◨</button>
+          <button class="vp-btn" title="Toggle axes">+</button>
+          <button class="vp-btn" title="Toggle grid">▦</button>
+          <div class="vp-sep"></div>
+          <button class="vp-btn" title="Re-render (F6)" style="font-weight:bold;color:#0a0">⟳ Render</button>
+          <span class="split-btn">
+            <button class="vp-btn split-main" id="export-main" title="Export current design"
+                    style="font-weight:bold;color:#06c">⬇ Export as STL</button><button class="vp-btn split-arrow" id="export-arrow"
+                    title="Choose export format" style="color:#06c">▾</button>
+            <div class="split-menu" id="export-menu">
+              <div class="split-item" data-fmt="STL">Export as STL <span class="hint">3D print</span></div>
+              <div class="split-item" data-fmt="3MF">Export as 3MF <span class="hint">3D print, modern</span></div>
+              <div class="split-item" data-fmt="SVG">Export as SVG <span class="hint">laser-cut</span></div>
+              <div class="split-item" data-fmt="PNG">Export as PNG <span class="hint">current view</span></div>
+            </div>
+          </span>
+        </div>
+      </div>
+
+      <div class="vsplit" id="vsplit-console" title="Drag to resize console"></div>
+
+      <div id="console-wrap">
+        <div id="console-toolbar">
+          <span class="label">Console</span>
+          <button id="copy-btn">Copy</button>
+          <button id="save-btn">Save…</button>
+          <button id="clear-btn">Clear</button>
+        </div>
+        <div id="console">[17:09:57] Loaded keyguard.scad (375,453 bytes)
+[17:09:57] Loaded openings_and_additions.txt (9,569 bytes)
+[17:09:57] Loaded default.svg (353,992 bytes)
+[17:09:57] Initializing openscad-wasm...
+[17:10:03] Render started: type_of_tablet=iPad 9th generation, orientation=landscape
+ECHO: [0, 0, 0]
+ECHO: [55, 0, 25]
+ECHO: 140
+WARNING: Viewall and autocenter disabled in favor of $vp*
+Geometries in cache: 137
+Geometry cache size in bytes: 1,495,904
+CGAL Polyhedrons in cache: 43
+CGAL cache size in bytes: 52,254,632
+Total rendering time: 0:00:54.142
+Top level object is a 3D object (Nef polyhedron):
+   Simple:     yes
+   Vertices:   5000
+   Halfedges:  15960
+   Edges:      7980
+   Halffacets: 5994
+   Facets:     2997
+   Volumes:    2
+[17:11:28] Render complete. STL output: 2,787,298 bytes</div>
+      </div>
+    </div>
+
+    <div class="hsplit" id="hsplit-cust" title="Drag to resize Customizer"></div>
+
+    <!-- RIGHT: Customizer pane -->
+    <div id="right">
+      <div id="cust-header">
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <h2 style="margin:0; flex:1;">Customizer</h2>
+          <button id="open-project-btn" title="Pick a folder containing keyguard.scad and openings_and_additions.txt"
+                  style="font-size:11px; padding:3px 8px; cursor:pointer;">Open Project…</button>
+        </div>
+        <div style="font-size:11px; color:#666; margin-bottom:6px;" id="project-folder-label">
+          <i>no project folder open</i>
+        </div>
+        <div class="preset-row">
+          <select id="preset-select">
+            <option value="design default values">design default values</option>
+            <option value="Smith iPad AAC grid">Smith iPad AAC grid</option>
+            <option value="Jones Surface 6-cell">Jones Surface 6-cell</option>
+          </select>
+          <span id="dirty-marker" title="unsaved changes">*</span>
+        </div>
+        <div class="preset-btns">
+          <button title="Add new preset">+</button>
+          <button title="Delete current preset">−</button>
+          <button id="save-preset-btn" title="Save current parameters to current preset" disabled>Save preset</button>
+          <button id="reset-btn" title="Revert parameters to current preset baseline" disabled>Reset</button>
+        </div>
+      </div>
+
+      <div id="cust-sections">
+        <!-- sections — names taken verbatim from native screenshot -->
+        <!-- (Sections will be populated by JS below for brevity / consistency) -->
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+// ===== Three.js viewport setup =====
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { createOpenSCAD } from './openscad-wasm/openscad.js';
+
+const canvas = document.getElementById('three-canvas');
+const viewport = document.getElementById('viewport');
+const statusEl = document.getElementById('viewport-status');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xfffce0);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
+camera.position.set(200, 200, 300);
+camera.up.set(0, 0, 1);   // Z-up to match OpenSCAD convention
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+scene.add(ambient);
+const key = new THREE.DirectionalLight(0xffffff, 0.85);
+key.position.set(1, 1, 2);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+fill.position.set(-1, -1, 0.5);
+scene.add(fill);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.1;
+// Match OpenSCAD: left=rotate, right=pan, middle=rotate, wheel=zoom
+controls.mouseButtons = {
+  LEFT:   THREE.MOUSE.ROTATE,
+  MIDDLE: THREE.MOUSE.ROTATE,
+  RIGHT:  THREE.MOUSE.PAN
+};
+
+let currentMesh = null;
+let stlBlobUrl = null;     // for "Export as STL"
+
+function fitCameraToObject(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fitDist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2));
+  camera.position.copy(center.clone().add(new THREE.Vector3(maxDim * 0.9, -maxDim * 1.2, maxDim * 0.9)));
+  controls.target.copy(center);
+  camera.near = Math.max(1, fitDist / 100);
+  camera.far  = fitDist * 100;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+function resize() {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  if (w === 0 || h === 0) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(viewport);
+resize();
+
+(function animate() {
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+})();
+
+// ===== Console wiring =====
+const consoleEl = document.getElementById('console');
+const ts = () => '[' + new Date().toLocaleTimeString('en-US', { hour12: false }) + '] ';
+function logLine(text) {
+  consoleEl.textContent += ts() + text + '\n';
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+function logRaw(text) {
+  consoleEl.textContent += text + '\n';
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function setStatus(msg, kind = '') {
+  statusEl.innerHTML = msg;
+  statusEl.className = kind;
+}
+
+// ===== Input file loading (Phase 1: still fetched from inputs/, not yet folder-picked) =====
+let inputs = null;
+async function loadInputs() {
+  if (inputs) return inputs;
+  logLine('Fetching input files from ./inputs/ ...');
+  const [scad, oa, svg] = await Promise.all([
+    fetch('inputs/keyguard.scad').then(r => r.text()),
+    fetch('inputs/openings_and_additions.txt').then(r => r.text()),
+    fetch('inputs/default.svg').then(r => r.text())
+  ]);
+  logLine(`  keyguard.scad: ${scad.length.toLocaleString()} bytes`);
+  logLine(`  openings_and_additions.txt: ${oa.length.toLocaleString()} bytes`);
+  logLine(`  default.svg: ${svg.length.toLocaleString()} bytes`);
+  inputs = { scad, oa, svg };
+  return inputs;
+}
+
+// ===== Render pipeline =====
+async function doRender() {
+  setStatus('Rendering... (this may take ~60 s)', 'rendering');
+  try {
+    const inp = await loadInputs();
+    logLine('Initializing openscad-wasm...');
+    const oscad = await createOpenSCAD({
+      print:    t => logRaw('[scad] '     + t),
+      printErr: t => logRaw('[scad err] ' + t)
+    });
+    const fs = oscad.getInstance().FS;
+    fs.writeFile('/keyguard.scad', inp.scad);
+    fs.writeFile('/openings_and_additions.txt', inp.oa);
+    fs.writeFile('/default.svg', inp.svg);
+
+    logLine('Running OpenSCAD render...');
+    const t0 = performance.now();
+    const rc = oscad.getInstance().callMain(['/keyguard.scad', '-o', '/output.stl']);
+    const elapsed = (performance.now() - t0) / 1000;
+    if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
+
+    const stlBytes = fs.readFile('/output.stl');
+    logLine(`Render complete in ${elapsed.toFixed(1)}s. STL: ${stlBytes.length.toLocaleString()} bytes`);
+
+    // Parse STL and place in scene
+    const loader = new STLLoader();
+    // STLLoader.parse accepts ArrayBuffer
+    const geometry = loader.parse(stlBytes.buffer.slice(stlBytes.byteOffset, stlBytes.byteOffset + stlBytes.byteLength));
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshPhongMaterial({ color: 0x7dd9c8, shininess: 30, flatShading: false });
+
+    if (currentMesh) scene.remove(currentMesh);
+    currentMesh = new THREE.Mesh(geometry, material);
+    scene.add(currentMesh);
+    fitCameraToObject(currentMesh);
+
+    // Stash STL bytes for Export
+    if (stlBlobUrl) URL.revokeObjectURL(stlBlobUrl);
+    stlBlobUrl = URL.createObjectURL(new Blob([stlBytes], { type: 'model/stl' }));
+
+    setStatus(`Rendered in ${elapsed.toFixed(1)} s`, 'ok');
+  } catch (e) {
+    logLine('Render failed: ' + e.message);
+    setStatus('Render failed: ' + e.message, 'error');
+    console.error(e);
+  }
+}
+
+// Wire the Render button (the first viewport-toolbar button labelled "⟳ Render")
+for (const b of document.querySelectorAll('#viewport-toolbar .vp-btn')) {
+  if (b.textContent.trim().startsWith('⟳')) {
+    b.addEventListener('click', doRender);
+  }
+}
+
+// Make Export as STL actually download the last render (Phase 1: download to Downloads,
+// not yet the project folder).
+document.getElementById('export-main').addEventListener('click', () => {
+  if (!stlBlobUrl) { alert('Render something first.'); return; }
+  const a = document.createElement('a');
+  a.href = stlBlobUrl;
+  a.download = 'keyguard.stl';
+  a.click();
+});
+
+// ===== The rest of the original mockup logic follows =====
+
+// ---------- Customizer sections (names from native screenshot) ----------
+const SECTIONS = [
+  'Keyguard Basics',
+  'Tablet',
+  'Tablet Case',
+  'App Layout in px',
+  'App Layout in mm',
+  'Bar Info',
+  'Grid Info',
+  'Grid Special Settings',
+  'Mounting Method',
+  'Velcro Info',
+  'Clip-on Straps Info',
+  'Posts Info',
+  'Shelf Info',
+  'Slide-in Tabs Info',
+  'Raised Tabs Info',
+  'Keyguard Frame Info',
+  'Split Keyguard Info',
+  'Sloped Keyguard Edge Info',
+  'Engraved/Embossed Text',
+  'Cell Inserts',
+  'Free-form and Hybrid Keyguard Openings',
+  'Special Actions and Settings',
+];
+
+const container = document.getElementById('cust-sections');
+SECTIONS.forEach((name, idx) => {
+  const section = document.createElement('div');
+  section.className = 'section';
+  // Open the "Special Actions and Settings" section by default to show the include-screenshot param
+  if (name === 'Special Actions and Settings') section.classList.add('open');
+  section.innerHTML = `
+    <div class="section-header"><span class="caret">▶</span>${name}</div>
+    <div class="section-body"></div>
+  `;
+  container.appendChild(section);
+});
+
+// Populate the "Special Actions and Settings" body with a realistic include-screenshot param
+const specialBody = container.querySelectorAll('.section')[SECTIONS.length - 1].querySelector('.section-body');
+specialBody.innerHTML = `
+  <div class="param">
+    <label class="param-label">include screenshot</label>
+    <div class="param-help">set this option to "no" before rendering your design</div>
+    <select>
+      <option>no</option>
+      <option>yes</option>
+    </select>
+  </div>
+  <div class="param">
+    <label class="param-label">screenshot file</label>
+    <div class="param-help">JPG, PNG, or SVG file in the project folder</div>
+    <input type="text" value="default.svg">
+  </div>
+  <div class="param">
+    <label class="param-label">number of facets</label>
+    <div class="param-help">controls $fn — smoothness of circles and arcs</div>
+    <input type="number" value="90">
+  </div>
+`;
+
+// Click to expand/collapse
+container.addEventListener('click', e => {
+  const header = e.target.closest('.section-header');
+  if (!header) return;
+  header.parentElement.classList.toggle('open');
+});
+
+// ---------- splitter drag logic ----------
+function makeHSplit(el, leftEl, rightEl) {
+  el.addEventListener('mousedown', e => {
+    e.preventDefault();
+    document.body.classList.add('dragging');
+    const startX = e.clientX;
+    const startW = rightEl.getBoundingClientRect().width;
+    function move(ev) {
+      const dx = ev.clientX - startX;
+      const newW = Math.max(180, Math.min(700, startW - dx));
+      rightEl.style.width = newW + 'px';
+    }
+    function up() {
+      document.body.classList.remove('dragging');
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    }
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  });
+}
+function makeVSplit(el, topEl, bottomEl) {
+  el.addEventListener('mousedown', e => {
+    e.preventDefault();
+    document.body.classList.add('dragging', 'row');
+    const startY = e.clientY;
+    const startH = bottomEl.getBoundingClientRect().height;
+    function move(ev) {
+      const dy = ev.clientY - startY;
+      const newH = Math.max(60, Math.min(600, startH - dy));
+      bottomEl.style.height = newH + 'px';
+    }
+    function up() {
+      document.body.classList.remove('dragging', 'row');
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    }
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  });
+}
+makeHSplit(document.getElementById('hsplit-cust'),
+           document.getElementById('left'),
+           document.getElementById('right'));
+makeVSplit(document.getElementById('vsplit-console'),
+           document.getElementById('viewport-wrap'),
+           document.getElementById('console-wrap'));
+
+// ---------- console toolbar actions ----------
+const consoleEl = document.getElementById('console');
+document.getElementById('clear-btn').addEventListener('click', () => { consoleEl.textContent = ''; });
+document.getElementById('copy-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(consoleEl.textContent).then(() => alert('Console copied to clipboard'));
+});
+document.getElementById('save-btn').addEventListener('click', () => {
+  alert('In the real app this would prompt to save the console as a .log file in the project folder.');
+});
+document.getElementById('open-project-btn').addEventListener('click', () => {
+  alert('In the real app this would open the system folder picker, then read keyguard.scad + openings_and_additions.txt + any SVG/JPG/PNG from the chosen folder.');
+});
+
+// ---------- split button: Export ----------
+const exportMain = document.getElementById('export-main');
+const exportArrow = document.getElementById('export-arrow');
+const exportMenu = document.getElementById('export-menu');
+let currentExportFormat = 'STL';
+
+// Note: the main Export button click is wired up in the module script above
+// to download the rendered STL. The dropdown still lets the user change format.
+exportArrow.addEventListener('click', e => {
+  e.stopPropagation();
+  exportMenu.classList.toggle('open');
+});
+document.addEventListener('click', () => exportMenu.classList.remove('open'));
+exportMenu.addEventListener('click', e => {
+  const item = e.target.closest('.split-item');
+  if (!item) return;
+  currentExportFormat = item.dataset.fmt;
+  exportMain.firstChild.nodeValue = `⬇ Export as ${currentExportFormat}`;
+  exportMain.title = `Export current design as ${currentExportFormat}`;
+  exportMenu.classList.remove('open');
+});
+
+// ---------- dirty-state tracking ----------
+// Real app: deep-compare current params object vs preset-baseline object.
+// Mockup: track just the include-screenshot dropdown in the open section.
+const presetSelect = document.getElementById('preset-select');
+const dirtyMarker = document.getElementById('dirty-marker');
+const savePresetBtn = document.getElementById('save-preset-btn');
+const resetBtn = document.getElementById('reset-btn');
+
+// Baseline values for each preset (in the real app these come from keyguard.json).
+const presetBaselines = {
+  'design default values':  { includeScreenshot: 'no' },
+  'Smith iPad AAC grid':    { includeScreenshot: 'yes' },
+  'Jones Surface 6-cell':   { includeScreenshot: 'no' },
+};
+let currentParams = { ...presetBaselines[presetSelect.value] };
+
+function paramsEqual(a, b) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    const av = a[k], bv = b[k];
+    if (typeof av === 'number' && typeof bv === 'number') {
+      if (Math.abs(av - bv) > 1e-4) return false;       // epsilon for floats
+    } else if (av !== bv) return false;
+  }
+  return true;
+}
+function updateDirty() {
+  const baseline = presetBaselines[presetSelect.value];
+  const dirty = !paramsEqual(currentParams, baseline);
+  dirtyMarker.classList.toggle('visible', dirty);
+  presetSelect.classList.toggle('dirty', dirty);
+  savePresetBtn.disabled = !dirty;
+  resetBtn.disabled = !dirty;
+}
+
+// Hook the include-screenshot dropdown in the open section
+const includeScreenshotSelect = specialBody.querySelector('select');
+includeScreenshotSelect.addEventListener('change', e => {
+  currentParams.includeScreenshot = e.target.value;
+  updateDirty();
+});
+
+// Preset-switch protection
+presetSelect.addEventListener('mousedown', e => {
+  // Remember the value before the user picks something new
+  presetSelect.dataset.prev = presetSelect.value;
+});
+presetSelect.addEventListener('change', e => {
+  const prev = presetSelect.dataset.prev || presetSelect.value;
+  const dirty = !paramsEqual(currentParams, presetBaselines[prev]);
+  if (dirty) {
+    const choice = confirm(
+      `"${prev}" has unsaved changes.\n\n` +
+      `Click OK to discard them and switch to "${e.target.value}".\n` +
+      `Click Cancel to stay on "${prev}".`
+    );
+    // (Real app: three-way dialog with Save / Discard / Cancel.)
+    if (!choice) {
+      presetSelect.value = prev;
+      return;
+    }
+  }
+  // Switching: adopt new baseline
+  currentParams = { ...presetBaselines[presetSelect.value] };
+  includeScreenshotSelect.value = currentParams.includeScreenshot;
+  updateDirty();
+});
+
+resetBtn.addEventListener('click', () => {
+  currentParams = { ...presetBaselines[presetSelect.value] };
+  includeScreenshotSelect.value = currentParams.includeScreenshot;
+  updateDirty();
+});
+savePresetBtn.addEventListener('click', () => {
+  // Real app: write currentParams back to keyguard.json for this preset name.
+  presetBaselines[presetSelect.value] = { ...currentParams };
+  updateDirty();
+  alert(`Saved current parameters to preset "${presetSelect.value}".`);
+});
+</script>
+</body>
+</html>
