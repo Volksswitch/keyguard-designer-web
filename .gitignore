@@ -1,0 +1,17 @@
+# Inputs are copies from the keyguard project; the source of truth lives there.
+# Comment this out if you want the snapshot tracked.
+inputs/
+
+# Render outputs are throwaway.
+outputs/
+
+# Redundant — the openscad-wasm/ folder is what we use.
+openscad-wasm.tgz
+
+# OS / editor noise
+Thumbs.db
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
