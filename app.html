@@ -173,7 +173,6 @@
                     title="Choose export format" style="color:#06c">▾</button>
             <div class="split-menu" id="export-menu">
               <div class="split-item" data-fmt="STL">Export as STL <span class="hint">3D print</span></div>
-              <div class="split-item" data-fmt="3MF">Export as 3MF <span class="hint">3D print, modern</span></div>
               <div class="split-item" data-fmt="SVG">Export as SVG <span class="hint">laser-cut</span></div>
               <div class="split-item" data-fmt="PNG">Export as PNG <span class="hint">current view</span></div>
             </div>
@@ -257,8 +256,9 @@
 // ===== Three.js viewport setup =====
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { createOpenSCAD } from './openscad-wasm/openscad.js';
+import { addFonts } from './openscad-wasm/openscad.fonts.js';
 
 const canvas = document.getElementById('three-canvas');
 const viewport = document.getElementById('viewport');
@@ -299,7 +299,7 @@ controls.mouseButtons = {
   RIGHT:  THREE.MOUSE.PAN
 };
 
-let currentMesh = null;
+let currentMesh = null;          // Group containing keyguard + highlights meshes
 
 function fitCameraToObject(object) {
   const box = new THREE.Box3().setFromObject(object);
@@ -417,18 +417,99 @@ function rebuildPresetDropdown() {
 //   currentPreset   currently selected preset name
 let project = null;
 
+// ===== Persisted last-opened folder =====
+// FileSystemDirectoryHandle objects are structured-cloneable and can be stored
+// in IndexedDB so we can re-open the same folder across reloads. On a fresh
+// page load Chrome forgets the granted permission, but the handle remembers
+// the location — one click + one permission dialog (covers read+write) gets
+// us back in. We always request 'readwrite' upfront so a later Save Preset
+// doesn't need a second prompt.
+const HANDLE_DB = 'keyguard-spike-db';
+const HANDLE_STORE = 'handles';
+const HANDLE_KEY = 'lastProject';
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HANDLE_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(HANDLE_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbGetHandle() {
+  try {
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readonly');
+      const req = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return null; }
+}
+async function idbPutHandle(handle) {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).put(handle, HANDLE_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) { console.warn('Could not persist directory handle:', e); }
+}
+async function idbClearHandle() {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
 async function openProject() {
   if (!window.showDirectoryPicker) {
     alert('This browser does not support the File System Access API. Please use Chrome or Edge.');
     return;
   }
-  let dirHandle;
-  try {
-    dirHandle = await window.showDirectoryPicker({ id: 'keyguard-project', mode: 'read' });
-  } catch (e) {
-    if (e.name === 'AbortError') return;       // user cancelled
-    throw e;
+  let dirHandle = null;
+  // Try to reuse the last-opened folder. requestPermission must be called
+  // from a user gesture (the button click that drove us here), so this is
+  // the right place. Chrome shows one prompt covering read+write.
+  const stored = await idbGetHandle();
+  if (stored) {
+    try {
+      let perm = await stored.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await stored.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        dirHandle = stored;
+      } else {
+        logLine('Re-open of last folder was not approved — showing picker.');
+      }
+    } catch (e) {
+      logLine(`Stored project handle could not be reused (${e.name || e.message}); showing picker.`);
+      await idbClearHandle();
+    }
   }
+  if (!dirHandle) {
+    try {
+      dirHandle = await window.showDirectoryPicker({ id: 'keyguard-project', mode: 'readwrite' });
+    } catch (e) {
+      if (e.name === 'AbortError') return;       // user cancelled
+      throw e;
+    }
+    // Ensure write permission upfront so Save Preset doesn't re-prompt later.
+    try {
+      const perm = await dirHandle.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') {
+        logLine('Write permission was not granted — Save Preset will prompt again.');
+      }
+    } catch {}
+  }
+  await idbPutHandle(dirHandle);
   stopWatcher();
   logLine(`Opening project folder "${dirHandle.name}"...`);
   setStatus('Loading project...', 'rendering');
@@ -529,47 +610,22 @@ async function doRender() {
   renderInProgress = true;
   setStatus('Rendering...', 'rendering');
   try {
-    logLine('Initializing openscad-wasm...');
-    const oscad = await createOpenSCAD({
-      print:    t => logRaw('[scad] '     + t),
-      printErr: t => logRaw('[scad err] ' + t)
-    });
-    const fs = oscad.getInstance().FS;
-
-    // Write all project files into the WASM virtual FS at /
-    fs.writeFile('/' + project.scadName, project.scadText);
-    fs.writeFile('/openings_and_additions.txt', project.oaText);
-    if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
-    // Copy all other root-level files (SVG, JPG, PNG, etc.) verbatim
-    for (const [name, bytes] of Object.entries(project.files)) {
-      if (name === project.scadName) continue;
-      if (name === project.jsonName) continue;
-      if (name === 'openings_and_additions.txt') continue;
-      fs.writeFile('/' + name, bytes);
-    }
-
-    // Build CLI args: Manifold backend (~100x faster than CGAL),
-    // optional preset via -p/-P, and -D overrides for any form param that
-    // differs from the preset baseline (these win over -P).
+    // Build the base CLI args. Manifold backend (~100x faster than CGAL).
     //
     // WASM-only workaround: bump the designer's `fudge` / `ff` factor from
     // its native 0.01 mm to 0.05 mm. Manifold's precision floor treats 0.01 mm
     // through-cuts as exact-coincident, leaving a thin floor on every cell.
     // 0.05 mm is 5x above Manifold's threshold and still half a typical
     // 3D-printer layer height, so it's invisible in the final print.
-    //
-    // Viewport render uses 3MF so that the translucent O&A highlight overlays
-    // emitted by keyguard.scad's render_oa_highlights() module survive export
-    // with their color() attributes intact. lazy-union keeps each top-level
-    // sibling (keyguard + each highlight) as its own <object>, which is what
-    // makes per-object colour preservation possible in OpenSCAD's 3MF writer.
-    const args = ['/' + project.scadName, '-o', '/output.3mf', '--backend=Manifold',
-                  '--enable=lazy-union',
-                  '-D', 'fudge=0.05', '-D', 'ff=0.05',
-                  '-D', 'show_oa_highlights="yes"'];
+    // Order matters: OpenSCAD applies -p/-P preset values AFTER preceding -D
+    // values, so the fudge/ff overrides MUST come after the preset switch — or
+    // a preset that pins fudge=0.01 (like "highlight test") will clobber the
+    // workaround and the Manifold precision floor floors all the cells.
+    const baseArgs = ['--backend=Manifold'];
     if (project.jsonText && project.currentPreset !== 'design default values') {
-      args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
+      baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
+    baseArgs.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
     if (project.customizer) {
       const cur = currentFormValues();
       const baseline = project.baselineParams || {};
@@ -578,51 +634,109 @@ async function doRender() {
         for (const p of sec.params) typeMap[p.name] = p.valueType;
       let overrideCount = 0;
       for (const [name, val] of Object.entries(cur)) {
-        if (baseline[name] === val) continue;       // unchanged
+        if (baseline[name] === val) continue;
+        if (name === 'fudge' || name === 'ff') continue;   // never let UI clobber the workaround
         const t = typeMap[name];
-        let expr;
-        if (t === 'string') expr = `"${String(val).replace(/"/g, '\\"')}"`;
-        else expr = String(val);                    // numbers and vectors pass through
-        args.push('-D', `${name}=${expr}`);
+        const expr = (t === 'string')
+          ? `"${String(val).replace(/"/g, '\\"')}"`
+          : String(val);
+        baseArgs.push('-D', `${name}=${expr}`);
         overrideCount++;
       }
       if (overrideCount) logLine(`  applying ${overrideCount} parameter override(s)`);
     }
-    logLine(`Running OpenSCAD (${args.length - 4} extra args)`);
 
-    const t0 = performance.now();
-    const rc = oscad.getInstance().callMain(args);
-    const elapsed = (performance.now() - t0) / 1000;
-    if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
-
-    const tmfBytes = fs.readFile('/output.3mf');
-    logLine(`Render complete in ${elapsed.toFixed(1)}s. 3MF: ${tmfBytes.length.toLocaleString()} bytes`);
-
-    // Parse 3MF and place in scene
-    const loader = new ThreeMFLoader();
-    const ab = tmfBytes.buffer.slice(tmfBytes.byteOffset, tmfBytes.byteOffset + tmfBytes.byteLength);
-    const group = loader.parse(ab);
-
-    // Three.js needs material.transparent + depthWrite=false to render alpha<1
-    // correctly. ThreeMFLoader sets material.opacity from 3MF displaycolor RGBA
-    // but does not flip these flags, so we do it here.
-    group.traverse(obj => {
-      if (!obj.isMesh) return;
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      for (const m of mats) {
-        if (m && m.opacity !== undefined && m.opacity < 1) {
-          m.transparent = true;
-          m.depthWrite = false;
-        }
+    // The createOpenSCAD wrapper's callMain triggers exitJS() at the end of
+    // every run, which tears down the Emscripten runtime. The instance can
+    // therefore only do one render, so we spin up a fresh instance per render.
+    async function runOnce(extraArgs, outPath, label) {
+      logLine(`Initializing openscad-wasm for ${label}...`);
+      const oscad = await createOpenSCAD({
+        print:    t => logRaw(`[scad ${label}] `     + t),
+        printErr: t => logRaw(`[scad ${label} err] ` + t)
+      });
+      // Install OpenSCAD's bundled fonts (Liberation Sans + fontconfig)
+      // into the virtual FS so text() primitives render. Without this,
+      // keyguard.scad's embossed labels come out blank in the wasm build.
+      addFonts(oscad.getInstance());
+      const fs = oscad.getInstance().FS;
+      fs.writeFile('/' + project.scadName, project.scadText);
+      fs.writeFile('/openings_and_additions.txt', project.oaText);
+      if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
+      for (const [name, bytes] of Object.entries(project.files)) {
+        if (name === project.scadName) continue;
+        if (name === project.jsonName) continue;
+        if (name === 'openings_and_additions.txt') continue;
+        fs.writeFile('/' + name, bytes);
       }
-    });
+      const args = ['/' + project.scadName, '-o', outPath, ...baseArgs, ...extraArgs];
+      logLine(`Rendering ${label} (${args.length - 4} extra args)`);
+      const t0 = performance.now();
+      const rc = oscad.getInstance().callMain(args);
+      const elapsed = (performance.now() - t0) / 1000;
+      if (rc !== 0) {
+        logLine(`  ${label} render returned code ${rc}`);
+        return { elapsed, bytes: null };
+      }
+      let bytes = null;
+      try { bytes = fs.readFile(outPath); }
+      catch (e) { logLine(`  no ${outPath} produced: ${e.message}`); }
+      if (bytes) logLine(`  ${outPath}: ${bytes.length.toLocaleString()} bytes in ${elapsed.toFixed(1)}s`);
+      return { elapsed, bytes };
+    }
+
+    // ---- Render 1: keyguard (no overlays) ----
+    // This wasm has no 3MF export, so STL drops any color() attribute.
+    // We therefore render the keyguard and the highlight overlays separately,
+    // load each as its own mesh, and apply Three.js materials per role.
+    const kg = await runOnce(['-D', 'show_oa_highlights="no"'], '/keyguard.stl', 'keyguard');
+    if (!kg.bytes) throw new Error('keyguard render produced no STL');
+    const kgBytes = kg.bytes;
+    const tkElapsed = kg.elapsed;
+
+    // ---- Render 2: overlays only ----
+    // Gated by only_oa_highlights — keyguard.scad must skip keyguard() and
+    // emit just the O&A highlight shapes when this is "yes".
+    const hl = await runOnce(['-D', 'only_oa_highlights="yes"'], '/highlights.stl', 'highlights');
+    const hlBytes = hl.bytes;
+    const thElapsed = hl.elapsed;
+
+    // ---- Assemble scene ----
+    const loader = new STLLoader();
+    const toAB = u8 => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+    const kgGeom = loader.parse(toAB(kgBytes));
+    kgGeom.computeVertexNormals();
+    const kgMat = new THREE.MeshPhongMaterial({ color: 0x7dd9c8, shininess: 30, flatShading: false });
+    const kgMesh = new THREE.Mesh(kgGeom, kgMat);
+
+    const group = new THREE.Group();
+    group.add(kgMesh);
+
+    // The STL writer emits a single-triangle "empty" shell when there is no
+    // overlay geometry — guard against tiny/empty files so we don't draw a
+    // stray pink speck at the origin.
+    if (hlBytes && hlBytes.length > 200) {
+      const hlGeom = loader.parse(toAB(hlBytes));
+      hlGeom.computeVertexNormals();
+      const hlMat = new THREE.MeshPhongMaterial({
+        color: 0xff4d4d,
+        opacity: 0.45,
+        transparent: true,
+        depthWrite: false,
+        shininess: 10,
+      });
+      const hlMesh = new THREE.Mesh(hlGeom, hlMat);
+      hlMesh.renderOrder = 1;        // draw overlays after the keyguard
+      group.add(hlMesh);
+    }
 
     if (currentMesh) scene.remove(currentMesh);
     currentMesh = group;
     scene.add(currentMesh);
     fitCameraToObject(currentMesh);
 
-    setStatus(`Rendered in ${elapsed.toFixed(1)} s`, 'ok');
+    const totalElapsed = tkElapsed + thElapsed;
+    setStatus(`Rendered in ${totalElapsed.toFixed(1)} s`, 'ok');
   } catch (e) {
     logLine('Render failed: ' + e.message);
     setStatus('Render failed: ' + e.message, 'error');
@@ -644,8 +758,10 @@ async function doRender() {
 // geometry with no translucent overlay artefacts baked in.
 const EXPORT_FORMATS = {
   STL: { ext: 'stl', mime: 'model/stl' },
-  '3MF': { ext: '3mf', mime: 'model/3mf' },
   SVG: { ext: 'svg', mime: 'image/svg+xml' },
+  // 3MF removed: the bundled openscad-wasm build does not include lib3mf,
+  // so attempting --export-format=3mf fails with "Export to 3MF format was
+  // not enabled when building the application."
 };
 
 async function exportCurrent(fmt) {
@@ -660,6 +776,7 @@ async function exportCurrent(fmt) {
       print:    t => logRaw('[scad] '     + t),
       printErr: t => logRaw('[scad err] ' + t)
     });
+    addFonts(oscad.getInstance());
     const fs = oscad.getInstance().FS;
     fs.writeFile('/' + project.scadName, project.scadText);
     fs.writeFile('/openings_and_additions.txt', project.oaText);
@@ -1099,6 +1216,17 @@ document.getElementById('open-project-btn').addEventListener('click', () => {
     console.error(e);
   });
 });
+
+// Surface the remembered folder name on page load so the user knows clicking
+// Open Project will try it first (one permission prompt, no file picker).
+(async () => {
+  const stored = await idbGetHandle();
+  if (!stored) return;
+  const label = document.getElementById('project-folder-label');
+  const btn = document.getElementById('open-project-btn');
+  if (label) label.innerHTML = `last folder: <b>${stored.name}</b> — click <b>Open Project…</b> to reopen`;
+  if (btn) btn.title = `Reopen "${stored.name}" or pick a different folder`;
+})();
 
 // ---------- split button: Export ----------
 const exportMain = document.getElementById('export-main');

@@ -1,5 +1,7 @@
 # Spike results — 2026-05-12
 
+> **Historical document.** This is the original feasibility-verdict snapshot. The spike has since grown into the actual clinician tool (Customizer, presets, file watching, O&A highlights, persistent folder). See [README.md](README.md) for current status.
+
 ## Headline
 
 **Feasibility verdict: GREEN.** openscad-wasm v0.0.4 can render `keyguard.scad` correctly, manifold, at ~1.3× native speed. No technical blockers remain.
