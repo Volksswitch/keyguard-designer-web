@@ -257,7 +257,7 @@
 // ===== Three.js viewport setup =====
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
 import { createOpenSCAD } from './openscad-wasm/openscad.js';
 
 const canvas = document.getElementById('three-canvas');
@@ -300,7 +300,6 @@ controls.mouseButtons = {
 };
 
 let currentMesh = null;
-let stlBlobUrl = null;     // for "Export as STL"
 
 function fitCameraToObject(object) {
   const box = new THREE.Box3().setFromObject(object);
@@ -558,8 +557,16 @@ async function doRender() {
     // through-cuts as exact-coincident, leaving a thin floor on every cell.
     // 0.05 mm is 5x above Manifold's threshold and still half a typical
     // 3D-printer layer height, so it's invisible in the final print.
-    const args = ['/' + project.scadName, '-o', '/output.stl', '--backend=Manifold',
-                  '-D', 'fudge=0.05', '-D', 'ff=0.05'];
+    //
+    // Viewport render uses 3MF so that the translucent O&A highlight overlays
+    // emitted by keyguard.scad's render_oa_highlights() module survive export
+    // with their color() attributes intact. lazy-union keeps each top-level
+    // sibling (keyguard + each highlight) as its own <object>, which is what
+    // makes per-object colour preservation possible in OpenSCAD's 3MF writer.
+    const args = ['/' + project.scadName, '-o', '/output.3mf', '--backend=Manifold',
+                  '--enable=lazy-union',
+                  '-D', 'fudge=0.05', '-D', 'ff=0.05',
+                  '-D', 'show_oa_highlights="yes"'];
     if (project.jsonText && project.currentPreset !== 'design default values') {
       args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
@@ -588,24 +595,32 @@ async function doRender() {
     const elapsed = (performance.now() - t0) / 1000;
     if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
 
-    const stlBytes = fs.readFile('/output.stl');
-    logLine(`Render complete in ${elapsed.toFixed(1)}s. STL: ${stlBytes.length.toLocaleString()} bytes`);
+    const tmfBytes = fs.readFile('/output.3mf');
+    logLine(`Render complete in ${elapsed.toFixed(1)}s. 3MF: ${tmfBytes.length.toLocaleString()} bytes`);
 
-    // Parse STL and place in scene
-    const loader = new STLLoader();
-    const ab = stlBytes.buffer.slice(stlBytes.byteOffset, stlBytes.byteOffset + stlBytes.byteLength);
-    const geometry = loader.parse(ab);
-    geometry.computeVertexNormals();
-    const material = new THREE.MeshPhongMaterial({ color: 0x7dd9c8, shininess: 30, flatShading: false });
+    // Parse 3MF and place in scene
+    const loader = new ThreeMFLoader();
+    const ab = tmfBytes.buffer.slice(tmfBytes.byteOffset, tmfBytes.byteOffset + tmfBytes.byteLength);
+    const group = loader.parse(ab);
+
+    // Three.js needs material.transparent + depthWrite=false to render alpha<1
+    // correctly. ThreeMFLoader sets material.opacity from 3MF displaycolor RGBA
+    // but does not flip these flags, so we do it here.
+    group.traverse(obj => {
+      if (!obj.isMesh) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const m of mats) {
+        if (m && m.opacity !== undefined && m.opacity < 1) {
+          m.transparent = true;
+          m.depthWrite = false;
+        }
+      }
+    });
 
     if (currentMesh) scene.remove(currentMesh);
-    currentMesh = new THREE.Mesh(geometry, material);
+    currentMesh = group;
     scene.add(currentMesh);
     fitCameraToObject(currentMesh);
-
-    // Stash STL bytes for Export
-    if (stlBlobUrl) URL.revokeObjectURL(stlBlobUrl);
-    stlBlobUrl = URL.createObjectURL(new Blob([stlBytes], { type: 'model/stl' }));
 
     setStatus(`Rendered in ${elapsed.toFixed(1)} s`, 'ok');
   } catch (e) {
@@ -624,15 +639,77 @@ async function doRender() {
 // Manifold backend renders in < 1 s, so there is no explicit Render button.
 // Renders are triggered automatically on Open Project and on preset change.
 
-// Make Export as STL actually download the last render (Phase 1: download to Downloads,
-// not yet the project folder).
-document.getElementById('export-main').addEventListener('click', () => {
-  if (!stlBlobUrl) { alert('Render something first.'); return; }
-  const a = document.createElement('a');
-  a.href = stlBlobUrl;
-  a.download = 'keyguard.stl';
-  a.click();
-});
+// Export does a SECOND OpenSCAD render in the user's chosen format, without the
+// show_oa_highlights override — so exported files contain pure keyguard
+// geometry with no translucent overlay artefacts baked in.
+const EXPORT_FORMATS = {
+  STL: { ext: 'stl', mime: 'model/stl' },
+  '3MF': { ext: '3mf', mime: 'model/3mf' },
+  SVG: { ext: 'svg', mime: 'image/svg+xml' },
+};
+
+async function exportCurrent(fmt) {
+  if (!project) { alert('Open a project first.'); return; }
+  const spec = EXPORT_FORMATS[fmt];
+  if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
+  const prevStatusText = statusEl.innerHTML;
+  const prevStatusKind = statusEl.className;
+  setStatus(`Exporting as ${fmt}...`, 'rendering');
+  try {
+    const oscad = await createOpenSCAD({
+      print:    t => logRaw('[scad] '     + t),
+      printErr: t => logRaw('[scad err] ' + t)
+    });
+    const fs = oscad.getInstance().FS;
+    fs.writeFile('/' + project.scadName, project.scadText);
+    fs.writeFile('/openings_and_additions.txt', project.oaText);
+    if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
+    for (const [name, bytes] of Object.entries(project.files)) {
+      if (name === project.scadName) continue;
+      if (name === project.jsonName) continue;
+      if (name === 'openings_and_additions.txt') continue;
+      fs.writeFile('/' + name, bytes);
+    }
+    const outPath = '/keyguard.' + spec.ext;
+    const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold',
+                  '-D', 'fudge=0.05', '-D', 'ff=0.05'];
+    if (project.jsonText && project.currentPreset !== 'design default values') {
+      args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
+    }
+    if (project.customizer) {
+      const cur = currentFormValues();
+      const baseline = project.baselineParams || {};
+      const typeMap = {};
+      for (const sec of project.customizer)
+        for (const p of sec.params) typeMap[p.name] = p.valueType;
+      for (const [name, val] of Object.entries(cur)) {
+        if (baseline[name] === val) continue;
+        const t = typeMap[name];
+        const expr = (t === 'string')
+          ? `"${String(val).replace(/"/g, '\\"')}"`
+          : String(val);
+        args.push('-D', `${name}=${expr}`);
+      }
+    }
+    const t0 = performance.now();
+    const rc = oscad.getInstance().callMain(args);
+    const elapsed = (performance.now() - t0) / 1000;
+    if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
+    const bytes = fs.readFile(outPath);
+    logLine(`Export render (${fmt}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
+    const url = URL.createObjectURL(new Blob([bytes], { type: spec.mime }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'keyguard.' + spec.ext;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    setStatus(prevStatusText, prevStatusKind);
+  } catch (e) {
+    logLine('Export failed: ' + e.message);
+    setStatus('Export failed: ' + e.message, 'error');
+    console.error(e);
+  }
+}
 
 // ===== The rest of the original mockup logic follows =====
 
@@ -1029,8 +1106,7 @@ const exportArrow = document.getElementById('export-arrow');
 const exportMenu = document.getElementById('export-menu');
 let currentExportFormat = 'STL';
 
-// Note: the main Export button click is wired up in the module script above
-// to download the rendered STL. The dropdown still lets the user change format.
+exportMain.addEventListener('click', () => exportCurrent(currentExportFormat));
 exportArrow.addEventListener('click', e => {
   e.stopPropagation();
   exportMenu.classList.toggle('open');
@@ -1043,6 +1119,11 @@ exportMenu.addEventListener('click', e => {
   exportMain.firstChild.nodeValue = `⬇ Export as ${currentExportFormat}`;
   exportMain.title = `Export current design as ${currentExportFormat}`;
   exportMenu.classList.remove('open');
+  if (currentExportFormat === 'PNG') {
+    alert('PNG export is not implemented yet.');
+    return;
+  }
+  exportCurrent(currentExportFormat);
 });
 
 // ---------- preset select + dirty state ----------
