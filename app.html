@@ -186,6 +186,7 @@
         <div style="font-size:11px; color:#666; margin-bottom:6px;" id="project-folder-label">
           <i>no project folder open</i>
         </div>
+        <div style="font-size:11px; color:#888; margin-bottom:6px;" id="watch-status"></div>
         <div class="preset-row">
           <select id="preset-select">
             <option value="design default values">design default values</option>
@@ -331,6 +332,7 @@ async function openProject() {
     if (e.name === 'AbortError') return;       // user cancelled
     throw e;
   }
+  stopWatcher();
   logLine(`Opening project folder "${dirHandle.name}"...`);
   setStatus('Loading project...', 'rendering');
 
@@ -339,12 +341,14 @@ async function openProject() {
   let scadName = null;
   let jsonName = null;
   let oaText = '';
+  let oaMtime = null;
 
   for await (const [name, handle] of dirHandle.entries()) {
     if (handle.kind !== 'file') continue;       // ignore subfolders for now
     const file = await handle.getFile();
     const buf = new Uint8Array(await file.arrayBuffer());
     files[name] = buf;
+    if (name === 'openings_and_additions.txt') oaMtime = file.lastModified;
     if (name.toLowerCase().endsWith('.scad')) {
       if (scadName) {
         logLine(`  WARNING: multiple .scad files found; using "${scadName}", ignoring "${name}"`);
@@ -393,7 +397,7 @@ async function openProject() {
   const totalParams = customizer.reduce((n, s) => n + s.params.length, 0);
   logLine(`  parsed Customizer: ${customizer.length} sections, ${totalParams} parameters`);
 
-  project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, files,
+  project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, oaMtime, files,
               presetNames, currentPreset: presetNames[0], customizer, baselineParams: {} };
 
   // UI updates
@@ -413,6 +417,7 @@ async function openProject() {
 
   logLine(`Project ready — auto-rendering "${project.currentPreset}"...`);
   await doRender();
+  startWatcher();
 }
 
 // ===== Render pipeline =====
@@ -421,6 +426,8 @@ async function doRender() {
     setStatus('Open a project folder first.', 'error');
     return;
   }
+  if (renderInProgress) { pendingRerender = true; return; }
+  renderInProgress = true;
   setStatus('Rendering...', 'rendering');
   try {
     logLine('Initializing openscad-wasm...');
@@ -498,6 +505,12 @@ async function doRender() {
     logLine('Render failed: ' + e.message);
     setStatus('Render failed: ' + e.message, 'error');
     console.error(e);
+  } finally {
+    renderInProgress = false;
+    if (pendingRerender) {
+      pendingRerender = false;
+      setTimeout(doRender, 0);
+    }
   }
 }
 
@@ -739,6 +752,78 @@ function scheduleRender() {
   if (!project) return;
   clearTimeout(renderDebounceTimer);
   renderDebounceTimer = setTimeout(() => doRender(), 400);
+}
+
+// ===== File watcher for openings_and_additions.txt =====
+// Polls the project folder every WATCH_INTERVAL_MS for changes to the O&A file
+// and triggers a re-render when its lastModified timestamp changes.
+const WATCH_INTERVAL_MS = 1500;
+let watchTimer = null;
+let renderInProgress = false;
+let pendingRerender = false;
+
+function setWatchStatus(text, color = '#888') {
+  const el = document.getElementById('watch-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = color;
+}
+
+function stopWatcher() {
+  if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
+  setWatchStatus('');
+}
+
+function startWatcher() {
+  if (!project || !project.dirHandle) return;
+  stopWatcher();
+  setWatchStatus('👁 watching openings_and_additions.txt');
+  watchTimer = setInterval(checkOAFile, WATCH_INTERVAL_MS);
+}
+
+async function checkOAFile() {
+  if (!project || !project.dirHandle) return;
+  let fileHandle, file;
+  try {
+    fileHandle = await project.dirHandle.getFileHandle('openings_and_additions.txt');
+    file = await fileHandle.getFile();
+  } catch (e) {
+    // File missing — note state and keep polling (it may reappear).
+    if (project.oaText !== '') {
+      logLine('openings_and_additions.txt was deleted — re-rendering with empty O&A');
+      project.oaText = '';
+      project.oaMtime = null;
+      setWatchStatus('👁 watching — file not found', '#a60');
+      triggerWatchRerender();
+    } else {
+      setWatchStatus('👁 watching — file not found', '#a60');
+    }
+    return;
+  }
+  const mtime = file.lastModified;
+  if (project.oaMtime == null) {
+    // File just appeared after being absent.
+    project.oaMtime = mtime;
+    project.oaText = await file.text();
+    logLine('openings_and_additions.txt appeared — re-rendering');
+    setWatchStatus('👁 watching openings_and_additions.txt');
+    triggerWatchRerender();
+    return;
+  }
+  if (mtime !== project.oaMtime) {
+    project.oaMtime = mtime;
+    project.oaText = await file.text();
+    logLine('openings_and_additions.txt changed on disk — re-rendering');
+    triggerWatchRerender();
+  }
+}
+
+function triggerWatchRerender() {
+  if (renderInProgress) {
+    pendingRerender = true;
+    return;
+  }
+  doRender();
 }
 
 function updateDirty() {
