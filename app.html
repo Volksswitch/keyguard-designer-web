@@ -552,7 +552,14 @@ async function doRender() {
     // Build CLI args: Manifold backend (~100x faster than CGAL),
     // optional preset via -p/-P, and -D overrides for any form param that
     // differs from the preset baseline (these win over -P).
-    const args = ['/' + project.scadName, '-o', '/output.stl', '--backend=Manifold'];
+    //
+    // WASM-only workaround: bump the designer's `fudge` / `ff` factor from
+    // its native 0.01 mm to 0.05 mm. Manifold's precision floor treats 0.01 mm
+    // through-cuts as exact-coincident, leaving a thin floor on every cell.
+    // 0.05 mm is 5x above Manifold's threshold and still half a typical
+    // 3D-printer layer height, so it's invisible in the final print.
+    const args = ['/' + project.scadName, '-o', '/output.stl', '--backend=Manifold',
+                  '-D', 'fudge=0.05', '-D', 'ff=0.05'];
     if (project.jsonText && project.currentPreset !== 'design default values') {
       args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
