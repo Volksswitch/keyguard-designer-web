@@ -6,8 +6,8 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+    "three": "./vendor/three/build/three.module.min.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
   }
 }
 </script>
@@ -170,29 +170,7 @@
           <button id="save-btn">Save…</button>
           <button id="clear-btn">Clear</button>
         </div>
-        <div id="console">[17:09:57] Loaded keyguard.scad (375,453 bytes)
-[17:09:57] Loaded openings_and_additions.txt (9,569 bytes)
-[17:09:57] Loaded default.svg (353,992 bytes)
-[17:09:57] Initializing openscad-wasm...
-[17:10:03] Render started: type_of_tablet=iPad 9th generation, orientation=landscape
-ECHO: [0, 0, 0]
-ECHO: [55, 0, 25]
-ECHO: 140
-WARNING: Viewall and autocenter disabled in favor of $vp*
-Geometries in cache: 137
-Geometry cache size in bytes: 1,495,904
-CGAL Polyhedrons in cache: 43
-CGAL cache size in bytes: 52,254,632
-Total rendering time: 0:00:54.142
-Top level object is a 3D object (Nef polyhedron):
-   Simple:     yes
-   Vertices:   5000
-   Halfedges:  15960
-   Edges:      7980
-   Halffacets: 5994
-   Facets:     2997
-   Volumes:    2
-[17:11:28] Render complete. STL output: 2,787,298 bytes</div>
+        <div id="console"></div>
       </div>
     </div>
 
@@ -367,8 +345,8 @@ async function doRender() {
 
     // Parse STL and place in scene
     const loader = new STLLoader();
-    // STLLoader.parse accepts ArrayBuffer
-    const geometry = loader.parse(stlBytes.buffer.slice(stlBytes.byteOffset, stlBytes.byteOffset + stlBytes.byteLength));
+    const ab = stlBytes.buffer.slice(stlBytes.byteOffset, stlBytes.byteOffset + stlBytes.byteLength);
+    const geometry = loader.parse(ab);
     geometry.computeVertexNormals();
     const material = new THREE.MeshPhongMaterial({ color: 0x7dd9c8, shininess: 30, flatShading: false });
 
@@ -526,7 +504,7 @@ makeVSplit(document.getElementById('vsplit-console'),
            document.getElementById('console-wrap'));
 
 // ---------- console toolbar actions ----------
-const consoleEl = document.getElementById('console');
+// (consoleEl is declared in the module-script section above)
 document.getElementById('clear-btn').addEventListener('click', () => { consoleEl.textContent = ''; });
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(consoleEl.textContent).then(() => alert('Console copied to clipboard'));
