@@ -131,7 +131,7 @@
         <div id="viewport">
           <canvas id="three-canvas"></canvas>
           <div id="viewport-overlay">
-            <div id="viewport-status">Click <b>⟳ Render</b> to generate the keyguard.</div>
+            <div id="viewport-status">Click <b>Open Project…</b> to begin.</div>
           </div>
         </div>
         <div id="viewport-toolbar">
@@ -146,7 +146,6 @@
           <button class="vp-btn" title="Toggle axes">+</button>
           <button class="vp-btn" title="Toggle grid">▦</button>
           <div class="vp-sep"></div>
-          <button class="vp-btn" title="Re-render (F6)" style="font-weight:bold;color:#0a0">⟳ Render</button>
           <span class="split-btn">
             <button class="vp-btn split-main" id="export-main" title="Export current design"
                     style="font-weight:bold;color:#06c">⬇ Export as STL</button><button class="vp-btn split-arrow" id="export-arrow"
@@ -302,41 +301,141 @@ function setStatus(msg, kind = '') {
   statusEl.className = kind;
 }
 
-// ===== Input file loading (Phase 1: still fetched from inputs/, not yet folder-picked) =====
-let inputs = null;
-async function loadInputs() {
-  if (inputs) return inputs;
-  logLine('Fetching input files from ./inputs/ ...');
-  const [scad, oa, svg] = await Promise.all([
-    fetch('inputs/keyguard.scad').then(r => r.text()),
-    fetch('inputs/openings_and_additions.txt').then(r => r.text()),
-    fetch('inputs/default.svg').then(r => r.text())
-  ]);
-  logLine(`  keyguard.scad: ${scad.length.toLocaleString()} bytes`);
-  logLine(`  openings_and_additions.txt: ${oa.length.toLocaleString()} bytes`);
-  logLine(`  default.svg: ${svg.length.toLocaleString()} bytes`);
-  inputs = { scad, oa, svg };
-  return inputs;
+// ===== Project model =====
+// A "project" is the contents of a folder the user picked:
+//   scadName        e.g. "keyguard_v77.scad"
+//   scadText        full text of the .scad file
+//   jsonName        e.g. "keyguard_v77.json" (null if no presets file)
+//   jsonText        full text of the .json file (null if no presets file)
+//   oaText          text of openings_and_additions.txt ('' if missing)
+//   files           map of all root-level files: { 'name.ext': Uint8Array }
+//   presetNames     array of preset names ['design default values', ...]
+//   currentPreset   currently selected preset name
+let project = null;
+
+async function openProject() {
+  if (!window.showDirectoryPicker) {
+    alert('This browser does not support the File System Access API. Please use Chrome or Edge.');
+    return;
+  }
+  let dirHandle;
+  try {
+    dirHandle = await window.showDirectoryPicker({ id: 'keyguard-project', mode: 'read' });
+  } catch (e) {
+    if (e.name === 'AbortError') return;       // user cancelled
+    throw e;
+  }
+  logLine(`Opening project folder "${dirHandle.name}"...`);
+  setStatus('Loading project...', 'rendering');
+
+  // Enumerate root-level files
+  const files = {};         // name → Uint8Array
+  let scadName = null;
+  let jsonName = null;
+  let oaText = '';
+
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (handle.kind !== 'file') continue;       // ignore subfolders for now
+    const file = await handle.getFile();
+    const buf = new Uint8Array(await file.arrayBuffer());
+    files[name] = buf;
+    if (name.toLowerCase().endsWith('.scad')) {
+      if (scadName) {
+        logLine(`  WARNING: multiple .scad files found; using "${scadName}", ignoring "${name}"`);
+      } else {
+        scadName = name;
+      }
+    }
+  }
+  if (!scadName) {
+    setStatus('No .scad file found in selected folder.', 'error');
+    logLine('  ERROR: project folder must contain exactly one .scad file');
+    return;
+  }
+  // Matching json: same basename
+  const base = scadName.replace(/\.scad$/i, '');
+  const expectedJson = base + '.json';
+  if (files[expectedJson]) jsonName = expectedJson;
+
+  // Decode the text files
+  const dec = new TextDecoder();
+  const scadText = dec.decode(files[scadName]);
+  const jsonText = jsonName ? dec.decode(files[jsonName]) : null;
+  if (files['openings_and_additions.txt']) {
+    oaText = dec.decode(files['openings_and_additions.txt']);
+  } else {
+    logLine('  no openings_and_additions.txt in folder — will use an empty one');
+  }
+
+  // Parse presets
+  let presetNames = ['design default values'];
+  if (jsonText) {
+    try {
+      const j = JSON.parse(jsonText);
+      const sets = Object.keys(j.parameterSets || {});
+      presetNames = ['design default values', ...sets.sort((a, b) => a.localeCompare(b))];
+      logLine(`  loaded ${sets.length} preset(s) from ${jsonName}`);
+    } catch (e) {
+      logLine(`  ERROR parsing ${jsonName}: ${e.message}`);
+    }
+  } else {
+    logLine('  no .json file found — only design defaults available');
+  }
+
+  project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, files,
+              presetNames, currentPreset: presetNames[0] };
+
+  // UI updates
+  document.getElementById('project-folder-label').innerHTML = `📁 <b>${dirHandle.name}</b> — ${scadName}`;
+  const sel = document.getElementById('preset-select');
+  sel.innerHTML = '';
+  for (const n of presetNames) {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    sel.appendChild(opt);
+  }
+  sel.value = project.currentPreset;
+  logLine(`Project ready — auto-rendering "${project.currentPreset}"...`);
+  await doRender();
 }
 
 // ===== Render pipeline =====
 async function doRender() {
-  setStatus('Rendering... (this may take ~60 s)', 'rendering');
+  if (!project) {
+    setStatus('Open a project folder first.', 'error');
+    return;
+  }
+  setStatus('Rendering...', 'rendering');
   try {
-    const inp = await loadInputs();
     logLine('Initializing openscad-wasm...');
     const oscad = await createOpenSCAD({
       print:    t => logRaw('[scad] '     + t),
       printErr: t => logRaw('[scad err] ' + t)
     });
     const fs = oscad.getInstance().FS;
-    fs.writeFile('/keyguard.scad', inp.scad);
-    fs.writeFile('/openings_and_additions.txt', inp.oa);
-    fs.writeFile('/default.svg', inp.svg);
 
-    logLine('Running OpenSCAD render...');
+    // Write all project files into the WASM virtual FS at /
+    fs.writeFile('/' + project.scadName, project.scadText);
+    fs.writeFile('/openings_and_additions.txt', project.oaText);
+    if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
+    // Copy all other root-level files (SVG, JPG, PNG, etc.) verbatim
+    for (const [name, bytes] of Object.entries(project.files)) {
+      if (name === project.scadName) continue;
+      if (name === project.jsonName) continue;
+      if (name === 'openings_and_additions.txt') continue;
+      fs.writeFile('/' + name, bytes);
+    }
+
+    // Build CLI args: Manifold backend (~100x faster than CGAL),
+    // plus optional preset via -p/-P
+    const args = ['/' + project.scadName, '-o', '/output.stl', '--backend=Manifold'];
+    if (project.jsonText && project.currentPreset !== 'design default values') {
+      args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
+    }
+    logLine(`Running OpenSCAD: ${args.join(' ')}`);
+
     const t0 = performance.now();
-    const rc = oscad.getInstance().callMain(['/keyguard.scad', '-o', '/output.stl']);
+    const rc = oscad.getInstance().callMain(args);
     const elapsed = (performance.now() - t0) / 1000;
     if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
 
@@ -367,12 +466,8 @@ async function doRender() {
   }
 }
 
-// Wire the Render button (the first viewport-toolbar button labelled "⟳ Render")
-for (const b of document.querySelectorAll('#viewport-toolbar .vp-btn')) {
-  if (b.textContent.trim().startsWith('⟳')) {
-    b.addEventListener('click', doRender);
-  }
-}
+// Manifold backend renders in < 1 s, so there is no explicit Render button.
+// Renders are triggered automatically on Open Project and on preset change.
 
 // Make Export as STL actually download the last render (Phase 1: download to Downloads,
 // not yet the project folder).
@@ -513,7 +608,11 @@ document.getElementById('save-btn').addEventListener('click', () => {
   alert('In the real app this would prompt to save the console as a .log file in the project folder.');
 });
 document.getElementById('open-project-btn').addEventListener('click', () => {
-  alert('In the real app this would open the system folder picker, then read keyguard.scad + openings_and_additions.txt + any SVG/JPG/PNG from the chosen folder.');
+  openProject().catch(e => {
+    logLine('Open Project failed: ' + e.message);
+    setStatus('Open Project failed: ' + e.message, 'error');
+    console.error(e);
+  });
 });
 
 // ---------- split button: Export ----------
@@ -586,6 +685,16 @@ presetSelect.addEventListener('mousedown', e => {
   presetSelect.dataset.prev = presetSelect.value;
 });
 presetSelect.addEventListener('change', e => {
+  // Phase 2: when a real project is loaded, the dropdown now reflects real preset names,
+  // so just update which preset will be rendered. Full dirty-tracking returns in Phase 4
+  // when real parameter form controls are added.
+  if (project) {
+    project.currentPreset = presetSelect.value;
+    logLine(`Selected preset: "${presetSelect.value}" — re-rendering...`);
+    doRender();
+    return;
+  }
+  // --- mockup behaviour (no project loaded) -----------------------------
   const prev = presetSelect.dataset.prev || presetSelect.value;
   const dirty = !paramsEqual(currentParams, presetBaselines[prev]);
   if (dirty) {
@@ -594,13 +703,11 @@ presetSelect.addEventListener('change', e => {
       `Click OK to discard them and switch to "${e.target.value}".\n` +
       `Click Cancel to stay on "${prev}".`
     );
-    // (Real app: three-way dialog with Save / Discard / Cancel.)
     if (!choice) {
       presetSelect.value = prev;
       return;
     }
   }
-  // Switching: adopt new baseline
   currentParams = { ...presetBaselines[presetSelect.value] };
   includeScreenshotSelect.value = currentParams.includeScreenshot;
   updateDirty();
