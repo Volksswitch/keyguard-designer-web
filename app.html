@@ -1074,17 +1074,18 @@ async function ensureWritePermission() {
 }
 
 function buildPresetJson(parameterSets) {
-  // Match the on-disk format produced by OpenSCAD: 4-space indent, keys sorted
-  // alphabetically within each preset, preset names sorted alphabetically,
-  // fileFormatVersion at the end.
-  const sortedSets = {};
-  for (const name of Object.keys(parameterSets).sort((a, b) => a.localeCompare(b))) {
+  // Match the on-disk format produced by OpenSCAD: 4-space indent, parameter
+  // keys sorted alphabetically within each preset, preset names left in
+  // insertion (creation) order so newly added presets land at the end.
+  // The pull-down list does its own ordering based on the Settings preference.
+  const out = {};
+  for (const name of Object.keys(parameterSets)) {
     const params = parameterSets[name];
     const sorted = {};
     for (const k of Object.keys(params).sort((a, b) => a.localeCompare(b))) sorted[k] = params[k];
-    sortedSets[name] = sorted;
+    out[name] = sorted;
   }
-  return JSON.stringify({ parameterSets: sortedSets, fileFormatVersion: '1' }, null, 4) + '\n';
+  return JSON.stringify({ parameterSets: out, fileFormatVersion: '1' }, null, 4) + '\n';
 }
 
 // Writes the current form values into parameterSets under `presetName` and
