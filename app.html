@@ -117,6 +117,27 @@
   #dirty-marker { color: #a33; font-weight: bold; margin-left: 4px; display: none; }
   #dirty-marker.visible { display: inline; }
   button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ---------- Settings modal ---------- */
+  #settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+                      display: none; align-items: center; justify-content: center; z-index: 1000; }
+  #settings-overlay.open { display: flex; }
+  #settings-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                    width: 560px; max-width: 90vw; height: 380px; max-height: 80vh;
+                    display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  #settings-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
+                       background: #e8e8e8; font-size: 14px; }
+  #settings-body { flex: 1; display: flex; min-height: 0; }
+  #settings-cats { width: 140px; border-right: 1px solid #ccc; background: #f0f0f0; padding: 6px 0; }
+  #settings-cats .cat { padding: 6px 14px; cursor: pointer; font-size: 12px; }
+  #settings-cats .cat:hover { background: #e0e0e0; }
+  #settings-cats .cat.active { background: #d8e6f8; color: #06c; font-weight: bold; }
+  #settings-panel { flex: 1; padding: 14px; overflow: auto; font-size: 12px; }
+  #settings-panel .setting { margin-bottom: 14px; }
+  #settings-panel .setting > label { display: block; font-weight: bold; margin-bottom: 4px; }
+  #settings-panel .setting .opt { display: block; margin: 2px 0; font-weight: normal; }
+  #settings-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
+  #settings-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -157,6 +178,8 @@
               <div class="split-item" data-fmt="PNG">Export as PNG <span class="hint">current view</span></div>
             </div>
           </span>
+          <div class="vp-sep" style="margin-left:auto;"></div>
+          <button class="vp-btn" id="settings-btn" title="Settings">⚙</button>
         </div>
       </div>
 
@@ -196,8 +219,8 @@
           <span id="dirty-marker" title="unsaved changes">*</span>
         </div>
         <div class="preset-btns">
-          <button title="Add new preset">+</button>
-          <button title="Delete current preset">−</button>
+          <button id="add-preset-btn" title="Add new preset with current values">+</button>
+          <button id="del-preset-btn" title="Delete current preset">−</button>
           <button id="save-preset-btn" title="Save current parameters to current preset" disabled>Save preset</button>
           <button id="reset-btn" title="Revert parameters to current preset baseline" disabled>Reset</button>
         </div>
@@ -209,6 +232,24 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- ============ Settings modal ============ -->
+<div id="settings-overlay">
+  <div id="settings-modal">
+    <h3>Settings</h3>
+    <div id="settings-body">
+      <div id="settings-cats">
+        <div class="cat active" data-cat="general">General</div>
+      </div>
+      <div id="settings-panel">
+        <!-- panel content rendered by JS -->
+      </div>
+    </div>
+    <div id="settings-footer">
+      <button id="settings-close-btn">Close</button>
+    </div>
   </div>
 </div>
 
@@ -308,6 +349,63 @@ function setStatus(msg, kind = '') {
   statusEl.className = kind;
 }
 
+// ===== Settings (app-wide, persisted in localStorage) =====
+const SETTINGS_KEY = 'keyguard-spike:settings';
+const SETTINGS_DEFAULTS = {
+  presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
+};
+let settings = loadSettings();
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    const stored = raw ? JSON.parse(raw) : {};
+    return { ...SETTINGS_DEFAULTS, ...stored };
+  } catch {
+    return { ...SETTINGS_DEFAULTS };
+  }
+}
+
+function saveSettings() {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function setSetting(key, value) {
+  settings[key] = value;
+  saveSettings();
+  onSettingsChanged(key);
+}
+
+function onSettingsChanged(key) {
+  if (key === 'presetOrder' && project) {
+    project.presetNames = orderedPresetNames(project.rawPresetNames);
+    rebuildPresetDropdown();
+  }
+}
+
+// Sort preset names according to the current setting. 'design default values'
+// is always pinned to the top regardless of mode.
+function orderedPresetNames(rawNames) {
+  const rest = rawNames.filter(n => n !== 'design default values');
+  if (settings.presetOrder === 'creation') {
+    return ['design default values', ...rest];
+  }
+  return ['design default values', ...rest.slice().sort((a, b) => a.localeCompare(b))];
+}
+
+function rebuildPresetDropdown() {
+  const sel = document.getElementById('preset-select');
+  if (!sel || !project) return;
+  const current = project.currentPreset;
+  sel.innerHTML = '';
+  for (const n of project.presetNames) {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    sel.appendChild(opt);
+  }
+  sel.value = current;
+}
+
 // ===== Project model =====
 // A "project" is the contents of a folder the user picked:
 //   scadName        e.g. "keyguard_v77.scad"
@@ -377,13 +475,13 @@ async function openProject() {
     logLine('  no openings_and_additions.txt in folder — will use an empty one');
   }
 
-  // Parse presets
-  let presetNames = ['design default values'];
+  // Parse presets — keep raw (creation) order; apply user-chosen ordering separately
+  let rawPresetNames = ['design default values'];
   if (jsonText) {
     try {
       const j = JSON.parse(jsonText);
       const sets = Object.keys(j.parameterSets || {});
-      presetNames = ['design default values', ...sets.sort((a, b) => a.localeCompare(b))];
+      rawPresetNames = ['design default values', ...sets];
       logLine(`  loaded ${sets.length} preset(s) from ${jsonName}`);
     } catch (e) {
       logLine(`  ERROR parsing ${jsonName}: ${e.message}`);
@@ -391,6 +489,7 @@ async function openProject() {
   } else {
     logLine('  no .json file found — only design defaults available');
   }
+  const presetNames = orderedPresetNames(rawPresetNames);
 
   // Parse the .scad to build the Customizer schema
   const customizer = parseCustomizer(scadText);
@@ -398,7 +497,7 @@ async function openProject() {
   logLine(`  parsed Customizer: ${customizer.length} sections, ${totalParams} parameters`);
 
   project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, oaMtime, files,
-              presetNames, currentPreset: presetNames[0], customizer, baselineParams: {} };
+              rawPresetNames, presetNames, currentPreset: presetNames[0], customizer, baselineParams: {} };
 
   // UI updates
   document.getElementById('project-folder-label').innerHTML = `📁 <b>${dirHandle.name}</b> — ${scadName}`;
@@ -415,6 +514,7 @@ async function openProject() {
   buildCustomizerForm(customizer);
   populateFormFromPreset(project.currentPreset);
 
+  updateDelPresetButton();
   logLine(`Project ready — auto-rendering "${project.currentPreset}"...`);
   await doRender();
   startWatcher();
@@ -948,6 +1048,7 @@ presetSelect.addEventListener('change', () => {
   if (!project) return;
   project.currentPreset = presetSelect.value;
   populateFormFromPreset(presetSelect.value);
+  updateDelPresetButton();
   logLine(`Selected preset: "${presetSelect.value}" — re-rendering...`);
   doRender();
 });
@@ -958,8 +1059,200 @@ resetBtn.addEventListener('click', () => {
   doRender();
 });
 
-// Save preset / dirty marker: deferred to a later phase (need to write JSON back to disk).
-// For now both controls are inert.
+// ===== Save preset: write current form values back to the project's .json =====
+async function ensureWritePermission() {
+  const h = project.dirHandle;
+  if ((await h.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
+  return (await h.requestPermission({ mode: 'readwrite' })) === 'granted';
+}
+
+function buildPresetJson(parameterSets) {
+  // Match the on-disk format produced by OpenSCAD: 4-space indent, keys sorted
+  // alphabetically within each preset, preset names sorted alphabetically,
+  // fileFormatVersion at the end.
+  const sortedSets = {};
+  for (const name of Object.keys(parameterSets).sort((a, b) => a.localeCompare(b))) {
+    const params = parameterSets[name];
+    const sorted = {};
+    for (const k of Object.keys(params).sort((a, b) => a.localeCompare(b))) sorted[k] = params[k];
+    sortedSets[name] = sorted;
+  }
+  return JSON.stringify({ parameterSets: sortedSets, fileFormatVersion: '1' }, null, 4) + '\n';
+}
+
+// Writes the current form values into parameterSets under `presetName` and
+// flushes the .json to disk. Used by both Save Preset and Add Preset.
+async function writePresetToDisk(presetName) {
+  if (!(await ensureWritePermission())) {
+    logLine('Write permission was not granted.');
+    return false;
+  }
+  const existing = project.jsonText ? JSON.parse(project.jsonText) : { parameterSets: {} };
+  const parameterSets = existing.parameterSets || {};
+
+  const cur = currentFormValues();
+  const asStrings = {};
+  for (const [k, v] of Object.entries(cur)) asStrings[k] = String(v);
+  parameterSets[presetName] = asStrings;
+
+  const newText = buildPresetJson(parameterSets);
+  const jsonName = project.jsonName || project.scadName.replace(/\.scad$/i, '') + '.json';
+  const fileHandle = await project.dirHandle.getFileHandle(jsonName, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(newText);
+  await writable.close();
+
+  project.jsonText = newText;
+  project.jsonName = jsonName;
+  if (!project.rawPresetNames.includes(presetName)) {
+    project.rawPresetNames.push(presetName);
+    project.presetNames = orderedPresetNames(project.rawPresetNames);
+  }
+  return true;
+}
+
+savePresetBtn.addEventListener('click', async () => {
+  if (!project) return;
+  if (project.currentPreset === 'design default values') {
+    alert('"design default values" is read-only. Use the + button to create a new preset.');
+    return;
+  }
+  try {
+    if (!(await writePresetToDisk(project.currentPreset))) return;
+    rebuildPresetDropdown();
+    project.baselineParams = currentFormValues();
+    updateDirty();
+    logLine(`Saved preset "${project.currentPreset}" to ${project.jsonName}`);
+  } catch (e) {
+    logLine('Save preset failed: ' + e.message);
+    console.error(e);
+  }
+});
+
+function updateDelPresetButton() {
+  const btn = document.getElementById('del-preset-btn');
+  if (!btn) return;
+  btn.disabled = !project || project.currentPreset === 'design default values';
+}
+
+document.getElementById('del-preset-btn').addEventListener('click', async () => {
+  if (!project) return;
+  const name = project.currentPreset;
+  if (name === 'design default values') return;
+  // Request write permission BEFORE confirm(); confirm() consumes user activation
+  // and would cause requestPermission() to throw.
+  if (!(await ensureWritePermission())) {
+    logLine('Delete preset: write permission was not granted.');
+    return;
+  }
+  if (!confirm(`Delete preset "${name}"? This cannot be undone.`)) return;
+  try {
+    const existing = project.jsonText ? JSON.parse(project.jsonText) : { parameterSets: {} };
+    const parameterSets = existing.parameterSets || {};
+    delete parameterSets[name];
+
+    const newText = buildPresetJson(parameterSets);
+    const jsonName = project.jsonName || project.scadName.replace(/\.scad$/i, '') + '.json';
+    const fileHandle = await project.dirHandle.getFileHandle(jsonName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(newText);
+    await writable.close();
+
+    project.jsonText = newText;
+    project.jsonName = jsonName;
+    project.rawPresetNames = project.rawPresetNames.filter(n => n !== name);
+    project.presetNames = orderedPresetNames(project.rawPresetNames);
+    project.currentPreset = 'design default values';
+    rebuildPresetDropdown();
+    populateFormFromPreset(project.currentPreset);
+    updateDelPresetButton();
+    logLine(`Deleted preset "${name}" from ${jsonName}`);
+    doRender();
+  } catch (e) {
+    logLine('Delete preset failed: ' + e.message);
+    console.error(e);
+  }
+});
+
+document.getElementById('add-preset-btn').addEventListener('click', async () => {
+  if (!project) return;
+  // Request write permission BEFORE prompt(); prompt() consumes user activation
+  // and would cause requestPermission() to throw.
+  if (!(await ensureWritePermission())) {
+    logLine('Add preset: write permission was not granted.');
+    return;
+  }
+  let name = (prompt('Name for the new preset:') || '').trim();
+  if (!name) return;
+  if (name === 'design default values') {
+    alert('That name is reserved.');
+    return;
+  }
+  if (project.rawPresetNames.includes(name)) {
+    alert(`A preset named "${name}" already exists.`);
+    return;
+  }
+  try {
+    if (!(await writePresetToDisk(name))) return;
+    project.currentPreset = name;
+    rebuildPresetDropdown();
+    project.baselineParams = currentFormValues();
+    updateDirty();
+    updateDelPresetButton();
+    logLine(`Added preset "${name}" to ${project.jsonName}`);
+  } catch (e) {
+    logLine('Add preset failed: ' + e.message);
+    console.error(e);
+  }
+});
+
+// ===== Settings modal wiring =====
+const settingsOverlay = document.getElementById('settings-overlay');
+const settingsPanel = document.getElementById('settings-panel');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsCloseBtn = document.getElementById('settings-close-btn');
+
+const SETTINGS_PANELS = {
+  general: () => `
+    <div class="setting">
+      <label>Preset list order</label>
+      <label class="opt"><input type="radio" name="presetOrder" value="alphabetical"
+        ${settings.presetOrder === 'alphabetical' ? 'checked' : ''}> Alphabetical</label>
+      <label class="opt"><input type="radio" name="presetOrder" value="creation"
+        ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
+    </div>
+  `,
+};
+
+function renderSettingsPanel(cat) {
+  settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
+  settingsPanel.querySelectorAll('input[type=radio][name=presetOrder]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('presetOrder', r.value); });
+  });
+}
+
+function openSettings() {
+  document.querySelectorAll('#settings-cats .cat').forEach(c => {
+    c.classList.toggle('active', c.dataset.cat === 'general');
+  });
+  renderSettingsPanel('general');
+  settingsOverlay.classList.add('open');
+}
+function closeSettings() { settingsOverlay.classList.remove('open'); }
+
+settingsBtn.addEventListener('click', openSettings);
+settingsCloseBtn.addEventListener('click', closeSettings);
+settingsOverlay.addEventListener('click', e => { if (e.target === settingsOverlay) closeSettings(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && settingsOverlay.classList.contains('open')) closeSettings();
+});
+document.querySelectorAll('#settings-cats .cat').forEach(c => {
+  c.addEventListener('click', () => {
+    document.querySelectorAll('#settings-cats .cat').forEach(x => x.classList.remove('active'));
+    c.classList.add('active');
+    renderSettingsPanel(c.dataset.cat);
+  });
+});
 </script>
 </body>
 </html>
