@@ -38,6 +38,7 @@ You obtain these files from the upstream [keyguard designer .scad project](https
 - **Auto-watch** `openings_and_additions.txt` — edit the file in your usual editor and the viewport re-renders within ~1.5 s.
 - **O&A highlight overlays** — any row whose ID is `"#"` shows as a pink translucent ghost over the keyguard. Customizer-driven embossed/engraved text is also highlighted, so engraved text that landed inside a cell is easy to spot.
 - **Persistent last-opened folder** stored in IndexedDB; one permission prompt and you're back in.
+- **Render backend** selectable in Settings: Manifold (default, fast) or CGAL (slower but precise). Some bar-height + cell-grid combinations expose a Manifold precision bug that leaves a thin floor inside cell openings; switching to CGAL produces a clean cut at the cost of 10&ndash;60 s render time.
 
 ## Implementation notes
 

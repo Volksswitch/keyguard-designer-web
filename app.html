@@ -423,6 +423,7 @@ function setStatus(msg, kind = '') {
 const SETTINGS_KEY = 'keyguard-spike:settings';
 const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
+  renderBackend: 'Manifold',     // 'Manifold' (fast) | 'CGAL' (slow but more precise)
 };
 let settings = loadSettings();
 
@@ -450,6 +451,11 @@ function onSettingsChanged(key) {
   if (key === 'presetOrder' && project) {
     project.presetNames = orderedPresetNames(project.rawPresetNames);
     rebuildPresetDropdown();
+  }
+  if (key === 'renderBackend' && project) {
+    // Re-render so the user immediately sees the effect of switching
+    // backends (Manifold may leave precision artefacts that CGAL doesn't).
+    doRender();
   }
 }
 
@@ -737,7 +743,7 @@ async function doRender() {
     // values, so the fudge/ff overrides MUST come after the preset switch — or
     // a preset that pins fudge=0.01 (like "highlight test") will clobber the
     // workaround and the Manifold precision floor floors all the cells.
-    const baseArgs = ['--backend=Manifold'];
+    const baseArgs = [`--backend=${settings.renderBackend}`];
     if (project.jsonText && project.currentPreset !== 'design default values') {
       baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
@@ -989,7 +995,7 @@ async function exportCurrent(fmt) {
     // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
     // clobber our Manifold-precision workaround and leave cell floors in
     // the exported file.
-    const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold'];
+    const args = ['/' + project.scadName, '-o', outPath, `--backend=${settings.renderBackend}`];
     if (project.jsonText && project.currentPreset !== 'design default values') {
       args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
@@ -1696,6 +1702,15 @@ const SETTINGS_PANELS = {
       <label class="opt"><input type="radio" name="presetOrder" value="creation"
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
+    <div class="setting">
+      <label>Render backend</label>
+      <label class="opt"><input type="radio" name="renderBackend" value="Manifold"
+        ${settings.renderBackend === 'Manifold' ? 'checked' : ''}>
+        Manifold &mdash; fast (~0.5 s); occasionally leaves a thin floor in cell cuts at certain bar-height combinations</label>
+      <label class="opt"><input type="radio" name="renderBackend" value="CGAL"
+        ${settings.renderBackend === 'CGAL' ? 'checked' : ''}>
+        CGAL &mdash; slow (10&ndash;60 s) but precise; switch to this if you see incomplete cell openings in the viewport</label>
+    </div>
   `,
 };
 
@@ -1703,6 +1718,9 @@ function renderSettingsPanel(cat) {
   settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
   settingsPanel.querySelectorAll('input[type=radio][name=presetOrder]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('presetOrder', r.value); });
+  });
+  settingsPanel.querySelectorAll('input[type=radio][name=renderBackend]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('renderBackend', r.value); });
   });
 }
 
