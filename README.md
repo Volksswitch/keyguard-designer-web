@@ -43,7 +43,7 @@ You obtain these files from the upstream [keyguard designer .scad project](https
 
 - The viewport does **two STL renders per refresh**: one for the keyguard, one for the highlight overlays (driven by the `only_oa_highlights="yes"` flag in `keyguard.scad`). 3MF with `color()` would let us do one render, but no off-the-shelf openscad-wasm has lib3mf compiled in — even the 2025.03.25 playground build returns "Export to 3MF format was not enabled".
 - Each render needs a fresh wasm instance because the `createOpenSCAD` wrapper's `callMain` triggers `exitJS()` at the end, tearing down the runtime.
-- WASM-only workaround: `doRender()` injects `-D fudge=0.05 -D ff=0.05` *after* the `-p/-P` preset switch. Manifold's precision floor treats 0.01 mm through-cuts as exact-coincident and leaves a thin floor on every cell. Order matters — a preset that pins `fudge=0.01` would clobber a `-D` placed before `-p`.
+- WASM-only workaround: `doRender()` injects `-D fudge=0.1 -D ff=0.1` *after* the `-p/-P` preset switch. Manifold's precision floor treats sub-0.01 mm through-cuts as exact-coincident and leaves a thin floor on every cell; 0.05 mm covered most cases but failed once `App layout in mm` offsets pushed total magnitudes past ~5 mm, so we bumped to 0.1 mm (still well under a typical 3D-printer layer height). Order matters — a preset that pins `fudge=0.01` would clobber a `-D` placed before `-p`.
 - Single-threaded WASM. Manifold renders are usually < 1 s so this hasn't been a problem.
 
 ## History

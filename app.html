@@ -701,10 +701,13 @@ async function doRender() {
     // Build the base CLI args. Manifold backend (~100x faster than CGAL).
     //
     // WASM-only workaround: bump the designer's `fudge` / `ff` factor from
-    // its native 0.01 mm to 0.05 mm. Manifold's precision floor treats 0.01 mm
-    // through-cuts as exact-coincident, leaving a thin floor on every cell.
-    // 0.05 mm is 5x above Manifold's threshold and still half a typical
-    // 3D-printer layer height, so it's invisible in the final print.
+    // its native 0.01 mm to 0.1 mm. Manifold's precision floor treats sub-
+    // 0.01 mm through-cuts as exact-coincident, leaving a thin floor on every
+    // cell. 0.05 mm covered most cases but failed once "App layout in mm"
+    // values pushed total offsets past ~5 mm — Manifold appears to scale its
+    // precision floor with the model's coordinate magnitudes. 0.1 mm is well
+    // above that floor and still well below a typical 3D-printer layer
+    // height, so it stays invisible in the final print.
     // Order matters: OpenSCAD applies -p/-P preset values AFTER preceding -D
     // values, so the fudge/ff overrides MUST come after the preset switch — or
     // a preset that pins fudge=0.01 (like "highlight test") will clobber the
@@ -713,7 +716,7 @@ async function doRender() {
     if (project.jsonText && project.currentPreset !== 'design default values') {
       baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
-    baseArgs.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+    baseArgs.push('-D', 'fudge=0.1', '-D', 'ff=0.1');
     // include_screenshot is honoured by the spike's Three.js plane overlay,
     // not by keyguard.scad's own SVG import — the .scad version renders a flat
     // slab inside the screen recess which fills every cell with a "floor".
@@ -940,7 +943,7 @@ async function exportCurrent(fmt) {
     if (project.jsonText && project.currentPreset !== 'design default values') {
       args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
-    args.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+    args.push('-D', 'fudge=0.1', '-D', 'ff=0.1');
     // Exports should never bake in the screenshot overlay (it's a viewport-only
     // alignment aid). Force the .scad's SVG import off regardless of preset/form.
     args.push('-D', 'include_screenshot="no"');
