@@ -599,19 +599,33 @@ async function openProject() {
   let oaText = '';
   let oaMtime = null;
 
-  for await (const [name, handle] of dirHandle.entries()) {
-    if (handle.kind !== 'file') continue;       // ignore subfolders for now
-    const file = await handle.getFile();
-    const buf = new Uint8Array(await file.arrayBuffer());
-    files[name] = buf;
-    if (name === 'openings_and_additions.txt') oaMtime = file.lastModified;
-    if (name.toLowerCase().endsWith('.scad')) {
-      if (scadName) {
-        logLine(`  WARNING: multiple .scad files found; using "${scadName}", ignoring "${name}"`);
-      } else {
-        scadName = name;
+  try {
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (handle.kind !== 'file') continue;       // ignore subfolders for now
+      const file = await handle.getFile();
+      const buf = new Uint8Array(await file.arrayBuffer());
+      files[name] = buf;
+      if (name === 'openings_and_additions.txt') oaMtime = file.lastModified;
+      if (name.toLowerCase().endsWith('.scad')) {
+        if (scadName) {
+          logLine(`  WARNING: multiple .scad files found; using "${scadName}", ignoring "${name}"`);
+        } else {
+          scadName = name;
+        }
       }
     }
+  } catch (e) {
+    // Most common cause: a stale handle persisted in IndexedDB still has
+    // permission but points to a folder that has since been moved, renamed,
+    // or deleted. Clear it so a subsequent click goes straight to the
+    // directory picker instead of reusing the dead handle.
+    if (e.name === 'NotFoundError' || /could not be found/i.test(e.message || '')) {
+      await idbClearHandle();
+      logLine(`  Stored folder is no longer accessible — cleared. Click "Open Project…" again and pick the folder.`);
+      setStatus('Folder not found — click Open Project to pick it again.', 'error');
+      return;
+    }
+    throw e;
   }
   if (!scadName) {
     setStatus('No .scad file found in selected folder.', 'error');
