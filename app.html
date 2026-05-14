@@ -265,29 +265,62 @@ const viewport = document.getElementById('viewport');
 const statusEl = document.getElementById('viewport-status');
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xfffce0);
+// Pale cream — sampled from OpenSCAD's Cornfield-style viewport background.
+scene.background = new THREE.Color(0xffffe5);
 
 const camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
 camera.position.set(200, 200, 300);
 camera.up.set(0, 0, 1);   // Z-up to match OpenSCAD convention
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// preserveDrawingBuffer keeps the WebGL framebuffer readable after each frame
+// so canvas.toBlob() in exportPNG() captures the current view reliably across
+// browsers. The perf cost is negligible for this mostly-static viewport.
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 
-// Lighting tuned for Z-up: the "top" surface (clinician's view) faces +Z, so we want
-// the strongest light coming from above with softer fill from below/sides.
-const hemi = new THREE.HemisphereLight(0xffffff, 0xb0b0b0, 1.1);
-hemi.position.set(0, 0, 1);
-scene.add(hemi);
-const key = new THREE.DirectionalLight(0xffffff, 1.2);
-key.position.set(1, 1, 2);
-scene.add(key);
-const fill = new THREE.DirectionalLight(0xffffff, 0.6);
-fill.position.set(-1, -0.5, 1);
-scene.add(fill);
-const back = new THREE.DirectionalLight(0xffffff, 0.4);
-back.position.set(0, -1, -0.5);
-scene.add(back);
+// Lights are children of the camera and orbit with the view, the way
+// OpenSCAD's native viewer works. The camera-facing face stays lit no
+// matter how the user rotates the model, and the rear face fades into
+// the soft hemisphere fill rather than going pitch-black.
+//
+// Three.js r155+ uses physical light units — intensities need to be
+// ~PI× larger than the legacy 0–1 scale. Total contribution at the most-lit
+// face still sums to ~3.0 (rendering the base colour close to 1.0×), but the
+// balance is shifted away from a strong ambient floor toward directional and
+// hemisphere components so chamfers and side rims read visibly darker than
+// the top face — matching OpenSCAD's roughly 0.55× lit-to-shaded range.
+const ambient = new THREE.AmbientLight(0xffffff, 0.0);
+scene.add(ambient);
+
+// Hemisphere with a very dark ground so down-facing surfaces (chamfers,
+// rim undersides, the back face after rotation) drop sharply in brightness.
+const hemi = new THREE.HemisphereLight(0xffffff, 0x202020, 0.5);
+hemi.position.set(0, 1, 0);
+camera.add(hemi);
+
+// Both directional lights aim at a target node that lives in front of the
+// camera (camera-local -Z is "forward"). With both light position and
+// target as camera children, the light direction is fixed in camera-frame
+// regardless of where the camera is in world space.
+const lightTarget = new THREE.Object3D();
+lightTarget.position.set(0, 0, -1);
+camera.add(lightTarget);
+
+// Strong key from steep upper-right angle so the top face lights up almost
+// fully but anything tilted off that axis (chamfers, side rims) reads much
+// dimmer. Fill is a soft balance on the opposite side.
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(1.0, 1.2, 0);
+key.target = lightTarget;
+camera.add(key);
+
+const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+fill.position.set(-1.0, -0.5, 0);
+fill.target = lightTarget;
+camera.add(fill);
+
+// A camera's children only render when the camera itself is in the scene graph.
+scene.add(camera);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
@@ -423,7 +456,6 @@ function setStatus(msg, kind = '') {
 const SETTINGS_KEY = 'keyguard-spike:settings';
 const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
-  renderBackend: 'Manifold',     // 'Manifold' (fast) | 'CGAL' (slow but more precise)
 };
 let settings = loadSettings();
 
@@ -451,11 +483,6 @@ function onSettingsChanged(key) {
   if (key === 'presetOrder' && project) {
     project.presetNames = orderedPresetNames(project.rawPresetNames);
     rebuildPresetDropdown();
-  }
-  if (key === 'renderBackend' && project) {
-    // Re-render so the user immediately sees the effect of switching
-    // backends (Manifold may leave precision artefacts that CGAL doesn't).
-    doRender();
   }
 }
 
@@ -743,7 +770,7 @@ async function doRender() {
     // values, so the fudge/ff overrides MUST come after the preset switch — or
     // a preset that pins fudge=0.01 (like "highlight test") will clobber the
     // workaround and the Manifold precision floor floors all the cells.
-    const baseArgs = [`--backend=${settings.renderBackend}`];
+    const baseArgs = ['--backend=Manifold'];
     if (project.jsonText && project.currentPreset !== 'design default values') {
       baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
@@ -799,9 +826,16 @@ async function doRender() {
     //     line from the highlights render when there are no '#'-flagged
     //     O&A rows and no embossed/engraved text — the empty-highlights
     //     case is handled silently by the >200-byte STL guard below.
+    //   - "Could not initialize localization (application path is '/')"
+    //     is a one-time wasm warning about missing locale data; we don't
+    //     use OpenSCAD's localization, so this is harmless.
+    // The CGAL "assertion violation" / convex_hull_3.h applyHull line is
+    // deliberately NOT filtered — it points at a real pre-existing bug
+    // surfaced by sloped bar cuts that warrants visibility.
     let suppressedEmpty = false;
     function isNoise(t) {
       if (/Viewall and autocenter disabled/i.test(t)) return true;
+      if (/Could not initialize localization/i.test(t)) return true;
       if (/Current top level object is empty/i.test(t)) {
         suppressedEmpty = true;
         return true;
@@ -835,11 +869,15 @@ async function doRender() {
       const rc = oscad.getInstance().callMain(args);
       const elapsed = (performance.now() - t0) / 1000;
       if (rc !== 0) {
-        // Highlights render returning rc=1 with the "Current top level
-        // object is empty" stderr just means there's nothing to highlight
-        // (no '#' rows, no embossed text). That's the normal path, not
-        // an error — stay quiet.
-        if (label === 'highlights' && suppressedEmpty) {
+        // The highlights render is a non-essential overlay; if it fails for
+        // any reason (empty top-level object when there's nothing to flag,
+        // or the pre-existing CGAL applyHull assertion on sloped bar cuts)
+        // the keyguard render still succeeds and the user sees their model
+        // without the pink overlay. Surfacing "highlights render returned
+        // code N" on every such render is noise — the underlying CGAL
+        // assertion (when present) is left visible by isNoise() so the real
+        // signal still shows.
+        if (label === 'highlights') {
           return { elapsed, bytes: null };
         }
         logLine(`  ${label} render returned code ${rc}`);
@@ -873,7 +911,7 @@ async function doRender() {
     const toAB = u8 => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
     const kgGeom = loader.parse(toAB(kgBytes));
     kgGeom.computeVertexNormals();
-    const kgMat = new THREE.MeshPhongMaterial({ color: 0x7dd9c8, shininess: 30, flatShading: false });
+    const kgMat = new THREE.MeshPhongMaterial({ color: 0x40e1d1, shininess: 30, flatShading: false });
     const kgMesh = new THREE.Mesh(kgGeom, kgMat);
 
     const group = new THREE.Group();
@@ -967,7 +1005,32 @@ const EXPORT_FORMATS = {
   // not enabled when building the application."
 };
 
+// Exports the current viewport as a PNG by capturing the WebGL canvas. Renders
+// one synchronous frame first so the buffer reflects the latest scene state
+// (orbit/pan/zoom + any pending mesh changes), then hands off to canvas.toBlob.
+// Matches the STL/SVG download pattern (keyguard.png in the Downloads folder).
+async function exportPNG() {
+  if (!project) { alert('Open a project first.'); return; }
+  renderer.render(scene, camera);
+  const blob = await new Promise(resolve =>
+    renderer.domElement.toBlob(resolve, 'image/png')
+  );
+  if (!blob) {
+    logLine('PNG export failed: canvas.toBlob returned null');
+    setStatus('PNG export failed', 'error');
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'keyguard.png';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  logLine(`Exported PNG (${blob.size.toLocaleString()} bytes)`);
+}
+
 async function exportCurrent(fmt) {
+  if (fmt === 'PNG') return exportPNG();
   if (!project) { alert('Open a project first.'); return; }
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
@@ -995,7 +1058,7 @@ async function exportCurrent(fmt) {
     // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
     // clobber our Manifold-precision workaround and leave cell floors in
     // the exported file.
-    const args = ['/' + project.scadName, '-o', outPath, `--backend=${settings.renderBackend}`];
+    const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold'];
     if (project.jsonText && project.currentPreset !== 'design default values') {
       args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
@@ -1510,10 +1573,6 @@ exportMenu.addEventListener('click', e => {
   exportMain.firstChild.nodeValue = `⬇ Export as ${currentExportFormat}`;
   exportMain.title = `Export current design as ${currentExportFormat}`;
   exportMenu.classList.remove('open');
-  if (currentExportFormat === 'PNG') {
-    alert('PNG export is not implemented yet.');
-    return;
-  }
   exportCurrent(currentExportFormat);
 });
 
@@ -1702,15 +1761,6 @@ const SETTINGS_PANELS = {
       <label class="opt"><input type="radio" name="presetOrder" value="creation"
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
-    <div class="setting">
-      <label>Render backend</label>
-      <label class="opt"><input type="radio" name="renderBackend" value="Manifold"
-        ${settings.renderBackend === 'Manifold' ? 'checked' : ''}>
-        Manifold &mdash; fast (~0.5 s); occasionally leaves a thin floor in cell cuts at certain bar-height combinations</label>
-      <label class="opt"><input type="radio" name="renderBackend" value="CGAL"
-        ${settings.renderBackend === 'CGAL' ? 'checked' : ''}>
-        CGAL &mdash; slow (10&ndash;60 s) but precise; switch to this if you see incomplete cell openings in the viewport</label>
-    </div>
   `,
 };
 
@@ -1718,9 +1768,6 @@ function renderSettingsPanel(cat) {
   settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
   settingsPanel.querySelectorAll('input[type=radio][name=presetOrder]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('presetOrder', r.value); });
-  });
-  settingsPanel.querySelectorAll('input[type=radio][name=renderBackend]').forEach(r => {
-    r.addEventListener('change', () => { if (r.checked) setSetting('renderBackend', r.value); });
   });
 }
 
