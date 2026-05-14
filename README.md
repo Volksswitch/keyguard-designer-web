@@ -51,13 +51,23 @@ npm install
 npx playwright install chromium      # ~500 MB browser bundle
 ```
 
-Then:
+Then run the test suite from whichever shell you're in:
 
 ```bash
+# Git Bash (or any POSIX shell):
 ./scripts/test.sh            # All layers (default)
 ./scripts/test.sh --lint     # Layer 1: JS parse check on app.html (sub-second)
 ./scripts/test.sh --smoke    # Layer 2: Headless page-load via Playwright (~10 s)
 ```
+
+```cmd
+:: cmd.exe or PowerShell:
+scripts\test.cmd
+scripts\test.cmd --lint
+scripts\test.cmd --smoke
+```
+
+The `.cmd` wrapper auto-locates Git Bash (checking `PATH` first, then the standard Git-for-Windows install paths) and runs the bash script through it.
 
 Layer 1 extracts the inline ES module from `app.html` and runs it through `node --check` — catches syntax errors without a browser. Layer 2 spawns `python -m http.server` on port 8765, loads `/app.html` in headless Chromium, waits for the Open Project button to appear, and fails on any page error or `console.error` call during load.
 
