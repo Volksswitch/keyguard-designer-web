@@ -11,10 +11,10 @@
 #   ./scripts/test.sh --lint          # Layer 1 only
 #   ./scripts/test.sh --smoke         # Layer 2 only
 #
-# Requirements:
-#   - node    (any LTS, on PATH)
-#   - One-time setup:  npm install  (installs Playwright)
-#   - One-time setup:  npx playwright install chromium  (~500 MB browser bundle)
+# First-run setup happens automatically inside the script — npm install
+# and `playwright install chromium` are invoked on demand the first time
+# a layer that needs them runs. Node.js (any LTS) must already be on PATH;
+# it can't auto-install itself.
 
 set -euo pipefail
 
@@ -29,6 +29,7 @@ pass()   { echo -e "${GREEN}  ✓ PASS${RESET}  $*"; }
 fail()   { echo -e "${RED}  ✗ FAIL${RESET}  $*"; FAILURES=$((FAILURES + 1)); }
 warn()   { echo -e "${YELLOW}  ⚠ WARN${RESET}  $*"; }
 info()   { echo -e "${BLUE}  ·${RESET} $*"; }
+setup()  { echo -e "${YELLOW}  ⚙ SETUP${RESET} $*"; }
 header() { echo -e "\n${BOLD}$*${RESET}"; }
 
 # Argument parsing
@@ -53,12 +54,41 @@ done
 
 FAILURES=0
 
+# Verify node is on PATH. Returns 0 if available, 1 otherwise. Node is the
+# only prerequisite that can't be auto-installed — everything else is
+# handled below.
+require_node() {
+    if ! command -v node >/dev/null 2>&1; then
+        fail "node not on PATH — install Node.js LTS from https://nodejs.org/"
+        return 1
+    fi
+    return 0
+}
+
+# Ensure npm dependencies (Playwright) and the Chromium browser are present.
+# Idempotent: subsequent runs see node_modules/@playwright exists and skip
+# straight to the test. First run takes a few minutes to download Playwright
+# (~50 MB) and Chromium (~200 MB).
+ensure_playwright() {
+    if [[ ! -d "$PROJECT_ROOT/node_modules/@playwright" ]]; then
+        setup "First run — installing test dependencies (may take a minute)..."
+        (cd "$PROJECT_ROOT" && npm install --silent) || {
+            fail "npm install failed — see output above"
+            return 1
+        }
+        setup "Installing Playwright Chromium (~200 MB download, one-time)..."
+        (cd "$PROJECT_ROOT" && npx --yes playwright install chromium) || {
+            fail "playwright install chromium failed — see output above"
+            return 1
+        }
+    fi
+    return 0
+}
+
 # Layer 1 — JS lint / parse check
 if [[ $RUN_LINT -eq 1 ]]; then
     header "Layer 1 — JS parse check (app.html inline script)"
-    if ! command -v node >/dev/null 2>&1; then
-        fail "node not on PATH — install Node.js LTS"
-    else
+    if require_node; then
         info "Running scripts/lint-app-html.mjs"
         if node "$SCRIPT_DIR/lint-app-html.mjs" "$PROJECT_ROOT/app.html"; then
             pass "JS parse check — clean"
@@ -71,11 +101,7 @@ fi
 # Layer 2 — Headless smoke test
 if [[ $RUN_SMOKE -eq 1 ]]; then
     header "Layer 2 — Headless smoke test (Playwright)"
-    if ! command -v node >/dev/null 2>&1; then
-        fail "node not on PATH — install Node.js LTS"
-    elif [[ ! -d "$PROJECT_ROOT/node_modules/@playwright" ]]; then
-        fail "Playwright not installed — run 'npm install' then 'npx playwright install chromium'"
-    else
+    if require_node && ensure_playwright; then
         info "Running tests/smoke.spec.mjs"
         if (cd "$PROJECT_ROOT" && npx playwright test --config=playwright.config.mjs); then
             pass "Smoke test — page loaded, no console errors"
