@@ -44,9 +44,16 @@ You obtain these files from the upstream [keyguard designer .scad project](https
 
 There's a layered test harness in `scripts/test.sh` for developers. Clinicians using the app don't need any of this — it's tooling for catching regressions before a release.
 
-**Prerequisite:** Node.js LTS on `PATH` (one-time install from https://nodejs.org/ or `winget install OpenJS.NodeJS.LTS`). Everything else — Playwright, Chromium — is fetched automatically the first time the smoke layer runs (a few minutes for the ~200 MB Chromium download); subsequent runs skip straight to the tests.
+One-time setup:
 
-Run the test suite from whichever shell you're in:
+```bash
+# 1. Install Node.js LTS (https://nodejs.org/ or `winget install OpenJS.NodeJS.LTS`)
+# 2. From the project root:
+npm install
+npx playwright install chromium      # ~200 MB browser bundle
+```
+
+After that, run the test suite from whichever shell you're in:
 
 ```bash
 # Git Bash (or any POSIX shell):
