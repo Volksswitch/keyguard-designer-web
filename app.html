@@ -774,11 +774,29 @@ async function doRender() {
       }
     }
 
+    // Lines we know are pure noise from openscad-wasm and don't want
+    // surfaced in the user-facing console.
+    //   - "Viewall and autocenter disabled in favor of $vp*" fires on
+    //     every render because keyguard.scad sets $vp_* viewport vars.
+    //   - "Current top level object is empty." is the expected stderr
+    //     line from the highlights render when there are no '#'-flagged
+    //     O&A rows and no embossed/engraved text — the empty-highlights
+    //     case is handled silently by the >200-byte STL guard below.
+    let suppressedEmpty = false;
+    function isNoise(t) {
+      if (/Viewall and autocenter disabled/i.test(t)) return true;
+      if (/Current top level object is empty/i.test(t)) {
+        suppressedEmpty = true;
+        return true;
+      }
+      return false;
+    }
     async function runOnce(extraArgs, outPath, label) {
       logLine(`Initializing openscad-wasm for ${label}...`);
+      suppressedEmpty = false;
       const oscad = await createOpenSCAD({
-        print:    t => { logRaw(t); maybeCaptureDims(t); },
-        printErr: t => { logRaw(t); maybeCaptureDims(t); }
+        print:    t => { if (!isNoise(t)) logRaw(t); maybeCaptureDims(t); },
+        printErr: t => { if (!isNoise(t)) logRaw(t); maybeCaptureDims(t); }
       });
       // Install OpenSCAD's bundled fonts (Liberation Sans + fontconfig)
       // into the virtual FS so text() primitives render. Without this,
@@ -800,6 +818,13 @@ async function doRender() {
       const rc = oscad.getInstance().callMain(args);
       const elapsed = (performance.now() - t0) / 1000;
       if (rc !== 0) {
+        // Highlights render returning rc=1 with the "Current top level
+        // object is empty" stderr just means there's nothing to highlight
+        // (no '#' rows, no embossed text). That's the normal path, not
+        // an error — stay quiet.
+        if (label === 'highlights' && suppressedEmpty) {
+          return { elapsed, bytes: null };
+        }
         logLine(`  ${label} render returned code ${rc}`);
         return { elapsed, bytes: null };
       }
