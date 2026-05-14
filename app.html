@@ -735,6 +735,97 @@ async function openProject() {
   startWatcher();
 }
 
+// Test-only fixture loader. Bypasses the File System Access picker and
+// fetches the project files directly from the local web server. Triggered
+// when the URL contains `?fixture=PATH&scad=FILENAME` (optionally `&preset=NAME`).
+// Sets dirHandle to null so write paths (save preset, file watcher, change-
+// project) become no-ops, matching the read-only intent of a test run.
+async function loadFixture(fixturePath, scadName, preset) {
+  fixturePath = fixturePath.replace(/\/+$/, '');
+  cameraFitOnce = false;
+  logLine(`Loading test fixture "${fixturePath}/${scadName}"...`);
+  setStatus('Loading fixture...', 'rendering');
+
+  async function fetchBytes(name, required) {
+    const url = `${fixturePath}/${encodeURIComponent(name)}`;
+    let resp;
+    try { resp = await fetch(url); }
+    catch (e) {
+      if (required) throw new Error(`fetch failed for ${url}: ${e.message}`);
+      return null;
+    }
+    if (!resp.ok) {
+      if (required) throw new Error(`required fixture file missing: ${url} (HTTP ${resp.status})`);
+      return null;
+    }
+    return new Uint8Array(await resp.arrayBuffer());
+  }
+
+  const files = {};
+  files[scadName] = await fetchBytes(scadName, true);
+  const base = scadName.replace(/\.scad$/i, '');
+  const jsonName = base + '.json';
+  const jsonBytes = await fetchBytes(jsonName, false);
+  if (jsonBytes) files[jsonName] = jsonBytes;
+  const oaBytes = await fetchBytes('openings_and_additions.txt', false);
+  if (oaBytes) files['openings_and_additions.txt'] = oaBytes;
+  // Intentionally NOT fetching default.svg here — a 404 on it would surface
+  // as a browser-level console.error that the smoke/visual specs treat as a
+  // failure. Fixture mode is read-only and doesn't render the screenshot
+  // underlay anyway. If a future test fixture needs it, add an explicit
+  // `extras` URL param listing optional files to fetch.
+
+  const dec = new TextDecoder();
+  const scadText = dec.decode(files[scadName]);
+  const jsonText = jsonBytes ? dec.decode(jsonBytes) : null;
+  const oaText = oaBytes ? dec.decode(oaBytes) : '';
+
+  let rawPresetNames = ['design default values'];
+  if (jsonText) {
+    try {
+      const j = JSON.parse(jsonText);
+      rawPresetNames = ['design default values', ...Object.keys(j.parameterSets || {})];
+    } catch (e) {
+      logLine(`  ERROR parsing ${jsonName}: ${e.message}`);
+    }
+  }
+  const presetNames = orderedPresetNames(rawPresetNames);
+  const customizer = parseCustomizer(scadText);
+
+  let currentPreset = presetNames[0];
+  if (preset && presetNames.includes(preset)) currentPreset = preset;
+  else if (preset) logLine(`  WARNING: preset "${preset}" not found; using "${currentPreset}"`);
+
+  project = {
+    dirHandle: null,
+    scadName, scadText,
+    jsonName: jsonBytes ? jsonName : null,
+    jsonText, oaText, oaMtime: null, files,
+    rawPresetNames, presetNames, currentPreset,
+    customizer, baselineParams: {},
+    screenshotName: null, screenshotBytes: null, screenshotTexture: null,
+    dims: null, warnedNoScreenshot: false
+  };
+
+  document.getElementById('project-folder-label').innerHTML =
+    `📁 <b>${fixturePath}</b> — ${scadName} <span style="color:#888;">(fixture mode)</span>`;
+  const sel = document.getElementById('preset-select');
+  sel.innerHTML = '';
+  for (const n of presetNames) {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    sel.appendChild(opt);
+  }
+  sel.value = currentPreset;
+
+  buildCustomizerForm(customizer);
+  populateFormFromPreset(currentPreset);
+  updateDelPresetButton();
+
+  logLine(`Fixture ready — rendering "${currentPreset}"...`);
+  await doRender();
+}
+
 // ===== Render pipeline =====
 async function doRender() {
   if (!project) {
@@ -743,6 +834,7 @@ async function doRender() {
   }
   if (renderInProgress) { pendingRerender = true; return; }
   renderInProgress = true;
+  window.__renderState = 'rendering';
   setStatus('Rendering...', 'rendering');
   try {
     // Build the base CLI args. Manifold backend (~100x faster than CGAL).
@@ -987,6 +1079,8 @@ async function doRender() {
     if (pendingRerender) {
       pendingRerender = false;
       setTimeout(doRender, 0);
+    } else {
+      window.__renderState = 'ready';
     }
   }
 }
@@ -1543,16 +1637,31 @@ document.getElementById('open-project-btn').addEventListener('click', () => {
   });
 });
 
-// Surface the remembered folder name on page load so the user knows clicking
-// Open Project will try it first (one permission prompt, no file picker).
-(async () => {
-  const stored = await idbGetHandle();
-  if (!stored) return;
-  const label = document.getElementById('project-folder-label');
-  const btn = document.getElementById('open-project-btn');
-  if (label) label.innerHTML = `last folder: <b>${stored.name}</b> — click <b>Open Project…</b> to reopen`;
-  if (btn) btn.title = `Reopen "${stored.name}" or pick a different folder`;
-})();
+// Test hook: if the URL has ?fixture=PATH&scad=FILENAME (and optionally
+// &preset=NAME), load the fixture directly via fetch and skip the normal
+// "last folder" UI hint. This is the entry point used by tests/visual.spec.mjs.
+// Outside of test runs, this block is a no-op (no URL params).
+const __fixtureParams = new URLSearchParams(location.search);
+const __fixturePath = __fixtureParams.get('fixture');
+const __fixtureScad = __fixtureParams.get('scad');
+if (__fixturePath && __fixtureScad) {
+  loadFixture(__fixturePath, __fixtureScad, __fixtureParams.get('preset')).catch(e => {
+    logLine('Fixture load failed: ' + e.message);
+    setStatus('Fixture load failed: ' + e.message, 'error');
+    console.error(e);
+  });
+} else {
+  // Surface the remembered folder name on page load so the user knows clicking
+  // Open Project will try it first (one permission prompt, no file picker).
+  (async () => {
+    const stored = await idbGetHandle();
+    if (!stored) return;
+    const label = document.getElementById('project-folder-label');
+    const btn = document.getElementById('open-project-btn');
+    if (label) label.innerHTML = `last folder: <b>${stored.name}</b> — click <b>Open Project…</b> to reopen`;
+    if (btn) btn.title = `Reopen "${stored.name}" or pick a different folder`;
+  })();
+}
 
 // ---------- split button: Export ----------
 const exportMain = document.getElementById('export-main');

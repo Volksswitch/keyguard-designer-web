@@ -57,9 +57,11 @@ After that, run the test suite from whichever shell you're in:
 
 ```bash
 # Git Bash (or any POSIX shell):
-./scripts/test.sh            # All layers (default)
-./scripts/test.sh --lint     # Layer 1: JS parse check on app.html (sub-second)
-./scripts/test.sh --smoke    # Layer 2: Headless page-load via Playwright (~10 s)
+./scripts/test.sh                   # All layers (default)
+./scripts/test.sh --lint            # Layer 1: JS parse check on app.html (sub-second)
+./scripts/test.sh --smoke           # Layer 2: Headless page-load (~3 s)
+./scripts/test.sh --visual          # Layer 3: Viewport screenshot regression (~15 s)
+./scripts/test.sh --visual --update # Regenerate reference screenshots
 ```
 
 ```cmd
@@ -67,13 +69,17 @@ After that, run the test suite from whichever shell you're in:
 scripts\test.cmd
 scripts\test.cmd --lint
 scripts\test.cmd --smoke
+scripts\test.cmd --visual
+scripts\test.cmd --visual --update
 ```
 
 The `.cmd` wrapper auto-locates Git Bash (checking `PATH` first, then the standard Git-for-Windows install paths) and runs the bash script through it.
 
-Layer 1 extracts the inline ES module from `app.html` and runs it through `node --check` — catches syntax errors without a browser. Layer 2 spawns `python -m http.server` on port 8765, loads `/app.html` in headless Chromium, waits for the Open Project button to appear, and fails on any page error or `console.error` call during load.
+**Layer 1** extracts the inline ES module from `app.html` and runs it through `node --check`. Catches syntax errors without a browser.
 
-Future layers (not yet built) would render the bundled `keyguard design/` fixture via openscad-wasm and screenshot the Three.js viewport against committed reference images.
+**Layer 2** spawns `python -m http.server` on port 8765, loads `/app.html` in headless Chromium, waits for the Open Project button to appear, and fails on any page error or `console.error` call during load.
+
+**Layer 3** drives the same Chromium with a `?fixture=keyguard%20design&scad=keyguard.scad` URL parameter that bypasses the File System Access picker, fetches the bundled fixture files via the local web server, runs through openscad-wasm, and diffs a viewport screenshot against a committed reference PNG (`tests/visual.spec.mjs-snapshots/`). Catches lighting, color, and rendering regressions the previous layers can't. Run with `--update` after any intentional visual change to regenerate the references.
 
 ## Implementation notes
 

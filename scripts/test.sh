@@ -4,12 +4,16 @@
 # Layers (run in order, or individually via flags):
 #   --lint    Layer 1: Parse-check app.html's inline JS via Node (fast, no browser)
 #   --smoke   Layer 2: Headless page-load via Playwright; fail on console errors
+#   --visual  Layer 3: Render bundled fixture via Playwright; diff viewport
+#                      screenshots against committed reference PNGs
 #
 # Usage:
 #   ./scripts/test.sh                 # All layers (default)
 #   ./scripts/test.sh --all           # All layers (explicit)
-#   ./scripts/test.sh --lint          # Layer 1 only
-#   ./scripts/test.sh --smoke         # Layer 2 only
+#   ./scripts/test.sh --lint          # Single layer
+#   ./scripts/test.sh --smoke
+#   ./scripts/test.sh --visual
+#   ./scripts/test.sh --visual --update    # Regenerate reference screenshots
 #
 # Prerequisites (one-time setup, not done by this script):
 #   - Node.js LTS on PATH                   (install from https://nodejs.org/)
@@ -33,17 +37,19 @@ info()   { echo -e "${BLUE}  ·${RESET} $*"; }
 header() { echo -e "\n${BOLD}$*${RESET}"; }
 
 # Argument parsing
-RUN_LINT=0; RUN_SMOKE=0
+RUN_LINT=0; RUN_SMOKE=0; RUN_VISUAL=0; UPDATE_SNAPSHOTS=0
 if [[ $# -eq 0 ]]; then
-    RUN_LINT=1; RUN_SMOKE=1
+    RUN_LINT=1; RUN_SMOKE=1; RUN_VISUAL=1
 fi
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --lint)   RUN_LINT=1; shift ;;
         --smoke)  RUN_SMOKE=1; shift ;;
-        --all)    RUN_LINT=1; RUN_SMOKE=1; shift ;;
+        --visual) RUN_VISUAL=1; shift ;;
+        --update|--update-snapshots) UPDATE_SNAPSHOTS=1; shift ;;
+        --all)    RUN_LINT=1; RUN_SMOKE=1; RUN_VISUAL=1; shift ;;
         -h|--help)
-            sed -n '2,18p' "$0"  # echo the header comment
+            sed -n '2,22p' "$0"  # echo the header comment
             exit 0 ;;
         *)
             echo "Unknown flag: $1" >&2
@@ -78,10 +84,37 @@ if [[ $RUN_SMOKE -eq 1 ]]; then
         fail "Playwright not installed — run 'npm install' from project root"
     else
         info "Running tests/smoke.spec.mjs"
-        if (cd "$PROJECT_ROOT" && npx playwright test --config=playwright.config.mjs); then
+        if (cd "$PROJECT_ROOT" && npx playwright test --config=playwright.config.mjs tests/smoke.spec.mjs); then
             pass "Smoke test — page loaded, no console errors"
         else
             fail "Smoke test — see report above"
+        fi
+    fi
+fi
+
+# Layer 3 — Visual regression test
+if [[ $RUN_VISUAL -eq 1 ]]; then
+    header "Layer 3 — Visual regression test (Playwright + viewport screenshots)"
+    if ! command -v node >/dev/null 2>&1; then
+        fail "node not on PATH — install Node.js LTS from https://nodejs.org/"
+    elif [[ ! -d "$PROJECT_ROOT/node_modules/@playwright" ]]; then
+        fail "Playwright not installed — run 'npm install' from project root"
+    else
+        VISUAL_ARGS=(--config=playwright.config.mjs tests/visual.spec.mjs)
+        if [[ $UPDATE_SNAPSHOTS -eq 1 ]]; then
+            info "Regenerating reference screenshots (--update)"
+            VISUAL_ARGS+=(--update-snapshots)
+        else
+            info "Running tests/visual.spec.mjs"
+        fi
+        if (cd "$PROJECT_ROOT" && npx playwright test "${VISUAL_ARGS[@]}"); then
+            if [[ $UPDATE_SNAPSHOTS -eq 1 ]]; then
+                pass "Visual references updated — review tests/visual.spec.mjs-snapshots/ and commit"
+            else
+                pass "Visual regression — all screenshots within tolerance"
+            fi
+        else
+            fail "Visual regression — see report above"
         fi
     fi
 fi
