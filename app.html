@@ -79,8 +79,8 @@
   #cust-header .preset-btns button { flex: 1; }
   #cust-sections { flex: 1; overflow-y: auto; }
   .section { border-bottom: 1px solid #e0e0e0; }
-  .section-header { padding: 6px 10px; cursor: pointer; user-select: none;
-                    display: flex; align-items: center; gap: 4px; font-weight: bold; font-size: 12px;
+  .section-header { padding: 7px 10px; cursor: pointer; user-select: none;
+                    display: flex; align-items: center; gap: 4px; font-weight: bold; font-size: 14px;
                     background: #fafafa; }
   .section-header:hover { background: #eef2f7; }
   .section-header .caret { display: inline-block; width: 10px; transition: transform 0.1s; color: #555; }
@@ -156,16 +156,16 @@
           </div>
         </div>
         <div id="viewport-toolbar">
-          <button class="vp-btn" title="View All (fit to window)">⛶</button>
+          <button class="vp-btn" id="view-fit"    title="View All (fit to window)">⛶</button>
           <div class="vp-sep"></div>
-          <button class="vp-btn" title="Top view">⬒</button>
-          <button class="vp-btn" title="Bottom view">⬓</button>
-          <button class="vp-btn" title="Front view">▤</button>
-          <button class="vp-btn" title="Back view">▥</button>
-          <button class="vp-btn" title="Left view">◧</button>
-          <button class="vp-btn" title="Right view">◨</button>
-          <button class="vp-btn" title="Toggle axes">+</button>
-          <button class="vp-btn" title="Toggle grid">▦</button>
+          <button class="vp-btn" id="view-top"    title="Top view">⬒</button>
+          <button class="vp-btn" id="view-bottom" title="Bottom view">⬓</button>
+          <button class="vp-btn" id="view-front"  title="Front view">▤</button>
+          <button class="vp-btn" id="view-back"   title="Back view">▥</button>
+          <button class="vp-btn" id="view-left"   title="Left view">◧</button>
+          <button class="vp-btn" id="view-right"  title="Right view">◨</button>
+          <button class="vp-btn" id="view-axes"   title="Toggle axes">+</button>
+          <button class="vp-btn" id="view-grid"   title="Toggle grid">▦</button>
           <div class="vp-sep"></div>
           <span class="split-btn">
             <button class="vp-btn split-main" id="export-main" title="Export current design"
@@ -300,6 +300,7 @@ controls.mouseButtons = {
 };
 
 let currentMesh = null;          // Group containing keyguard + highlights meshes
+let cameraFitOnce = false;       // true after we've framed the scene at least once for this project
 
 function fitCameraToObject(object) {
   const box = new THREE.Box3().setFromObject(object);
@@ -308,6 +309,27 @@ function fitCameraToObject(object) {
   const maxDim = Math.max(size.x, size.y, size.z);
   const fitDist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2));
   camera.position.copy(center.clone().add(new THREE.Vector3(maxDim * 0.9, -maxDim * 1.2, maxDim * 0.9)));
+  controls.target.copy(center);
+  camera.near = Math.max(1, fitDist / 100);
+  camera.far  = fitDist * 100;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+// Move the camera to a Z-up orthographic-style view from `dir` and frame
+// the current scene contents. `dir` is a unit-ish vector pointing FROM the
+// scene TO the camera in OpenSCAD-style world coords (X right, Y forward, Z up).
+function viewFromDirection(dir, upHint) {
+  const target = currentMesh ? currentMesh : scene;
+  const box = new THREE.Box3().setFromObject(target);
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const fitDist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.5;
+  const d = dir.clone().normalize().multiplyScalar(fitDist);
+  camera.position.copy(center.clone().add(d));
+  camera.up.copy(upHint);
   controls.target.copy(center);
   camera.near = Math.max(1, fitDist / 100);
   camera.far  = fitDist * 100;
@@ -331,11 +353,49 @@ resize();
   requestAnimationFrame(animate);
 })();
 
+// ===== Axes + grid helpers (toggled by toolbar buttons) =====
+let axesHelper = null;
+let gridHelper = null;
+function ensureAxes() {
+  if (axesHelper) return;
+  axesHelper = new THREE.AxesHelper(80);
+  scene.add(axesHelper);
+}
+function ensureGrid() {
+  if (gridHelper) return;
+  // 400 mm × 400 mm grid, 20 mm cells; rotate so it lies in the XY plane (Z-up).
+  gridHelper = new THREE.GridHelper(400, 20, 0xa0a0a0, 0xd0d0d0);
+  gridHelper.rotation.x = Math.PI / 2;
+  scene.add(gridHelper);
+}
+function toggleAxes() {
+  if (axesHelper) { scene.remove(axesHelper); axesHelper.dispose && axesHelper.dispose(); axesHelper = null; }
+  else ensureAxes();
+}
+function toggleGrid() {
+  if (gridHelper) { scene.remove(gridHelper); gridHelper.dispose && gridHelper.dispose(); gridHelper = null; }
+  else ensureGrid();
+}
+
+// ===== Viewport toolbar wiring =====
+const Z_UP = new THREE.Vector3(0, 0, 1);
+const Y_UP = new THREE.Vector3(0, 1, 0);
+document.getElementById('view-fit').addEventListener('click', () => {
+  if (currentMesh) fitCameraToObject(currentMesh);
+});
+document.getElementById('view-top')   .addEventListener('click', () => viewFromDirection(new THREE.Vector3( 0,  0,  1), Y_UP));
+document.getElementById('view-bottom').addEventListener('click', () => viewFromDirection(new THREE.Vector3( 0,  0, -1), Y_UP));
+document.getElementById('view-front') .addEventListener('click', () => viewFromDirection(new THREE.Vector3( 0, -1,  0), Z_UP));
+document.getElementById('view-back')  .addEventListener('click', () => viewFromDirection(new THREE.Vector3( 0,  1,  0), Z_UP));
+document.getElementById('view-left')  .addEventListener('click', () => viewFromDirection(new THREE.Vector3(-1,  0,  0), Z_UP));
+document.getElementById('view-right') .addEventListener('click', () => viewFromDirection(new THREE.Vector3( 1,  0,  0), Z_UP));
+document.getElementById('view-axes')  .addEventListener('click', toggleAxes);
+document.getElementById('view-grid')  .addEventListener('click', toggleGrid);
+
 // ===== Console wiring =====
 const consoleEl = document.getElementById('console');
-const ts = () => '[' + new Date().toLocaleTimeString('en-US', { hour12: false }) + '] ';
 function logLine(text) {
-  consoleEl.textContent += ts() + text + '\n';
+  consoleEl.textContent += text + '\n';
   consoleEl.scrollTop = consoleEl.scrollHeight;
 }
 function logRaw(text) {
@@ -344,6 +404,17 @@ function logRaw(text) {
 }
 
 function setStatus(msg, kind = '') {
+  // 'ok' and 'error' toasts are intentionally suppressed — the rendered
+  // viewport and the console already tell the user the render succeeded
+  // or failed, and the persistent toast was noisy. We still show the
+  // initial open-project prompt and the in-progress "Rendering..." state.
+  if (kind === 'ok' || kind === 'error') {
+    statusEl.innerHTML = '';
+    statusEl.className = '';
+    statusEl.style.display = 'none';
+    return;
+  }
+  statusEl.style.display = '';
   statusEl.innerHTML = msg;
   statusEl.className = kind;
 }
@@ -476,22 +547,27 @@ async function openProject() {
     return;
   }
   let dirHandle = null;
-  // Try to reuse the last-opened folder. requestPermission must be called
+  // If a project is already loaded, this click means "switch to a different
+  // folder" — go straight to the picker. Otherwise, try to reuse the
+  // last-opened folder on a fresh page load: requestPermission must be called
   // from a user gesture (the button click that drove us here), so this is
   // the right place. Chrome shows one prompt covering read+write.
-  const stored = await idbGetHandle();
-  if (stored) {
-    try {
-      let perm = await stored.queryPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') perm = await stored.requestPermission({ mode: 'readwrite' });
-      if (perm === 'granted') {
-        dirHandle = stored;
-      } else {
-        logLine('Re-open of last folder was not approved — showing picker.');
+  const isChangeProject = !!project;
+  if (!isChangeProject) {
+    const stored = await idbGetHandle();
+    if (stored) {
+      try {
+        let perm = await stored.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') perm = await stored.requestPermission({ mode: 'readwrite' });
+        if (perm === 'granted') {
+          dirHandle = stored;
+        } else {
+          logLine('Re-open of last folder was not approved — showing picker.');
+        }
+      } catch (e) {
+        logLine(`Stored project handle could not be reused (${e.name || e.message}); showing picker.`);
+        await idbClearHandle();
       }
-    } catch (e) {
-      logLine(`Stored project handle could not be reused (${e.name || e.message}); showing picker.`);
-      await idbClearHandle();
     }
   }
   if (!dirHandle) {
@@ -511,6 +587,8 @@ async function openProject() {
   }
   await idbPutHandle(dirHandle);
   stopWatcher();
+  // Re-frame the scene on the first render of the newly opened project.
+  cameraFitOnce = false;
   logLine(`Opening project folder "${dirHandle.name}"...`);
   setStatus('Loading project...', 'rendering');
 
@@ -583,7 +661,14 @@ async function openProject() {
   await rescanScreenshot();
 
   // UI updates
-  document.getElementById('project-folder-label').innerHTML = `📁 <b>${dirHandle.name}</b> — ${scadName}`;
+  document.getElementById('project-folder-label').innerHTML =
+    `📁 <b>${dirHandle.name}</b> — ${scadName}<br>` +
+    `<span style="color:#888;">click <b>Change Project…</b> above to switch folders</span>`;
+  const opBtn = document.getElementById('open-project-btn');
+  if (opBtn) {
+    opBtn.textContent = 'Change Project…';
+    opBtn.title = `Currently "${dirHandle.name}". Click to switch to a different folder.`;
+  }
   const sel = document.getElementById('preset-select');
   sel.innerHTML = '';
   for (const n of presetNames) {
@@ -675,8 +760,8 @@ async function doRender() {
     async function runOnce(extraArgs, outPath, label) {
       logLine(`Initializing openscad-wasm for ${label}...`);
       const oscad = await createOpenSCAD({
-        print:    t => { logRaw(`[scad ${label}] `     + t); maybeCaptureDims(t); },
-        printErr: t => { logRaw(`[scad ${label} err] ` + t); maybeCaptureDims(t); }
+        print:    t => { logRaw(t); maybeCaptureDims(t); },
+        printErr: t => { logRaw(t); maybeCaptureDims(t); }
       });
       // Install OpenSCAD's bundled fonts (Liberation Sans + fontconfig)
       // into the virtual FS so text() primitives render. Without this,
@@ -780,7 +865,19 @@ async function doRender() {
     if (currentMesh) scene.remove(currentMesh);
     currentMesh = group;
     scene.add(currentMesh);
-    fitCameraToObject(currentMesh);
+
+    // Preserve the user's framing across O&A edits, parameter changes, and
+    // preset switches. Re-fit only on the very first render of a project,
+    // or when the design itself is being viewed at an angle (the .scad has
+    // tilted the keyguard via keyguard_display_angle), since that materially
+    // changes the bounding box orientation in a way the previous framing
+    // won't accommodate.
+    const angleStr = cur.keyguard_display_angle;
+    const angleNonZero = angleStr !== undefined && Number(angleStr) !== 0;
+    if (!cameraFitOnce || angleNonZero) {
+      fitCameraToObject(currentMesh);
+      cameraFitOnce = true;
+    }
 
     const totalElapsed = tkElapsed + thElapsed;
     setStatus(`Rendered in ${totalElapsed.toFixed(1)} s`, 'ok');
@@ -820,8 +917,8 @@ async function exportCurrent(fmt) {
   setStatus(`Exporting as ${fmt}...`, 'rendering');
   try {
     const oscad = await createOpenSCAD({
-      print:    t => logRaw('[scad] '     + t),
-      printErr: t => logRaw('[scad err] ' + t)
+      print:    t => logRaw(t),
+      printErr: t => logRaw(t)
     });
     addFonts(oscad.getInstance());
     const fs = oscad.getInstance().FS;
@@ -1242,6 +1339,10 @@ function updateDirty() {
 container.addEventListener('input', e => {
   if (!project || !e.target.dataset.paramName) return;
   updateDirty();
+  // For numeric inputs, defer the render until the user commits the value
+  // (blur or Enter — both fire 'change'). Otherwise every keystroke while
+  // typing a multi-digit number triggers a render off the in-flight value.
+  if (e.target.tagName === 'INPUT' && e.target.type === 'number') return;
   scheduleRender();
 });
 container.addEventListener('change', async e => {
