@@ -11,3 +11,9 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# Test harness — installed by `npm install`, not committed.
+node_modules/
+package-lock.json
+test-results/
+playwright-report/

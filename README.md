@@ -38,7 +38,30 @@ You obtain these files from the upstream [keyguard designer .scad project](https
 - **Auto-watch** `openings_and_additions.txt` — edit the file in your usual editor and the viewport re-renders within ~1.5 s.
 - **O&A highlight overlays** — any row whose ID is `"#"` shows as a pink translucent ghost over the keyguard. Customizer-driven embossed/engraved text is also highlighted, so engraved text that landed inside a cell is easy to spot.
 - **Persistent last-opened folder** stored in IndexedDB; one permission prompt and you're back in.
-- **Render backend** selectable in Settings: Manifold (default, fast) or CGAL (slower but precise). Some bar-height + cell-grid combinations expose a Manifold precision bug that leaves a thin floor inside cell openings; switching to CGAL produces a clean cut at the cost of 10&ndash;60 s render time.
+- **Export** the current design as STL or SVG (from openscad-wasm) or PNG (snapshot of the current viewport).
+
+## Testing
+
+There's a layered test harness in `scripts/test.sh` for developers. Clinicians using the app don't need any of this — it's tooling for catching regressions before a release.
+
+One-time setup:
+
+```bash
+npm install
+npx playwright install chromium      # ~500 MB browser bundle
+```
+
+Then:
+
+```bash
+./scripts/test.sh            # All layers (default)
+./scripts/test.sh --lint     # Layer 1: JS parse check on app.html (sub-second)
+./scripts/test.sh --smoke    # Layer 2: Headless page-load via Playwright (~10 s)
+```
+
+Layer 1 extracts the inline ES module from `app.html` and runs it through `node --check` — catches syntax errors without a browser. Layer 2 spawns `python -m http.server` on port 8765, loads `/app.html` in headless Chromium, waits for the Open Project button to appear, and fails on any page error or `console.error` call during load.
+
+Future layers (not yet built) would render the bundled `keyguard design/` fixture via openscad-wasm and screenshot the Three.js viewport against committed reference images.
 
 ## Implementation notes
 
