@@ -10,10 +10,9 @@
 // OpenSCAD's --camera CLI args).
 //
 // The .scad project's keyguard.scad and keyguard.json are sourced LIVE
-// from the upstream project (not the keyguard design/ folder bundled
-// here). The bundled folder remains the default for clinicians using
-// the app; visual tests bypass it so they always exercise the latest
-// .scad code.
+// from the upstream project — this repo doesn't bundle copies. Clinicians
+// using the app point it at a folder they maintain themselves; tests
+// always exercise whatever's currently checked in upstream.
 //
 // Reference screenshots for the web project are committed in
 //   tests/visual.spec.mjs-snapshots/Test Case N/stepM_expected.png
@@ -85,10 +84,12 @@ function discoverCases() {
              `Set KEYGUARD_DESIGNER_ROOT if the keyguard designer is at a different path.`, cases: [] };
   }
   const out = [];
+  // Sort numerically so "Test Case 5" runs after "Test Case 1" and before
+  // "Test Case 10" — matches the .scad project's `sort -V` ordering.
   const entries = fs.readdirSync(SCAD_TESTS_DIR, { withFileTypes: true })
     .filter(e => e.isDirectory() && e.name !== 'visual.snapshots')
     .map(e => e.name)
-    .sort();
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   for (const name of entries) {
     if (WANTED && !WANTED.has(name)) continue;
     const dir = path.join(SCAD_TESTS_DIR, name);

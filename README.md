@@ -79,7 +79,7 @@ The `.cmd` wrapper auto-locates Git Bash (checking `PATH` first, then the standa
 
 **Layer 2** spawns `python -m http.server` on port 8765, loads `/app.html` in headless Chromium, waits for the Open Project button to appear, and fails on any page error or `console.error` call during load.
 
-**Layer 3** reuses the keyguard designer's `tests/cases/` folder as the test case corpus. Each case folder's `test.json` lists one or more steps; for each step, the web runner fetches `keyguard.scad` + `keyguard.json` from the upstream keyguard designer project, swaps in that case's `openings_and_additions.txt`, applies the named preset, optionally honours `vpt`/`vpr`/`vpd` for an explicit camera frame matching OpenSCAD's `--camera` CLI args, and diffs a viewport screenshot against a committed reference PNG. The .scad and .json come from the upstream project (not the bundled `keyguard design/` folder here) so tests always exercise the latest source.
+**Layer 3** reuses the keyguard designer's `tests/cases/` folder as the test case corpus. Each case folder's `test.json` lists one or more steps; for each step, the web runner fetches `keyguard.scad` + `keyguard.json` directly from the upstream keyguard designer project, swaps in that case's `openings_and_additions.txt`, applies the named preset, optionally honours `vpt`/`vpr`/`vpd` for an explicit camera frame matching OpenSCAD's `--camera` CLI args, and diffs a viewport screenshot against a committed reference PNG. This project doesn't bundle a copy of `keyguard.scad` — clinicians point the running app at a folder they manage themselves, and tests pull straight from the sibling .scad repo so they always exercise the latest source.
 
 Reference images for the web project live at:
 

@@ -991,6 +991,13 @@ async function doRender() {
     //   - "Could not initialize localization (application path is '/')"
     //     is a one-time wasm warning about missing locale data; we don't
     //     use OpenSCAD's localization, so this is harmless.
+    //   - Per-render WASM cache/timing/manifold-info block — useful for
+    //     openscad developers, not for clinicians; the user already sees
+    //     the elapsed-time on the status bar after a successful render.
+    //   - "__SPIKE_DIMS__" is the keyguard.scad echo we use to populate
+    //     project.dims for the screenshot-underlay sizing. maybeCaptureDims
+    //     extracts the numbers BEFORE this noise check runs, so suppressing
+    //     the log doesn't break include_screenshot.
     // The CGAL "assertion violation" / convex_hull_3.h applyHull line is
     // deliberately NOT filtered — it points at a real pre-existing bug
     // surfaced by sloped bar cuts that warrants visibility.
@@ -998,6 +1005,16 @@ async function doRender() {
     function isNoise(t) {
       if (/Viewall and autocenter disabled/i.test(t)) return true;
       if (/Could not initialize localization/i.test(t)) return true;
+      if (/__SPIKE_DIMS__/.test(t)) return true;
+      // Per-render render-info dump (Manifold backend):
+      if (/^Geometries in cache:/.test(t)) return true;
+      if (/^Geometry cache size in bytes:/.test(t)) return true;
+      if (/^CGAL Polyhedrons in cache:/.test(t)) return true;
+      if (/^CGAL cache size in bytes:/.test(t)) return true;
+      if (/^Total rendering time:/.test(t)) return true;
+      if (/^\s*Top level object is a 3D object/.test(t)) return true;
+      if (/^\s*Status:\s+NoError/.test(t)) return true;
+      if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple):/.test(t)) return true;
       if (/Current top level object is empty/i.test(t)) {
         suppressedEmpty = true;
         return true;
@@ -1005,7 +1022,10 @@ async function doRender() {
       return false;
     }
     async function runOnce(extraArgs, outPath, label) {
-      logLine(`Initializing openscad-wasm for ${label}...`);
+      // No "Initializing..." log line — wasm init takes ~0.1 s after first
+      // cache hit and surfacing it on every render is just noise. Same for
+      // the "Rendering X (N extra args)" and per-STL byte-count lines below.
+      // The user-facing render time appears on the status bar instead.
       suppressedEmpty = false;
       const oscad = await createOpenSCAD({
         print:    t => { if (!isNoise(t)) logRaw(t); maybeCaptureDims(t); },
@@ -1026,7 +1046,6 @@ async function doRender() {
         fs.writeFile('/' + name, bytes);
       }
       const args = ['/' + project.scadName, '-o', outPath, ...baseArgs, ...extraArgs];
-      logLine(`Rendering ${label} (${args.length - 4} extra args)`);
       const t0 = performance.now();
       const rc = oscad.getInstance().callMain(args);
       const elapsed = (performance.now() - t0) / 1000;
@@ -1048,7 +1067,8 @@ async function doRender() {
       let bytes = null;
       try { bytes = fs.readFile(outPath); }
       catch (e) { logLine(`  no ${outPath} produced: ${e.message}`); }
-      if (bytes) logLine(`  ${outPath}: ${bytes.length.toLocaleString()} bytes in ${elapsed.toFixed(1)}s`);
+      // Per-render byte-count line removed; the user sees overall render
+      // time on the status bar after both render passes complete.
       return { elapsed, bytes };
     }
 
