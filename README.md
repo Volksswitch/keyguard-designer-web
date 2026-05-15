@@ -79,7 +79,17 @@ The `.cmd` wrapper auto-locates Git Bash (checking `PATH` first, then the standa
 
 **Layer 2** spawns `python -m http.server` on port 8765, loads `/app.html` in headless Chromium, waits for the Open Project button to appear, and fails on any page error or `console.error` call during load.
 
-**Layer 3** drives the same Chromium with a `?fixture=keyguard%20design&scad=keyguard.scad` URL parameter that bypasses the File System Access picker, fetches the bundled fixture files via the local web server, runs through openscad-wasm, and diffs a viewport screenshot against a committed reference PNG (`tests/visual.spec.mjs-snapshots/`). Catches lighting, color, and rendering regressions the previous layers can't. Run with `--update` after any intentional visual change to regenerate the references.
+**Layer 3** reuses the keyguard designer's `tests/cases/` folder as the test case corpus. Each case folder's `test.json` lists one or more steps; for each step, the web runner loads the bundled `keyguard design/` fixture, swaps in that case's `openings_and_additions.txt`, applies the named preset, optionally honours `vpt`/`vpr`/`vpd` for an explicit camera frame matching OpenSCAD's `--camera` CLI args, and diffs a viewport screenshot against a committed reference PNG. Reference images for the web project are stored in `tests/visual.spec.mjs-snapshots/` and are completely independent of the `.scad` project's own `stepN_expected.png` files — same case definitions, separate reference baselines.
+
+Keys in `test.json` that the .scad runner uses (`expected`, `console`, `geometry`) are silently ignored by the web runner, and vice-versa.
+
+By default a small curated set of cases is run (see `DEFAULT_CASES` in `tests/visual.spec.mjs`). Two env vars override that:
+
+- `KEYGUARD_VISUAL_CASES=Test Case 3,Test Case 17` — run only these
+- `KEYGUARD_VISUAL_CASES=*` — run every case that has a valid `test.json`
+- `KEYGUARD_DESIGNER_TESTS_DIR=<path>` — point at a `tests/cases` folder somewhere other than `../My SCAD files/keyguard designer/tests/cases/` (the assumed sibling layout)
+
+Run with `--update` after any intentional visual change to regenerate the references.
 
 ## Implementation notes
 

@@ -737,17 +737,18 @@ async function openProject() {
 
 // Test-only fixture loader. Bypasses the File System Access picker and
 // fetches the project files directly from the local web server. Triggered
-// when the URL contains `?fixture=PATH&scad=FILENAME` (optionally `&preset=NAME`).
+// when the URL contains `?fixture=PATH&scad=FILENAME` (optionally `&preset=NAME`,
+// `&oa=URL` for a custom openings file, and `&vpt=x,y,z&vpr=rx,ry,rz&vpd=N`
+// for an explicit camera frame matching OpenSCAD's --camera CLI args).
 // Sets dirHandle to null so write paths (save preset, file watcher, change-
 // project) become no-ops, matching the read-only intent of a test run.
-async function loadFixture(fixturePath, scadName, preset) {
+async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCamera) {
   fixturePath = fixturePath.replace(/\/+$/, '');
   cameraFitOnce = false;
   logLine(`Loading test fixture "${fixturePath}/${scadName}"...`);
   setStatus('Loading fixture...', 'rendering');
 
-  async function fetchBytes(name, required) {
-    const url = `${fixturePath}/${encodeURIComponent(name)}`;
+  async function fetchBytesFromUrl(url, required) {
     let resp;
     try { resp = await fetch(url); }
     catch (e) {
@@ -760,6 +761,8 @@ async function loadFixture(fixturePath, scadName, preset) {
     }
     return new Uint8Array(await resp.arrayBuffer());
   }
+  const fetchBytes = (name, required) =>
+    fetchBytesFromUrl(`${fixturePath}/${encodeURIComponent(name)}`, required);
 
   const files = {};
   files[scadName] = await fetchBytes(scadName, true);
@@ -767,7 +770,13 @@ async function loadFixture(fixturePath, scadName, preset) {
   const jsonName = base + '.json';
   const jsonBytes = await fetchBytes(jsonName, false);
   if (jsonBytes) files[jsonName] = jsonBytes;
-  const oaBytes = await fetchBytes('openings_and_additions.txt', false);
+  // Openings file: an explicit ?oa=URL override takes precedence over the
+  // default in-fixture openings_and_additions.txt. Useful for shared test
+  // cases that pair the bundled .scad/.json with their own openings file
+  // from a separate folder (e.g. the keyguard designer's tests/cases/).
+  const oaBytes = oaOverride
+    ? await fetchBytesFromUrl(oaOverride, true)
+    : await fetchBytes('openings_and_additions.txt', false);
   if (oaBytes) files['openings_and_additions.txt'] = oaBytes;
   // Intentionally NOT fetching default.svg here — a 404 on it would surface
   // as a browser-level console.error that the smoke/visual specs treat as a
@@ -824,6 +833,46 @@ async function loadFixture(fixturePath, scadName, preset) {
 
   logLine(`Fixture ready — rendering "${currentPreset}"...`);
   await doRender();
+
+  // Optional explicit camera frame, matching OpenSCAD's --camera CLI args
+  // (tx,ty,tz,rx,ry,rz,dist). Applied AFTER the first render so it overrides
+  // the auto-fit framing that doRender() does on a fresh project. Lets
+  // shared test cases reuse the carefully-chosen viewports from the .scad
+  // project's test.json files.
+  if (openscadCamera) {
+    applyOpenscadCamera(openscadCamera.vpt, openscadCamera.vpr, openscadCamera.vpd);
+  }
+}
+
+// Translate OpenSCAD's vpt/vpr/vpd (the same numbers you'd pass to
+// `openscad --camera=tx,ty,tz,rx,ry,rz,dist`) into a Three.js camera frame.
+// OpenSCAD applies rotations in Z * X * Y order (extrinsic) to an initial
+// camera placed at (0, 0, vpd) above the target, looking down -Z, Z-up.
+// We're using the same Z-up convention in Three.js (camera.up = (0,0,1)),
+// so once we compute the rotated offset the rest is just position + lookAt.
+function applyOpenscadCamera(vpt, vpr, vpd) {
+  const [tx, ty, tz] = vpt;
+  const [rx, ry, rz] = vpr.map(d => d * Math.PI / 180);
+  // Initial offset from target: camera above target by vpd.
+  let x = 0, y = 0, z = vpd;
+  // R_y(ry)
+  [x, z] = [x * Math.cos(ry) + z * Math.sin(ry), -x * Math.sin(ry) + z * Math.cos(ry)];
+  // R_x(rx)
+  [y, z] = [y * Math.cos(rx) - z * Math.sin(rx), y * Math.sin(rx) + z * Math.cos(rx)];
+  // R_z(rz)
+  [x, y] = [x * Math.cos(rz) - y * Math.sin(rz), x * Math.sin(rz) + y * Math.cos(rz)];
+  controls.target.set(tx, ty, tz);
+  camera.position.set(tx + x, ty + y, tz + z);
+  camera.up.set(0, 0, 1);
+  camera.lookAt(controls.target);
+  // Suppress the next auto-fit so doRender doesn't re-frame on the next
+  // tick. cameraFitOnce being true means "already fit, don't touch".
+  cameraFitOnce = true;
+  // A reasonable near/far for the new distance.
+  camera.near = Math.max(1, vpd / 100);
+  camera.far  = vpd * 100;
+  camera.updateProjectionMatrix();
+  controls.update();
 }
 
 // ===== Render pipeline =====
@@ -1638,14 +1687,32 @@ document.getElementById('open-project-btn').addEventListener('click', () => {
 });
 
 // Test hook: if the URL has ?fixture=PATH&scad=FILENAME (and optionally
-// &preset=NAME), load the fixture directly via fetch and skip the normal
-// "last folder" UI hint. This is the entry point used by tests/visual.spec.mjs.
-// Outside of test runs, this block is a no-op (no URL params).
+// &preset=NAME, &oa=URL, &vpt=x,y,z, &vpr=rx,ry,rz, &vpd=N), load the
+// fixture directly via fetch and skip the normal "last folder" UI hint.
+// This is the entry point used by tests/visual.spec.mjs. Outside of test
+// runs, this block is a no-op (no URL params).
 const __fixtureParams = new URLSearchParams(location.search);
 const __fixturePath = __fixtureParams.get('fixture');
 const __fixtureScad = __fixtureParams.get('scad');
 if (__fixturePath && __fixtureScad) {
-  loadFixture(__fixturePath, __fixtureScad, __fixtureParams.get('preset')).catch(e => {
+  const __parseTriple = (s) => {
+    if (!s) return null;
+    const parts = s.split(',').map(p => parseFloat(p));
+    return parts.length === 3 && parts.every(n => !isNaN(n)) ? parts : null;
+  };
+  const __vpt = __parseTriple(__fixtureParams.get('vpt'));
+  const __vpr = __parseTriple(__fixtureParams.get('vpr'));
+  const __vpd = parseFloat(__fixtureParams.get('vpd'));
+  const __camera = (__vpt && __vpr && !isNaN(__vpd))
+    ? { vpt: __vpt, vpr: __vpr, vpd: __vpd }
+    : null;
+  loadFixture(
+    __fixturePath,
+    __fixtureScad,
+    __fixtureParams.get('preset'),
+    __fixtureParams.get('oa'),
+    __camera
+  ).catch(e => {
     logLine('Fixture load failed: ' + e.message);
     setStatus('Fixture load failed: ' + e.message, 'error');
     console.error(e);
