@@ -175,6 +175,33 @@ function discoverCases() {
         }
       }
 
+      // Console-content steps. A step with a "console" field names a text
+      // file whose non-blank lines must all appear in the app's OpenSCAD
+      // console output (mirrors the .scad project's test.sh:891-911). When
+      // such a step does NOT explicitly request an "expected" PNG, it is
+      // console-only: no screenshot is captured or diffed (matches the
+      // intent of e.g. Test Case 0, which sets "geometry": false and has
+      // no "expected"). If "expected" IS set alongside "console", both
+      // checks run, as the .scad runner does.
+      const consoleFile     = typeof step.console === 'string' ? step.console : null;
+      const expectedExplicit = typeof step.expected === 'string';
+      const consoleOnly     = !!consoleFile && !expectedExplicit;
+      let consoleExpected = null;   // array of expected lines, or null
+      let consoleRefMissing = null; // path string if the ref file is absent
+      if (consoleFile) {
+        const refPath = path.join(dir, consoleFile);
+        if (fs.existsSync(refPath)) {
+          // Match .scad: keep lines whose trimmed form is non-empty, but
+          // compare with only the trailing newline stripped (not trimmed).
+          consoleExpected = fs.readFileSync(refPath, 'utf8')
+            .split(/\r?\n/)
+            .filter(l => l.trim().length > 0)
+            .map(l => l.replace(/\r$/, ''));
+        } else {
+          consoleRefMissing = refPath;
+        }
+      }
+
       out.push({
         caseName:   name,
         stepIndex:  stepNum,
@@ -182,6 +209,9 @@ function discoverCases() {
         preset:     step.params,
         oaFile,
         vpt, vpr, vpd,
+        consoleOnly,
+        consoleExpected,
+        consoleRefMissing,
         // Snapshot path segments — Playwright's toHaveScreenshot() accepts
         // an array of strings and joins them with the OS path separator,
         // preserving directory structure. (A single-string form sanitises
@@ -276,26 +306,54 @@ if (discoveryError || CASES.length === 0) {
       // both still be animating one frame after 'ready'.
       await page.waitForTimeout(750);
 
-      // Capture via the app's own PNG export path (window.__captureViewportPNG,
-      // shared with the user-facing Export → PNG dropdown). The buffer below
-      // is byte-for-byte what a user would download by clicking Export. That
-      // makes the visual layer a regression test for the export feature too,
-      // not just the underlying renderer.
-      const pngBytes = await page.evaluate(async () => {
-        const blob = await window.__captureViewportPNG();
-        if (!blob) throw new Error('captureViewportPNG returned null');
-        return Array.from(new Uint8Array(await blob.arrayBuffer()));
-      });
-      const pngBuffer = Buffer.from(pngBytes);
-      expect(pngBuffer, 'captured PNG was empty').not.toHaveLength(0);
-      await expect(pngBuffer, `screenshot diff for ${c.caseName} step ${c.stepIndex}`)
-        .toMatchSnapshot(c.snapshotPath, {
-          maxDiffPixelRatio: 0.01,
-          threshold: 0.15,
+      // Console-content verification (mirrors .scad test.sh:891-911):
+      // every non-blank line of the reference file must appear somewhere in
+      // the app's OpenSCAD console pane (#console textContent — that's where
+      // openscad-wasm's print/printErr, including ECHO lines, is routed).
+      if (c.consoleRefMissing) {
+        throw new Error(`console reference file not found: ${c.consoleRefMissing}`);
+      }
+      if (c.consoleExpected) {
+        const consoleText = await page.evaluate(
+          () => document.getElementById('console').textContent
+        );
+        const missing = c.consoleExpected.filter(line => !consoleText.includes(line));
+        expect(
+          missing,
+          `console missing ${missing.length} expected line(s) for ` +
+          `${c.caseName} step ${c.stepIndex}:\n  ${missing.join('\n  ')}`
+        ).toEqual([]);
+      }
+
+      // PNG capture/diff. Skipped for console-only steps (no "expected"
+      // requested). Uses the app's own export path (window.__captureViewportPNG,
+      // shared with the user-facing Export → PNG dropdown) so this buffer is
+      // byte-for-byte what a user would download — making the visual layer a
+      // regression test for the export feature too, not just the renderer.
+      if (!c.consoleOnly) {
+        const pngBytes = await page.evaluate(async () => {
+          const blob = await window.__captureViewportPNG();
+          if (!blob) throw new Error('captureViewportPNG returned null');
+          return Array.from(new Uint8Array(await blob.arrayBuffer()));
         });
+        const pngBuffer = Buffer.from(pngBytes);
+        expect(pngBuffer, 'captured PNG was empty').not.toHaveLength(0);
+        await expect(pngBuffer, `screenshot diff for ${c.caseName} step ${c.stepIndex}`)
+          .toMatchSnapshot(c.snapshotPath, {
+            maxDiffPixelRatio: 0.01,
+            threshold: 0.15,
+          });
+      }
 
       expect(pageErrors, 'page threw an uncaught error').toEqual([]);
-      expect(consoleErrors, 'console.error was called').toEqual([]);
+      // Console-only steps run the designer in its Customizer-settings dump
+      // mode and intentionally produce no geometry, so doRender always logs
+      // "keyguard render produced no STL". That specific error is expected
+      // for these steps; every other console.error still fails the test.
+      const reportableConsoleErrors = c.consoleOnly
+        ? consoleErrors.filter(t => !t.includes('keyguard render produced no STL'))
+        : consoleErrors;
+      expect(reportableConsoleErrors, 'console.error was called').toEqual([]);
     });
   }
 }
