@@ -1279,6 +1279,16 @@ async function exportCurrent(fmt) {
         args.push('-D', `${name}=${expr}`);
       }
     }
+    // SVG/DXF are 2D laser-cut deliverables. keyguard.scad only emits the
+    // correct 2D outline when it runs its dedicated first-layer code path,
+    // which is gated to laser-cut (a 3D-printed keyguard in this mode just
+    // errors). Force both params here, appended last so they override any
+    // preset/form value, mirroring how the .scad designer is driven:
+    //   type_of_keyguard="Laser-Cut" + generate="first layer for SVG/DXF file"
+    if (fmt === 'SVG') {
+      args.push('-D', 'type_of_keyguard="Laser-Cut"');
+      args.push('-D', 'generate="first layer for SVG/DXF file"');
+    }
     const t0 = performance.now();
     const rc = oscad.getInstance().callMain(args);
     const elapsed = (performance.now() - t0) / 1000;
