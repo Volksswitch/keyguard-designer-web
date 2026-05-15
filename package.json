@@ -5,9 +5,9 @@
   "description": "Browser-based Volksswitch keyguard designer (devkit; the app itself is just app.html and vendored deps — Node is only needed for the test harness)",
   "type": "module",
   "scripts": {
-    "test": "bash scripts/test.sh",
-    "test:lint": "bash scripts/test.sh --lint",
-    "test:smoke": "bash scripts/test.sh --smoke"
+    "test": "scripts\\test.cmd",
+    "test:lint": "scripts\\test.cmd --lint",
+    "test:smoke": "scripts\\test.cmd --smoke"
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0"
