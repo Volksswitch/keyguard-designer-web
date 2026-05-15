@@ -14,7 +14,21 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: [['list']],
-  timeout: 30_000,
+  timeout: 60_000,
+
+  // Custom snapshot path so visual references end up at:
+  //   tests/visual.spec.mjs-snapshots/<case>/<arg>.png
+  // matching the .scad project's tests/cases/visual.snapshots/<case>/<file>.png
+  // layout. Side-by-side comparison between the two projects' references
+  // becomes a same-relative-path diff.
+  //
+  // The default template appends `-{projectName}-{platform}` to filenames
+  // (so snapshots can coexist on multiple OSes); we strip that here because
+  // the {arg} we pass already encodes per-case + per-step uniqueness, and
+  // we only target one platform (chromium on whichever OS captured the
+  // baseline). To re-enable cross-platform snapshots, put `{projectName}-
+  // {platform}` back into the template.
+  snapshotPathTemplate: '{testDir}/{testFileName}-snapshots/{arg}{ext}',
 
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,

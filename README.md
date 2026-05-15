@@ -79,15 +79,24 @@ The `.cmd` wrapper auto-locates Git Bash (checking `PATH` first, then the standa
 
 **Layer 2** spawns `python -m http.server` on port 8765, loads `/app.html` in headless Chromium, waits for the Open Project button to appear, and fails on any page error or `console.error` call during load.
 
-**Layer 3** reuses the keyguard designer's `tests/cases/` folder as the test case corpus. Each case folder's `test.json` lists one or more steps; for each step, the web runner loads the bundled `keyguard design/` fixture, swaps in that case's `openings_and_additions.txt`, applies the named preset, optionally honours `vpt`/`vpr`/`vpd` for an explicit camera frame matching OpenSCAD's `--camera` CLI args, and diffs a viewport screenshot against a committed reference PNG. Reference images for the web project are stored in `tests/visual.spec.mjs-snapshots/` and are completely independent of the `.scad` project's own `stepN_expected.png` files — same case definitions, separate reference baselines.
+**Layer 3** reuses the keyguard designer's `tests/cases/` folder as the test case corpus. Each case folder's `test.json` lists one or more steps; for each step, the web runner fetches `keyguard.scad` + `keyguard.json` from the upstream keyguard designer project, swaps in that case's `openings_and_additions.txt`, applies the named preset, optionally honours `vpt`/`vpr`/`vpd` for an explicit camera frame matching OpenSCAD's `--camera` CLI args, and diffs a viewport screenshot against a committed reference PNG. The .scad and .json come from the upstream project (not the bundled `keyguard design/` folder here) so tests always exercise the latest source.
+
+Reference images for the web project live at:
+
+```
+tests/visual.spec.mjs-snapshots/<case>/step<N>_expected.png
+```
+
+…mirroring the .scad project's `tests/cases/visual.snapshots/<case>/stepN_expected.png` layout one-to-one. Side-by-side comparison between the two projects' baselines is then a same-relative-path diff (with the renderer-specific differences visible at the same path in each repo).
 
 Keys in `test.json` that the .scad runner uses (`expected`, `console`, `geometry`) are silently ignored by the web runner, and vice-versa.
 
-By default a small curated set of cases is run (see `DEFAULT_CASES` in `tests/visual.spec.mjs`). Two env vars override that:
+By default a small curated set of cases is run (see `DEFAULT_CASES` in `tests/visual.spec.mjs`). Env vars override that:
 
 - `KEYGUARD_VISUAL_CASES=Test Case 3,Test Case 17` — run only these
 - `KEYGUARD_VISUAL_CASES=*` — run every case that has a valid `test.json`
-- `KEYGUARD_DESIGNER_TESTS_DIR=<path>` — point at a `tests/cases` folder somewhere other than `../My SCAD files/keyguard designer/tests/cases/` (the assumed sibling layout)
+- `KEYGUARD_DESIGNER_ROOT=<path>` — point at the keyguard designer root if not the sibling default (`../My SCAD files/keyguard designer/`)
+- `KEYGUARD_DESIGNER_TESTS_DIR=<path>` — override just the `tests/cases` folder (rarely needed)
 
 Run with `--update` after any intentional visual change to regenerate the references.
 
