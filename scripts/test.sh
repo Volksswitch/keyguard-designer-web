@@ -60,6 +60,12 @@ done
 
 FAILURES=0
 
+# Always start with a fresh test-timings.ndjson so the file reflects only
+# the current run. Mirrors the keyguard designer's "always delete
+# test-timings.ndjson before starting a new test run" convention so the two
+# projects can be tailed side-by-side without confusion.
+: > "$PROJECT_ROOT/test-timings.ndjson"
+
 # Layer 1 — JS lint / parse check
 if [[ $RUN_LINT -eq 1 ]]; then
     header "Layer 1 — JS parse check (app.html inline script)"

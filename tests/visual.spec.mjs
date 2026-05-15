@@ -56,6 +56,16 @@ const SCAD_SOURCE_URL_PREFIX  = '/scad-source';
 const SCAD_CASES_URL_PREFIX   = '/scad-cases';
 const SCAD_FILE = 'keyguard.scad';
 
+// Render dimensions and FOV for visual captures. Matched to the .scad
+// project's CLI render (`--imgsize=2048,1536` in test.sh, 4:3 aspect) and
+// OpenSCAD's GUI default vertical FOV (~22.5°). The fixture loader applies
+// these via renderer.setSize + camera.fov override before the first render,
+// so the canvas the export path captures has the same dimensions and same
+// frame-fill ratio as the .scad reference at the same vpt/vpr/vpd.
+const CAPTURE_WIDTH  = 2048;
+const CAPTURE_HEIGHT = 1536;
+const CAPTURE_FOV    = 22.5;
+
 // Default curated subset. Start small; expand via KEYGUARD_VISUAL_CASES=*
 // to run everything that has a test.json.
 const DEFAULT_CASES = ['Test Case 3', 'Test Case 5'];
@@ -181,6 +191,9 @@ if (discoveryError || CASES.length === 0) {
         scad:    SCAD_FILE,
         preset:  c.preset,
         oa:      `${SCAD_CASES_URL_PREFIX}/${encodeURIComponent(c.caseName)}/${encodeURIComponent(c.oaFile)}`,
+        width:   String(CAPTURE_WIDTH),
+        height:  String(CAPTURE_HEIGHT),
+        fov:     String(CAPTURE_FOV),
       });
       if (c.vpt && c.vpr && c.vpd != null) {
         params.set('vpt', c.vpt.join(','));
@@ -201,9 +214,20 @@ if (discoveryError || CASES.length === 0) {
       // both still be animating one frame after 'ready'.
       await page.waitForTimeout(750);
 
-      const viewport = page.locator('#viewport canvas');
-      await expect(viewport, `screenshot diff for ${c.caseName} step ${c.stepIndex}`)
-        .toHaveScreenshot(c.snapshotPath, {
+      // Capture via the app's own PNG export path (window.__captureViewportPNG,
+      // shared with the user-facing Export → PNG dropdown). The buffer below
+      // is byte-for-byte what a user would download by clicking Export. That
+      // makes the visual layer a regression test for the export feature too,
+      // not just the underlying renderer.
+      const pngBytes = await page.evaluate(async () => {
+        const blob = await window.__captureViewportPNG();
+        if (!blob) throw new Error('captureViewportPNG returned null');
+        return Array.from(new Uint8Array(await blob.arrayBuffer()));
+      });
+      const pngBuffer = Buffer.from(pngBytes);
+      expect(pngBuffer, 'captured PNG was empty').not.toHaveLength(0);
+      await expect(pngBuffer, `screenshot diff for ${c.caseName} step ${c.stepIndex}`)
+        .toMatchSnapshot(c.snapshotPath, {
           maxDiffPixelRatio: 0.01,
           threshold: 0.15,
         });

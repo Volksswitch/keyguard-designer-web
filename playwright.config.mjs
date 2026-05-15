@@ -13,7 +13,7 @@ export default defineConfig({
   fullyParallel: false,         // one smoke test; no need to parallelise
   forbidOnly: !!process.env.CI,
   retries: 0,
-  reporter: [['list']],
+  reporter: [['list'], ['./tests/timings-reporter.mjs']],
   timeout: 60_000,
 
   // Custom snapshot path so visual references end up at:

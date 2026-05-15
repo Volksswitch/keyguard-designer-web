@@ -738,11 +738,13 @@ async function openProject() {
 // Test-only fixture loader. Bypasses the File System Access picker and
 // fetches the project files directly from the local web server. Triggered
 // when the URL contains `?fixture=PATH&scad=FILENAME` (optionally `&preset=NAME`,
-// `&oa=URL` for a custom openings file, and `&vpt=x,y,z&vpr=rx,ry,rz&vpd=N`
-// for an explicit camera frame matching OpenSCAD's --camera CLI args).
+// `&oa=URL` for a custom openings file, `&vpt=x,y,z&vpr=rx,ry,rz&vpd=N` for
+// an explicit camera frame matching OpenSCAD's --camera CLI args, and
+// `&width=W&height=H&fov=DEG` to render the canvas at a specific resolution
+// and field of view so the captured PNG matches the .scad CLI's output size).
 // Sets dirHandle to null so write paths (save preset, file watcher, change-
 // project) become no-ops, matching the read-only intent of a test run.
-async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCamera) {
+async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCamera, renderConfig) {
   fixturePath = fixturePath.replace(/\/+$/, '');
   cameraFitOnce = false;
   logLine(`Loading test fixture "${fixturePath}/${scadName}"...`);
@@ -830,6 +832,25 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
   buildCustomizerForm(customizer);
   populateFormFromPreset(currentPreset);
   updateDelPresetButton();
+
+  // Optional render config (width/height/fov) — applied BEFORE the first
+  // render so the captured viewport size matches the .scad CLI output and
+  // the camera's FOV matches OpenSCAD's. Without this, the canvas is sized
+  // by the Playwright viewport minus the layout chrome, which can produce
+  // a different aspect than the .scad's 4:3 output.
+  if (renderConfig) {
+    const { width, height, fov } = renderConfig;
+    if (width && height) {
+      // Override the ResizeObserver-driven canvas size for the test run.
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+    if (fov && fov > 0) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+  }
 
   logLine(`Fixture ready — rendering "${currentPreset}"...`);
   await doRender();
@@ -1148,16 +1169,28 @@ const EXPORT_FORMATS = {
   // not enabled when building the application."
 };
 
-// Exports the current viewport as a PNG by capturing the WebGL canvas. Renders
-// one synchronous frame first so the buffer reflects the latest scene state
-// (orbit/pan/zoom + any pending mesh changes), then hands off to canvas.toBlob.
-// Matches the STL/SVG download pattern (keyguard.png in the Downloads folder).
-async function exportPNG() {
-  if (!project) { alert('Open a project first.'); return; }
+// Captures the current viewport as a PNG blob. Renders one synchronous frame
+// first so the buffer reflects the latest scene state (orbit/pan/zoom + any
+// pending mesh changes), then hands off to canvas.toBlob. Used both by the
+// user-facing PNG export and by visual regression tests, so the bytes the
+// test compares against are the same bytes a user would download from the
+// Export menu.
+async function captureViewportPNG() {
   renderer.render(scene, camera);
-  const blob = await new Promise(resolve =>
+  return new Promise(resolve =>
     renderer.domElement.toBlob(resolve, 'image/png')
   );
+}
+// Expose for tests/visual.spec.mjs: visual regression tests grab the bytes
+// from here so they exercise the same code path as the user-facing PNG
+// export, not a parallel Playwright-internal screenshot mechanism.
+window.__captureViewportPNG = captureViewportPNG;
+
+// Exports the current viewport as a downloadable PNG. Matches the STL/SVG
+// download pattern (keyguard.png in the Downloads folder).
+async function exportPNG() {
+  if (!project) { alert('Open a project first.'); return; }
+  const blob = await captureViewportPNG();
   if (!blob) {
     logLine('PNG export failed: canvas.toBlob returned null');
     setStatus('PNG export failed', 'error');
@@ -1706,12 +1739,19 @@ if (__fixturePath && __fixtureScad) {
   const __camera = (__vpt && __vpr && !isNaN(__vpd))
     ? { vpt: __vpt, vpr: __vpr, vpd: __vpd }
     : null;
+  const __w   = parseInt(__fixtureParams.get('width'),  10);
+  const __h   = parseInt(__fixtureParams.get('height'), 10);
+  const __fov = parseFloat(__fixtureParams.get('fov'));
+  const __render = (__w > 0 || __h > 0 || __fov > 0)
+    ? { width: __w || null, height: __h || null, fov: !isNaN(__fov) ? __fov : null }
+    : null;
   loadFixture(
     __fixturePath,
     __fixtureScad,
     __fixtureParams.get('preset'),
     __fixtureParams.get('oa'),
-    __camera
+    __camera,
+    __render
   ).catch(e => {
     logLine('Fixture load failed: ' + e.message);
     setStatus('Fixture load failed: ' + e.message, 'error');

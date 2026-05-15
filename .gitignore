@@ -18,3 +18,4 @@ package-lock.json
 test-results/
 playwright-report/
 capture-run.log
+test-timings.ndjson
