@@ -107,6 +107,33 @@ Run with `--update` after any intentional visual change to regenerate the refere
 - WASM-only workaround: `doRender()` injects `-D fudge=0.05 -D ff=0.05` *after* the `-p/-P` preset switch. Manifold's precision floor treats sub-0.01 mm through-cuts as exact-coincident and leaves a thin floor on every cell. 0.05 mm is the largest value we can apply globally without breaking other geometry — the `.scad` uses `ff` with hardcoded multipliers (e.g. `50*ff`, `2*ff` inside `cut()`) that assume `ff ≈ 0.01`, so bumping higher misaligns the cell cutters with the screen-region recess. The "App layout in mm > ~5 mm leaves a cell floor" case still recurs at extreme offsets and needs a SCAD-side fix. Order matters — a preset that pins `fudge=0.01` would clobber a `-D` placed before `-p`.
 - Single-threaded WASM. Manifold renders are usually < 1 s so this hasn't been a problem.
 
+## Known issues
+
+Surfaced by the first full-suite `--visual` run (2026-05-15). The routine
+suite only exercised TC3/TC5 before, so these were never previously caught.
+None are regressions from the camera/console-resolution work — the camera is
+applied *after* the OpenSCAD render, and the `consoleErrors` check for these
+steps behaves exactly as before.
+
+- **6 steps: openscad-wasm produces no STL.** The render yields zero STL
+  bytes, so `doRender()` logs `keyguard render produced no STL` and
+  `visual.spec.mjs` fails at the `consoleErrors` assertion. Affected:
+  TC18 step 1 (`Test Case 18`, No Mount), TC18 step 5 (`Test Case 18d`,
+  Velcro), TC19 step 2 (`Test Case 19a`), TC23 step 2 (`Test Case 23a`),
+  TC28 step 1 (`Test Case 28`), TC29 step 2 (`Test Case 29a`). TC29 step 2
+  additionally throws a WASM exception (`wasm-function` frames in the
+  stack), so at least that one is a hard Manifold/wasm fault rather than a
+  legitimately-empty model. Deferred — a distinct WASM/Manifold render-bug
+  class, not yet triaged. These run fine in native OpenSCAD/CGAL.
+
+- **3 SVG-generation steps still fail.** TC10 step 3 ("generate for SVG"),
+  TC10 step 4 ("rendered SVG view"), TC46 step 4 ("generate=svg") use
+  `generate="first layer for SVG/DXF file"`, which emits 2D geometry → no
+  STL → blank viewport. The decision was to skip these like console-only
+  steps, but that skip was **not implemented** (work pivoted to the
+  Export-as-SVG feature instead). The SVG *export* path itself works
+  correctly; only the visual-suite coverage of these steps is outstanding.
+
 ## History
 
 - `results.md` — original 2026-05-12 feasibility-verdict snapshot. Kept as a historical record of the decision to proceed.
