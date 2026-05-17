@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Keyguard Designer (browser, Phase 1)</title>
+<title>Keyguard Designer</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#7dd9c8">
 <script type="importmap">
 {
   "imports": {
@@ -2039,6 +2041,10 @@ document.querySelectorAll('#settings-cats .cat').forEach(c => {
     renderSettingsPanel(c.dataset.cat);
   });
 });
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
 </script>
 </body>
 </html>

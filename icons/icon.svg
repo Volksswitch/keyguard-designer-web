@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background square (safe zone for maskable icon) -->
+  <rect width="512" height="512" fill="#7dd9c8"/>
+  <!-- Keyguard body -->
+  <rect x="80" y="80" width="352" height="352" rx="48" fill="white"/>
+  <!-- Cell cutouts (2x2 grid) -->
+  <rect x="128" y="128" width="108" height="108" rx="16" fill="#7dd9c8"/>
+  <rect x="276" y="128" width="108" height="108" rx="16" fill="#7dd9c8"/>
+  <rect x="128" y="276" width="108" height="108" rx="16" fill="#7dd9c8"/>
+  <rect x="276" y="276" width="108" height="108" rx="16" fill="#7dd9c8"/>
+</svg>
