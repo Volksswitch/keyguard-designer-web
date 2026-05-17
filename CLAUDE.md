@@ -200,6 +200,13 @@ keyguard-designer-web/
 - Node / npm are only needed for the Playwright test harness.
 - Do not add external library dependencies that require a build step — the app must remain
   servable by a plain `python -m http.server`.
-- Commits go directly to `main` (no PR workflow for this solo project).
+- **Branch model — `dev` is the only branch you commit to.** All day-to-day work goes on
+  `dev`. **`main` is release-only**: GitHub Pages serves `main`, and it moves *only* via the
+  release ritual (merge `dev → main` + bump `CACHE_NAME` in the same merge commit). Never
+  commit app changes directly to `main`. Never bump `CACHE_NAME` on `dev`. Pushing to `dev`
+  must never reach clinicians — that invariant is the whole point of the split.
+- **Releasing is a deliberate, infrequent act, not an automatic consequence of a push.** Do
+  not merge `dev → main` after every change. See `RELEASING.md` for the full when/how —
+  follow it exactly; it is the source of truth for the release process.
 - Run `scripts/test.sh` (all layers) after any change. Scope visual tests to affected cases
   during iteration; run the full suite before declaring a feature complete.
