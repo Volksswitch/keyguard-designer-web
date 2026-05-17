@@ -38,6 +38,14 @@ below — just don't wait for the calendar.
 
 Anything that doesn't meet the bar stays on `dev`. `main` does not move.
 
+## Trigger phrase (Claude Code)
+
+Ken says **"Release the web app"** (or an obvious variant — "do a web release",
+"ship the web app"). That single phrase authorizes the entire ritual below.
+Claude runs steps automatically through the merge + `CACHE_NAME` bump + commit,
+then shows the release summary and new cache number and waits for one go-ahead
+before the final `git push origin main`. No other per-step instruction is needed.
+
 ## How to release (the ritual)
 
 This is the **only** time `CACHE_NAME` changes and the **only** time `main` moves. It
