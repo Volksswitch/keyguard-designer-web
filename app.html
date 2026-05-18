@@ -49,6 +49,14 @@
   .vp-btn { background: none; border: 1px solid transparent; padding: 4px 6px; cursor: pointer;
             font-size: 14px; border-radius: 2px; color: #333; min-width: 26px; }
   .vp-btn:hover { background: #d8d8d8; border-color: #aaa; }
+  .vp-btn:active { background: #cfcfcf; }
+  /* Original CC0 inline SVG icons drawn in OpenSCAD's flat axonometric
+     style (cube + highlighted face for views) so users moving between this
+     app and native OpenSCAD see the same visual language. currentColor lets
+     the accent (#06c) / default (#333) button colour flow into the glyph. */
+  .vp-btn svg { width: 16px; height: 16px; display: inline-block;
+                vertical-align: -3px; pointer-events: none; }
+  .vp-btn.split-main svg { margin-right: 5px; }
   .vp-sep { width: 1px; background: #bbb; height: 18px; margin: 0 4px; }
 
   /* ---------- console pane ---------- */
@@ -140,6 +148,20 @@
   #settings-panel .setting .opt { display: block; margin: 2px 0; font-weight: normal; }
   #settings-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
   #settings-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+
+  /* ---------- Confirm (unsaved-changes) modal ---------- */
+  #confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+                     display: none; align-items: center; justify-content: center; z-index: 1100; }
+  #confirm-overlay.open { display: flex; }
+  #confirm-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                   width: 420px; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  #confirm-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
+                      background: #e8e8e8; font-size: 14px; }
+  #confirm-msg { padding: 16px 14px; font-size: 12px; line-height: 1.5; }
+  #confirm-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right;
+                    background: #f0f0f0; }
+  #confirm-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; margin-left: 8px; }
+  #confirm-ok { font-weight: bold; color: #a33; }
 </style>
 </head>
 <body>
@@ -158,20 +180,77 @@
           </div>
         </div>
         <div id="viewport-toolbar">
-          <button class="vp-btn" id="view-fit"    title="View All (fit to window)">⛶</button>
+          <button class="vp-btn" id="view-render" title="Render (force re-render — like OpenSCAD's Preview, F5)" style="color:#06c">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M20 12a8 8 0 1 1-2.34-5.66"/>
+              <path d="M20 4v4.5h-4.5"/>
+            </svg>
+          </button>
           <div class="vp-sep"></div>
-          <button class="vp-btn" id="view-top"    title="Top view">⬒</button>
-          <button class="vp-btn" id="view-bottom" title="Bottom view">⬓</button>
-          <button class="vp-btn" id="view-front"  title="Front view">▤</button>
-          <button class="vp-btn" id="view-back"   title="Back view">▥</button>
-          <button class="vp-btn" id="view-left"   title="Left view">◧</button>
-          <button class="vp-btn" id="view-right"  title="Right view">◨</button>
-          <button class="vp-btn" id="view-axes"   title="Toggle axes">+</button>
-          <button class="vp-btn" id="view-grid"   title="Toggle grid">▦</button>
+          <button class="vp-btn" id="view-fit"    title="View All">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M9 4H4v5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
+            </svg>
+          </button>
+          <div class="vp-sep"></div>
+          <button class="vp-btn" id="view-top"    title="Top">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 4 20 8.5 12 12 4 8.5Z" fill="currentColor" fill-opacity=".4" stroke="none"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-bottom" title="Bottom">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 4 20 8.5 12 12 4 8.5Z" stroke="currentColor" stroke-dasharray="2 1.5"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-front"  title="Front">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 8.5 12 12 12 20 4 15.5Z" fill="currentColor" fill-opacity=".4" stroke="none"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-back"   title="Back">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 8.5 12 12 12 20 4 15.5Z" stroke="currentColor" stroke-dasharray="2 1.5"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-left"   title="Left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M20 8.5 20 15.5 12 20 12 12Z" stroke="currentColor" stroke-dasharray="2 1.5"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-right"  title="Right">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M20 8.5 20 15.5 12 20 12 12Z" fill="currentColor" fill-opacity=".4" stroke="none"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-axes"   title="Show Axes">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M5 19H20M5 19V4M5 19 13.5 10.5"/>
+              <path d="M17.5 16.5 20.5 19 17.5 21.5M2.5 6.5 5 3.5 7.5 6.5M11 11 14 10 13 13"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-grid"   title="Show Scale Markers">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 4H20V20H4Z"/>
+              <path d="M9.3 4V20M14.7 4V20M4 9.3H20M4 14.7H20"/>
+            </svg>
+          </button>
           <div class="vp-sep"></div>
           <span class="split-btn">
             <button class="vp-btn split-main" id="export-main" title="Export current design"
-                    style="font-weight:bold;color:#06c">⬇ Export as STL</button><button class="vp-btn split-arrow" id="export-arrow"
+                    style="font-weight:bold;color:#06c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M12 3V14"/><path d="M8 10.5 12 14.5 16 10.5"/><path d="M5 17V20H19V17"/></svg><span id="export-label">Export as STL</span></button><button class="vp-btn split-arrow" id="export-arrow"
                     title="Choose export format" style="color:#06c">▾</button>
             <div class="split-menu" id="export-menu">
               <div class="split-item" data-fmt="STL">Export as STL <span class="hint">3D print</span></div>
@@ -180,7 +259,12 @@
             </div>
           </span>
           <div class="vp-sep" style="margin-left:auto;"></div>
-          <button class="vp-btn" id="settings-btn" title="Settings">⚙</button>
+          <button class="vp-btn" id="settings-btn" title="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3.2"/>
+              <path d="M12 3.4V6M12 18V20.6M3.4 12H6M18 12H20.6M6 6 7.8 7.8M16.2 16.2 18 18M18 6 16.2 7.8M7.8 16.2 6 18"/>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -250,6 +334,18 @@
     </div>
     <div id="settings-footer">
       <button id="settings-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Unsaved-changes confirm modal ============ -->
+<div id="confirm-overlay">
+  <div id="confirm-modal">
+    <h3>Unsaved changes</h3>
+    <div id="confirm-msg"></div>
+    <div id="confirm-footer">
+      <button id="confirm-cancel">Cancel</button>
+      <button id="confirm-ok">Discard changes</button>
     </div>
   </div>
 </div>
@@ -415,6 +511,12 @@ function toggleGrid() {
 // ===== Viewport toolbar wiring =====
 const Z_UP = new THREE.Vector3(0, 0, 1);
 const Y_UP = new THREE.Vector3(0, 1, 0);
+// Force an immediate re-render (bypasses the debounce). Mirrors OpenSCAD's
+// leftmost Preview button: handy for "clear the console, then render again"
+// so only the latest render's messages are shown.
+document.getElementById('view-render').addEventListener('click', () => {
+  if (project) doRender();
+});
 document.getElementById('view-fit').addEventListener('click', () => {
   if (currentMesh) fitCameraToObject(currentMesh);
 });
@@ -455,7 +557,8 @@ function setStatus(msg, kind = '') {
 }
 
 // ===== Settings (app-wide, persisted in localStorage) =====
-const SETTINGS_KEY = 'keyguard-spike:settings';
+const SETTINGS_KEY = 'keyguard:settings';
+const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
 };
@@ -463,7 +566,17 @@ let settings = loadSettings();
 
 function loadSettings() {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    let raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw === null) {
+      // One-time migration from the old key name so a returning
+      // clinician keeps their settings across the rename.
+      const legacy = localStorage.getItem(LEGACY_SETTINGS_KEY);
+      if (legacy !== null) {
+        localStorage.setItem(SETTINGS_KEY, legacy);
+        localStorage.removeItem(LEGACY_SETTINGS_KEY);
+        raw = legacy;
+      }
+    }
     const stored = raw ? JSON.parse(raw) : {};
     return { ...SETTINGS_DEFAULTS, ...stored };
   } catch {
@@ -495,7 +608,11 @@ function orderedPresetNames(rawNames) {
   if (settings.presetOrder === 'creation') {
     return ['design default values', ...rest];
   }
-  return ['design default values', ...rest.slice().sort((a, b) => a.localeCompare(b))];
+  // Numeric-aware compare so "Test Case 5" sorts before "Test Case 10"
+  // (plain localeCompare orders them lexically: 1, 10, 2, ...).
+  return ['design default values', ...rest.slice().sort(
+    (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+  )];
 }
 
 function rebuildPresetDropdown() {
@@ -530,28 +647,42 @@ let project = null;
 // the location — one click + one permission dialog (covers read+write) gets
 // us back in. We always request 'readwrite' upfront so a later Save Preset
 // doesn't need a second prompt.
-const HANDLE_DB = 'keyguard-spike-db';
+const HANDLE_DB = 'keyguard-db';
+const LEGACY_HANDLE_DB = 'keyguard-spike-db';   // pre-rename
 const HANDLE_STORE = 'handles';
 const HANDLE_KEY = 'lastProject';
 
-function idbOpen() {
+function idbOpenNamed(name) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(HANDLE_DB, 1);
+    const req = indexedDB.open(name, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(HANDLE_STORE);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
+function idbOpen() { return idbOpenNamed(HANDLE_DB); }
+
 async function idbGetHandle() {
-  try {
-    const db = await idbOpen();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(HANDLE_STORE, 'readonly');
-      const req = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  } catch { return null; }
+  const readFrom = async (name) => {
+    try {
+      const db = await idbOpenNamed(name);
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE, 'readonly');
+        const req = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    } catch { return null; }
+  };
+  let handle = await readFrom(HANDLE_DB);
+  if (!handle) {
+    // One-time migration: a returning clinician's remembered folder was
+    // stored under the old DB name. Pull it forward so they don't have to
+    // re-pick the folder and re-grant permission.
+    const legacy = await readFrom(LEGACY_HANDLE_DB);
+    if (legacy) { await idbPutHandle(legacy); handle = legacy; }
+  }
+  return handle;
 }
 async function idbPutHandle(handle) {
   try {
@@ -576,10 +707,51 @@ async function idbClearHandle() {
   } catch {}
 }
 
+// Return the app to its initial "no project" layout: clear the 3D viewport,
+// console, and Customizer panes, drop every internal reference to the folder
+// (including the persisted IndexedDB handle), and restore the Open Project
+// prompt. Called when the user denies folder access — previously the denied
+// handle was persisted and reused, forcing the clinician to click "Don't
+// allow" several times before a different folder could be chosen.
+async function resetToNoProject() {
+  stopWatcher();
+  project = null;
+  try { await idbClearHandle(); } catch {}
+  if (currentMesh) { scene.remove(currentMesh); currentMesh = null; }
+  renderer.render(scene, camera);
+  cameraFitOnce = false;
+  consoleEl.textContent = '';
+  container.innerHTML = '';
+  document.getElementById('preset-select').innerHTML = '';
+  document.getElementById('preset-select').classList.remove('dirty');
+  document.getElementById('dirty-marker').classList.remove('visible');
+  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn']) {
+    const b = document.getElementById(id);
+    if (b) b.disabled = true;
+  }
+  const opBtn = document.getElementById('open-project-btn');
+  if (opBtn) {
+    opBtn.textContent = 'Open Project…';
+    opBtn.title = 'Pick a folder containing keyguard.scad and openings_and_additions.txt';
+  }
+  document.getElementById('project-folder-label').innerHTML = '<i>no project folder open</i>';
+  document.getElementById('watch-status').textContent = '';
+  setStatus('Click <b>Open Project…</b> to begin.');
+}
+
 async function openProject() {
   if (!window.showDirectoryPicker) {
     alert('This browser does not support the File System Access API. Please use Chrome or Edge.');
     return;
+  }
+  // Warn before abandoning unsaved preset edits. confirmDiscard() is a DOM
+  // modal (not native confirm) so its button click preserves the user
+  // gesture the directory picker needs further down.
+  if (project && isDirty()) {
+    const proceed = await confirmDiscard(
+      `You have unsaved changes to "${project.currentPreset}". ` +
+      `Opening a different project will discard them.`);
+    if (!proceed) return;
   }
   let dirHandle = null;
   // If a project is already loaded, this click means "switch to a different
@@ -597,7 +769,12 @@ async function openProject() {
         if (perm === 'granted') {
           dirHandle = stored;
         } else {
-          logLine('Re-open of last folder was not approved — showing picker.');
+          // User denied re-access to the remembered folder. Drop every
+          // reference (incl. the persisted handle) and return to the clean
+          // initial layout so the next click goes straight to the picker —
+          // no repeated "Don't allow" prompts for the same dead handle.
+          await resetToNoProject();
+          return;
         }
       } catch (e) {
         logLine(`Stored project handle could not be reused (${e.name || e.message}); showing picker.`);
@@ -612,13 +789,15 @@ async function openProject() {
       if (e.name === 'AbortError') return;       // user cancelled
       throw e;
     }
-    // Ensure write permission upfront so Save Preset doesn't re-prompt later.
-    try {
-      const perm = await dirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') {
-        logLine('Write permission was not granted — Save Preset will prompt again.');
-      }
-    } catch {}
+    // Ensure read+write upfront. If the user denies access, abort cleanly
+    // back to the initial layout rather than continuing with a dead handle
+    // (which previously threw mid-load and left the picker re-prompting).
+    let perm = 'denied';
+    try { perm = await dirHandle.requestPermission({ mode: 'readwrite' }); } catch {}
+    if (perm !== 'granted') {
+      await resetToNoProject();
+      return;
+    }
   }
   await idbPutHandle(dirHandle);
   stopWatcher();
@@ -899,6 +1078,66 @@ function applyOpenscadCamera(vpt, vpr, vpd) {
 }
 
 // ===== Render pipeline =====
+// Mirrors keyguard.scad's top-level color() dispatch (the big generate
+// if/else chain). Every generate mode emits a single-colour piece, so one
+// material colour per render is exact — no per-part multi-render needed.
+// THREE.Color accepts these CSS/X11 names directly. Echo-only branches
+// (e.g. "laser-cut frame not supported") produce no geometry, so their
+// colour is irrelevant and the Turquoise fallback is harmless.
+function keyguardColorName(cur) {
+  const g        = cur.generate || 'keyguard';
+  const lc       = cur.type_of_keyguard === 'Laser-Cut';
+  const hasFrame = cur.have_a_keyguard_frame === 'yes';
+  if (g.indexOf('clip') !== -1) return 'lime';                 // all clip variants
+  if (g === 'cell insert' && !lc) return 'LawnGreen';
+  if (!lc && (g === 'keyguard frame' ||
+              g === 'first half of keyguard frame' ||
+              g === 'second half of keyguard frame')) return 'Turquoise';
+  if (lc && !hasFrame && g === 'first layer for SVG/DXF file') return 'DarkSeaGreen';
+  if (lc && !hasFrame && g === 'keyguard') return 'Khaki';
+  return 'Turquoise';   // 3D-printed keyguard / halves (the common default)
+}
+
+// Build a flat, face-on plane showing an OpenSCAD-exported SVG (the
+// laser-cut "first layer"). The .scad emits a 2D object for that generate
+// mode, which has no STL — so instead of a failed 3D render we rasterise
+// the SVG onto a white canvas and texture a plane sized to the SVG's mm
+// dimensions, giving a clean 2-dimensional preview.
+function buildSvgPlane(svgText) {
+  return new Promise((resolve, reject) => {
+    const num = s => (s ? parseFloat(s[1]) : null);
+    let w = num(svgText.match(/width="([\d.]+)/));
+    let h = num(svgText.match(/height="([\d.]+)/));
+    const vb = svgText.match(/viewBox="[\d.\-]+ [\d.\-]+ ([\d.]+) ([\d.]+)"/);
+    if ((!w || !h) && vb) { w = parseFloat(vb[1]); h = parseFloat(vb[2]); }
+    if (!w || !h) { w = 200; h = 150; }
+    const px = Math.min(2048, Math.round(Math.max(w, h) * 6));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(px * w / Math.max(w, h));
+    canvas.height = Math.round(px * h / Math.max(w, h));
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+    img.onload = () => {
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+      );
+      const g = new THREE.Group();
+      g.add(plane);
+      resolve(g);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('could not rasterise SVG')); };
+    img.src = url;
+  });
+}
+
 async function doRender() {
   if (!project) {
     setStatus('Open a project folder first.', 'error');
@@ -939,11 +1178,16 @@ async function doRender() {
       baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
     baseArgs.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
-    // include_screenshot is honoured by the spike's Three.js plane overlay,
+    // include_screenshot is honoured by the web app's Three.js plane overlay,
     // not by keyguard.scad's own SVG import — the .scad version renders a flat
     // slab inside the screen recess which fills every cell with a "floor".
     // Force the .scad's handling off; we add the screenshot ourselves below.
     baseArgs.push('-D', 'include_screenshot="no"');
+    // Opt into keyguard.scad's screen-dims echo (off by default there so
+    // native OpenSCAD users never see it). maybeCaptureDims() reads it to
+    // size the screenshot-underlay plane; isNoise() keeps it out of the
+    // console. Not passed on the export path — exports don't need dims.
+    baseArgs.push('-D', 'echo_dims="yes"');
     if (project.customizer) {
       const cur = currentFormValues();
       const baseline = project.baselineParams || {};
@@ -954,7 +1198,7 @@ async function doRender() {
       for (const [name, val] of Object.entries(cur)) {
         if (baseline[name] === val) continue;
         if (name === 'fudge' || name === 'ff') continue;   // never let UI clobber the workaround
-        if (name === 'include_screenshot') continue;       // spike-managed; .scad must stay "no"
+        if (name === 'include_screenshot') continue;       // app-managed; .scad must stay "no"
         const t = typeMap[name];
         const expr = (t === 'string')
           ? `"${String(val).replace(/"/g, '\\"')}"`
@@ -962,17 +1206,21 @@ async function doRender() {
         baseArgs.push('-D', `${name}=${expr}`);
         overrideCount++;
       }
-      if (overrideCount) logLine(`  applying ${overrideCount} parameter override(s)`);
+      // No "applying N parameter override(s)" log line: it fired on every
+      // customizer edit (e.g. show split line = yes) and confused users into
+      // thinking something was wrong. The dirty "*" marker next to the preset
+      // dropdown already signals that settings differ from the preset.
+      void overrideCount;
     }
 
     // The createOpenSCAD wrapper's callMain triggers exitJS() at the end of
     // every run, which tears down the Emscripten runtime. The instance can
     // therefore only do one render, so we spin up a fresh instance per render.
     // Captures the swm/shm/sat/kt values emitted by keyguard.scad's
-    // `echo("__SPIKE_DIMS__", ...)` line so the screenshot plane can be sized
+    // `echo("__KG_DIMS__", ...)` line so the screenshot plane can be sized
     // and positioned correctly. The echo is on stderr from the wasm.
     function maybeCaptureDims(line) {
-      if (!line.includes('__SPIKE_DIMS__')) return;
+      if (!line.includes('__KG_DIMS__')) return;
       const m = line.match(/swm\s*=\s*(-?\d+(?:\.\d+)?)/);
       const m2 = line.match(/shm\s*=\s*(-?\d+(?:\.\d+)?)/);
       const m3 = line.match(/sat\s*=\s*(-?\d+(?:\.\d+)?)/);
@@ -996,27 +1244,39 @@ async function doRender() {
     //   - Per-render WASM cache/timing/manifold-info block — useful for
     //     openscad developers, not for clinicians; the user already sees
     //     the elapsed-time on the status bar after a successful render.
-    //   - "__SPIKE_DIMS__" is the keyguard.scad echo we use to populate
+    //   - "__KG_DIMS__" is the keyguard.scad echo we use to populate
     //     project.dims for the screenshot-underlay sizing. maybeCaptureDims
     //     extracts the numbers BEFORE this noise check runs, so suppressing
     //     the log doesn't break include_screenshot.
-    // The CGAL "assertion violation" / convex_hull_3.h applyHull line is
-    // deliberately NOT filtered — it points at a real pre-existing bug
-    // surfaced by sloped bar cuts that warrants visibility.
+    // The CGAL convex_hull_3.h:684 "assertion violation" / applyHull()
+    // block: a known upstream limitation. In Laser-Cut mode the flattened
+    // keyguard makes several hull()-based features degenerate; in 3D-Printed
+    // mode sloped bar cuts surface the same assertion. In every case the
+    // render still completes (verified: CLI renders of the same params
+    // produce valid manifold solids) — it is not actionable by a clinician
+    // and won't be fixed soon, so it's suppressed unconditionally rather
+    // than dumping a scary CGAL stack into the console on a normal render.
     let suppressedEmpty = false;
     function isNoise(t) {
       if (/Viewall and autocenter disabled/i.test(t)) return true;
       if (/Could not initialize localization/i.test(t)) return true;
-      if (/__SPIKE_DIMS__/.test(t)) return true;
+      if (/__KG_DIMS__/.test(t)) return true;
+      if (/CGAL (error|ERROR): assertion violation/.test(t) ||
+          /in applyHull\(\)/.test(t) ||
+          /convex_hull_3\.h/.test(t) ||
+          /it != border\.end\(\)/.test(t) ||
+          /cgal\.org\/bug_report/.test(t) ||
+          /^\s*(Expression|Expr|Explanation|File|Line)\s*:/.test(t)
+         ) return true;
       // Per-render render-info dump (Manifold backend):
       if (/^Geometries in cache:/.test(t)) return true;
       if (/^Geometry cache size in bytes:/.test(t)) return true;
       if (/^CGAL Polyhedrons in cache:/.test(t)) return true;
       if (/^CGAL cache size in bytes:/.test(t)) return true;
       if (/^Total rendering time:/.test(t)) return true;
-      if (/^\s*Top level object is a 3D object/.test(t)) return true;
+      if (/^\s*Top level object is a [23]D object/.test(t)) return true;
       if (/^\s*Status:\s+NoError/.test(t)) return true;
-      if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple):/.test(t)) return true;
+      if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple|Convex|Area):/.test(t)) return true;
       if (/Current top level object is empty/i.test(t)) {
         suppressedEmpty = true;
         return true;
@@ -1074,6 +1334,24 @@ async function doRender() {
       return { elapsed, bytes };
     }
 
+    // ---- 2D laser-cut layer: render to SVG, show flat ----
+    // generate="first layer for SVG/DXF file" emits a 2D OpenSCAD object,
+    // which has no STL. Rather than attempt a 3D render (fails with "not a
+    // 3D object", leaving the previous mesh up + scary console errors),
+    // render straight to SVG and show it as a flat 2-dimensional plane.
+    if (currentFormValues().generate === 'first layer for SVG/DXF file') {
+      const svg = await runOnce([], '/kg.svg', 'SVG layer');
+      if (!svg.bytes) throw new Error('no 2D layer produced — is the keyguard set to Laser-Cut?');
+      const plane = await buildSvgPlane(new TextDecoder().decode(svg.bytes));
+      if (currentMesh) scene.remove(currentMesh);
+      currentMesh = plane;
+      scene.add(currentMesh);
+      fitCameraToObject(currentMesh);
+      cameraFitOnce = true;
+      setStatus(`Rendered 2D laser-cut layer in ${svg.elapsed.toFixed(1)} s`, 'ok');
+      return;
+    }
+
     // ---- Render 1: keyguard (no overlays) ----
     // This wasm has no 3MF export, so STL drops any color() attribute.
     // We therefore render the keyguard and the highlight overlays separately,
@@ -1095,7 +1373,7 @@ async function doRender() {
     const toAB = u8 => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
     const kgGeom = loader.parse(toAB(kgBytes));
     kgGeom.computeVertexNormals();
-    const kgMat = new THREE.MeshPhongMaterial({ color: 0x40e1d1, shininess: 30, flatShading: false });
+    const kgMat = new THREE.MeshPhongMaterial({ color: new THREE.Color(keyguardColorName(currentFormValues())), shininess: 30, flatShading: false });
     const kgMesh = new THREE.Mesh(kgGeom, kgMat);
 
     const group = new THREE.Group();
@@ -1122,7 +1400,7 @@ async function doRender() {
     // ---- Optional screenshot plane below the keyguard ----
     // Sits at the bottom of the screen recess so the clinician sees the
     // referenced app screenshot through the cell cutouts. Sized to swm × shm
-    // captured from keyguard.scad's __SPIKE_DIMS__ echo. Honours the
+    // captured from keyguard.scad's __KG_DIMS__ echo. Honours the
     // include_screenshot Customizer parameter.
     const cur = currentFormValues();
     const wantScreenshot = cur.include_screenshot === 'yes';
@@ -1191,6 +1469,15 @@ const EXPORT_FORMATS = {
   // not enabled when building the application."
 };
 
+// Base filename for exported STL/SVG/PNG: the current preset name with any
+// characters invalid in a filename stripped. Falls back to "keyguard" when
+// no project/preset is loaded or the sanitised name is empty.
+function exportBaseName() {
+  const raw = (project && project.currentPreset) ? project.currentPreset : 'keyguard';
+  const clean = raw.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  return clean || 'keyguard';
+}
+
 // Captures the current viewport as a PNG blob. Renders one synchronous frame
 // first so the buffer reflects the latest scene state (orbit/pan/zoom + any
 // pending mesh changes), then hands off to canvas.toBlob. Used both by the
@@ -1221,7 +1508,7 @@ async function exportPNG() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'keyguard.png';
+  a.download = exportBaseName() + '.png';
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
   logLine(`Exported PNG (${blob.size.toLocaleString()} bytes)`);
@@ -1236,9 +1523,13 @@ async function exportCurrent(fmt) {
   const prevStatusKind = statusEl.className;
   setStatus(`Exporting as ${fmt}...`, 'rendering');
   try {
+    // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
+    // screenshot-plane sizing hint). It's never user-relevant and is already
+    // filtered out of normal renders by isNoise(); apply the same filter on
+    // the export path so it doesn't leak into the console during Export.
     const oscad = await createOpenSCAD({
-      print:    t => logRaw(t),
-      printErr: t => logRaw(t)
+      print:    t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
+      printErr: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); }
     });
     addFonts(oscad.getInstance());
     const fs = oscad.getInstance().FS;
@@ -1297,12 +1588,28 @@ async function exportCurrent(fmt) {
     if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
     const bytes = fs.readFile(outPath);
     logLine(`Export render (${fmt}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
-    const url = URL.createObjectURL(new Blob([bytes], { type: spec.mime }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'keyguard.' + spec.ext;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    const fname = exportBaseName() + '.' + spec.ext;
+    // Prefer writing STL/SVG straight into the project folder so the
+    // deliverable lands next to the .scad it came from. Falls back to a
+    // browser download if there's no writable folder handle (fixture mode
+    // or denied permission). PNG never reaches here — exportPNG() always
+    // downloads it, deliberately, so it can't clobber the project's
+    // screenshot .png.
+    if (project.dirHandle && await ensureWritePermission()) {
+      const fh = await project.dirHandle.getFileHandle(fname, { create: true });
+      const w = await fh.createWritable();
+      await w.write(bytes);
+      await w.close();
+      logLine(`Saved ${fmt} to project folder as "${fname}"`);
+    } else {
+      const url = URL.createObjectURL(new Blob([bytes], { type: spec.mime }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      logLine(`Downloaded "${fname}" (no writable project folder)`);
+    }
     setStatus(prevStatusText, prevStatusKind);
   } catch (e) {
     logLine('Export failed: ' + e.message);
@@ -1608,7 +1915,7 @@ async function checkOAFile() {
 // include_screenshot flips to "yes" — so swapping the image file on disk and
 // switching presets are both reflected on the next render. SVG files are
 // intentionally ignored (Three.js can't texture them without a rasterisation
-// step we've deferred — see project_browser_spike memory note).
+// step we've deferred).
 async function rescanScreenshot() {
   if (!project || !project.dirHandle) return;
   const old = project.screenshotTexture;
@@ -1652,14 +1959,49 @@ function triggerWatchRerender() {
   doRender();
 }
 
-function updateDirty() {
-  if (!project) return;
+// True when the current form values differ from the loaded preset's
+// baseline (i.e. there are unsaved changes).
+function isDirty() {
+  if (!project) return false;
   const cur = currentFormValues();
   const base = project.baselineParams || {};
-  let dirty = false;
   for (const k of Object.keys(cur)) {
-    if (String(cur[k]) !== String(base[k] ?? '')) { dirty = true; break; }
+    if (String(cur[k]) !== String(base[k] ?? '')) return true;
   }
+  return false;
+}
+
+// DOM-based replacement for confirm(). A native confirm() consumes the
+// page's transient user activation, which would then make the folder
+// picker / requestPermission throw in openProject(). The modal's button
+// click is itself a fresh user gesture, so the picker still works after it.
+function confirmDiscard(message) {
+  return new Promise(resolve => {
+    const ov = document.getElementById('confirm-overlay');
+    document.getElementById('confirm-msg').textContent = message;
+    const ok = document.getElementById('confirm-ok');
+    const cancel = document.getElementById('confirm-cancel');
+    function cleanup(val) {
+      ov.classList.remove('open');
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKey);
+      resolve(val);
+    }
+    function onOk() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+    function onKey(e) { if (e.key === 'Escape') cleanup(false); }
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKey);
+    ov.classList.add('open');
+    cancel.focus();
+  });
+}
+
+function updateDirty() {
+  if (!project) return;
+  const dirty = isDirty();
   document.getElementById('dirty-marker').classList.toggle('visible', dirty);
   document.getElementById('preset-select').classList.toggle('dirty', dirty);
   document.getElementById('save-preset-btn').disabled = !dirty;
@@ -1740,8 +2082,36 @@ document.getElementById('clear-btn').addEventListener('click', () => { consoleEl
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(consoleEl.textContent).then(() => alert('Console copied to clipboard'));
 });
-document.getElementById('save-btn').addEventListener('click', () => {
-  alert('In the real app this would prompt to save the console as a .log file in the project folder.');
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const text = consoleEl.textContent;
+  try {
+    if (window.showSaveFilePicker) {
+      // True Save As dialog with an empty filename box; .txt extension.
+      // Default the dialog to the open project folder when there is one.
+      const opts = {
+        suggestedName: '',
+        types: [{ description: 'Text file', accept: { 'text/plain': ['.txt'] } }],
+      };
+      if (project && project.dirHandle) opts.startIn = project.dirHandle;
+      const handle = await window.showSaveFilePicker(opts);
+      const w = await handle.createWritable();
+      await w.write(text);
+      await w.close();
+      logLine(`Saved console to "${handle.name}"`);
+    } else {
+      // Fallback for browsers without the File System Access API: a plain
+      // blob download (the browser, not us, decides whether to prompt).
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'console.txt';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;   // user cancelled the dialog
+    logLine('Save console failed: ' + e.message);
+  }
 });
 document.getElementById('open-project-btn').addEventListener('click', () => {
   openProject().catch(e => {
@@ -1818,7 +2188,7 @@ exportMenu.addEventListener('click', e => {
   const item = e.target.closest('.split-item');
   if (!item) return;
   currentExportFormat = item.dataset.fmt;
-  exportMain.firstChild.nodeValue = `⬇ Export as ${currentExportFormat}`;
+  document.getElementById('export-label').textContent = `Export as ${currentExportFormat}`;
   exportMain.title = `Export current design as ${currentExportFormat}`;
   exportMenu.classList.remove('open');
   exportCurrent(currentExportFormat);
@@ -1832,6 +2202,15 @@ const resetBtn = document.getElementById('reset-btn');
 
 presetSelect.addEventListener('change', async () => {
   if (!project) return;
+  if (isDirty()) {
+    const proceed = await confirmDiscard(
+      `You have unsaved changes to "${project.currentPreset}". ` +
+      `Switching presets will discard them.`);
+    if (!proceed) {
+      presetSelect.value = project.currentPreset;   // revert the dropdown
+      return;
+    }
+  }
   project.currentPreset = presetSelect.value;
   populateFormFromPreset(presetSelect.value);
   updateDelPresetButton();

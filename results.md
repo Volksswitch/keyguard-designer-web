@@ -1,6 +1,6 @@
-# Spike results — 2026-05-12
+# Early feasibility results — 2026-05-12
 
-> **Historical document.** This is the original feasibility-verdict snapshot. The spike has since grown into the actual clinician tool (Customizer, presets, file watching, O&A highlights, persistent folder). See [README.md](README.md) for current status.
+> **Historical document.** This is the original feasibility-verdict snapshot. The early prototype has since grown into the actual clinician app (Customizer, presets, file watching, O&A highlights, persistent folder). See [README.md](README.md) for current status.
 
 ## Headline
 
@@ -13,7 +13,7 @@
 | default     | 41.3s | 54.3s | 1.31× | 2,787,298 B STL, `Simple: yes` | OK |
 | laser-cut   | (not measured) | 2.8s (fail) | — | 0 B, rc=1 | FAIL — see below |
 | screenshot  | (not measured) | 55.4s | ~1.3× est. | 2,787,297 B STL, `Simple: yes` | OK |
-| heavy*      | (not measured) | 40.6s | — | 2,249,106 B STL, `Simple: yes` | OK (fell back to default tablet — param-name typo in spike, not a WASM issue) |
+| heavy*      | (not measured) | 40.6s | — | 2,249,106 B STL, `Simple: yes` | OK (fell back to default tablet — param-name typo in the prototype harness, not a WASM issue) |
 
 \* "Heavy" actually rendered the default tablet because the `type_of_tablet` value `"iPad Pro 12.9 inch 4th-6th generation"` did not match a recognised name. To stress CGAL properly we'd retry with the exact catalog name.
 
@@ -55,7 +55,7 @@ Likely causes (most-to-least likely):
 - A single-threaded WASM build is fast enough — Web Workers / pthread builds are an optimization, not a requirement.
 - File System Access API + openscad-wasm covers the full workflow: folder-pick → read .scad + O&A + SVGs → render → save STL back to folder → watch for O&A edits and re-render.
 
-## Next steps (not for this spike)
+## Next steps (not for this prototype)
 
 1. Confirm CGAL warning is pre-existing in native (capture stderr from `openscad -o ... keyguard.scad` and grep for `CGAL`).
 2. Diagnose laser-cut failure with a native-side test of the same parameters.
