@@ -49,6 +49,14 @@
   .vp-btn { background: none; border: 1px solid transparent; padding: 4px 6px; cursor: pointer;
             font-size: 14px; border-radius: 2px; color: #333; min-width: 26px; }
   .vp-btn:hover { background: #d8d8d8; border-color: #aaa; }
+  .vp-btn:active { background: #cfcfcf; }
+  /* Original CC0 inline SVG icons drawn in OpenSCAD's flat axonometric
+     style (cube + highlighted face for views) so users moving between this
+     app and native OpenSCAD see the same visual language. currentColor lets
+     the accent (#06c) / default (#333) button colour flow into the glyph. */
+  .vp-btn svg { width: 16px; height: 16px; display: inline-block;
+                vertical-align: -3px; pointer-events: none; }
+  .vp-btn.split-main svg { margin-right: 5px; }
   .vp-sep { width: 1px; background: #bbb; height: 18px; margin: 0 4px; }
 
   /* ---------- console pane ---------- */
@@ -158,22 +166,80 @@
           </div>
         </div>
         <div id="viewport-toolbar">
-          <button class="vp-btn" id="view-render" title="Render (force re-render)" style="font-weight:bold;color:#06c">⟳</button>
+          <button class="vp-btn" id="view-render" title="Render (force re-render — like OpenSCAD's Preview, F5)" style="color:#06c">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 4 20 8.5 12 12 4 8.5Z" fill="currentColor" fill-opacity=".22" stroke="none"/>
+              <path d="M20 8.5 20 15.5 12 20 12 12Z" fill="currentColor" fill-opacity=".22" stroke="none"/>
+              <path d="M4 8.5 12 12 12 20 4 15.5Z" fill="currentColor" fill-opacity=".22" stroke="none"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
           <div class="vp-sep"></div>
-          <button class="vp-btn" id="view-fit"    title="View All (fit to window)">⛶</button>
+          <button class="vp-btn" id="view-fit"    title="View All">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M9 4H4v5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
+            </svg>
+          </button>
           <div class="vp-sep"></div>
-          <button class="vp-btn" id="view-top"    title="Top view">⬒</button>
-          <button class="vp-btn" id="view-bottom" title="Bottom view">⬓</button>
-          <button class="vp-btn" id="view-front"  title="Front view">▤</button>
-          <button class="vp-btn" id="view-back"   title="Back view">▥</button>
-          <button class="vp-btn" id="view-left"   title="Left view">◧</button>
-          <button class="vp-btn" id="view-right"  title="Right view">◨</button>
-          <button class="vp-btn" id="view-axes"   title="Toggle axes">+</button>
-          <button class="vp-btn" id="view-grid"   title="Toggle grid">▦</button>
+          <button class="vp-btn" id="view-top"    title="Top">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 4 20 8.5 12 12 4 8.5Z" fill="currentColor" fill-opacity=".4" stroke="none"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-bottom" title="Bottom">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 4 20 8.5 12 12 4 8.5Z" stroke="currentColor" stroke-dasharray="2 1.5"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-front"  title="Front">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 8.5 12 12 12 20 4 15.5Z" fill="currentColor" fill-opacity=".4" stroke="none"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-back"   title="Back">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 8.5 12 12 12 20 4 15.5Z" stroke="currentColor" stroke-dasharray="2 1.5"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-left"   title="Left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M20 8.5 20 15.5 12 20 12 12Z" stroke="currentColor" stroke-dasharray="2 1.5"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-right"  title="Right">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M20 8.5 20 15.5 12 20 12 12Z" fill="currentColor" fill-opacity=".4" stroke="none"/>
+              <path d="M12 4 20 8.5 20 15.5 12 20 4 15.5 4 8.5Z"/>
+              <path d="M4 8.5 12 12 20 8.5M12 12V20"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-axes"   title="Show Axes">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M5 19H20M5 19V4M5 19 13.5 10.5"/>
+              <path d="M17.5 16.5 20.5 19 17.5 21.5M2.5 6.5 5 3.5 7.5 6.5M11 11 14 10 13 13"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="view-grid"   title="Show Scale Markers">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 4H20V20H4Z"/>
+              <path d="M9.3 4V20M14.7 4V20M4 9.3H20M4 14.7H20"/>
+            </svg>
+          </button>
           <div class="vp-sep"></div>
           <span class="split-btn">
             <button class="vp-btn split-main" id="export-main" title="Export current design"
-                    style="font-weight:bold;color:#06c">⬇ Export as STL</button><button class="vp-btn split-arrow" id="export-arrow"
+                    style="font-weight:bold;color:#06c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M12 3V14"/><path d="M8 10.5 12 14.5 16 10.5"/><path d="M5 17V20H19V17"/></svg><span id="export-label">Export as STL</span></button><button class="vp-btn split-arrow" id="export-arrow"
                     title="Choose export format" style="color:#06c">▾</button>
             <div class="split-menu" id="export-menu">
               <div class="split-item" data-fmt="STL">Export as STL <span class="hint">3D print</span></div>
@@ -182,7 +248,12 @@
             </div>
           </span>
           <div class="vp-sep" style="margin-left:auto;"></div>
-          <button class="vp-btn" id="settings-btn" title="Settings">⚙</button>
+          <button class="vp-btn" id="settings-btn" title="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3.2"/>
+              <path d="M12 3.4V6M12 18V20.6M3.4 12H6M18 12H20.6M6 6 7.8 7.8M16.2 16.2 18 18M18 6 16.2 7.8M7.8 16.2 6 18"/>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -1905,7 +1976,7 @@ exportMenu.addEventListener('click', e => {
   const item = e.target.closest('.split-item');
   if (!item) return;
   currentExportFormat = item.dataset.fmt;
-  exportMain.firstChild.nodeValue = `⬇ Export as ${currentExportFormat}`;
+  document.getElementById('export-label').textContent = `Export as ${currentExportFormat}`;
   exportMain.title = `Export current design as ${currentExportFormat}`;
   exportMenu.classList.remove('open');
   exportCurrent(currentExportFormat);
