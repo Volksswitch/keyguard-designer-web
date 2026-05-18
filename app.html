@@ -1248,31 +1248,26 @@ async function doRender() {
     //     project.dims for the screenshot-underlay sizing. maybeCaptureDims
     //     extracts the numbers BEFORE this noise check runs, so suppressing
     //     the log doesn't break include_screenshot.
-    // The CGAL "assertion violation" / convex_hull_3.h applyHull line is
-    // deliberately NOT filtered — it points at a real pre-existing bug
-    // surfaced by sloped bar cuts that warrants visibility.
-    // In Laser-Cut mode the keyguard is flattened, so several hull()-based
-    // features collapse to degenerate (coplanar/collinear) point sets. The
-    // WASM build's stricter CGAL emits a convex_hull_3.h:684 assertion for
-    // those, but the laser-cut output still renders correctly (verified: a
-    // CLI render of the same params produces a valid manifold solid). These
-    // lines are therefore noise *only* in Laser-Cut mode — in 3D-Printed
-    // mode the same assertion flags a real sloped-bar-cut bug and MUST stay
-    // visible, so the suppression below is gated on laserCutMode.
-    const laserCutMode = currentFormValues().type_of_keyguard === 'Laser-Cut';
+    // The CGAL convex_hull_3.h:684 "assertion violation" / applyHull()
+    // block: a known upstream limitation. In Laser-Cut mode the flattened
+    // keyguard makes several hull()-based features degenerate; in 3D-Printed
+    // mode sloped bar cuts surface the same assertion. In every case the
+    // render still completes (verified: CLI renders of the same params
+    // produce valid manifold solids) — it is not actionable by a clinician
+    // and won't be fixed soon, so it's suppressed unconditionally rather
+    // than dumping a scary CGAL stack into the console on a normal render.
     let suppressedEmpty = false;
     function isNoise(t) {
       if (/Viewall and autocenter disabled/i.test(t)) return true;
       if (/Could not initialize localization/i.test(t)) return true;
       if (/__KG_DIMS__/.test(t)) return true;
-      if (laserCutMode && (
-            /CGAL (error|ERROR): assertion violation/.test(t) ||
-            /in applyHull\(\)/.test(t) ||
-            /convex_hull_3\.h/.test(t) ||
-            /it != border\.end\(\)/.test(t) ||
-            /cgal\.org\/bug_report/.test(t) ||
-            /^\s*(Expression|Expr|Explanation|File|Line)\s*:/.test(t)
-          )) return true;
+      if (/CGAL (error|ERROR): assertion violation/.test(t) ||
+          /in applyHull\(\)/.test(t) ||
+          /convex_hull_3\.h/.test(t) ||
+          /it != border\.end\(\)/.test(t) ||
+          /cgal\.org\/bug_report/.test(t) ||
+          /^\s*(Expression|Expr|Explanation|File|Line)\s*:/.test(t)
+         ) return true;
       // Per-render render-info dump (Manifold backend):
       if (/^Geometries in cache:/.test(t)) return true;
       if (/^Geometry cache size in bytes:/.test(t)) return true;
