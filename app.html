@@ -158,6 +158,8 @@
           </div>
         </div>
         <div id="viewport-toolbar">
+          <button class="vp-btn" id="view-render" title="Render (force re-render)" style="font-weight:bold;color:#06c">⟳</button>
+          <div class="vp-sep"></div>
           <button class="vp-btn" id="view-fit"    title="View All (fit to window)">⛶</button>
           <div class="vp-sep"></div>
           <button class="vp-btn" id="view-top"    title="Top view">⬒</button>
@@ -415,6 +417,12 @@ function toggleGrid() {
 // ===== Viewport toolbar wiring =====
 const Z_UP = new THREE.Vector3(0, 0, 1);
 const Y_UP = new THREE.Vector3(0, 1, 0);
+// Force an immediate re-render (bypasses the debounce). Mirrors OpenSCAD's
+// leftmost Preview button: handy for "clear the console, then render again"
+// so only the latest render's messages are shown.
+document.getElementById('view-render').addEventListener('click', () => {
+  if (project) doRender();
+});
 document.getElementById('view-fit').addEventListener('click', () => {
   if (currentMesh) fitCameraToObject(currentMesh);
 });
@@ -495,7 +503,11 @@ function orderedPresetNames(rawNames) {
   if (settings.presetOrder === 'creation') {
     return ['design default values', ...rest];
   }
-  return ['design default values', ...rest.slice().sort((a, b) => a.localeCompare(b))];
+  // Numeric-aware compare so "Test Case 5" sorts before "Test Case 10"
+  // (plain localeCompare orders them lexically: 1, 10, 2, ...).
+  return ['design default values', ...rest.slice().sort(
+    (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+  )];
 }
 
 function rebuildPresetDropdown() {
@@ -962,7 +974,11 @@ async function doRender() {
         baseArgs.push('-D', `${name}=${expr}`);
         overrideCount++;
       }
-      if (overrideCount) logLine(`  applying ${overrideCount} parameter override(s)`);
+      // No "applying N parameter override(s)" log line: it fired on every
+      // customizer edit (e.g. show split line = yes) and confused users into
+      // thinking something was wrong. The dirty "*" marker next to the preset
+      // dropdown already signals that settings differ from the preset.
+      void overrideCount;
     }
 
     // The createOpenSCAD wrapper's callMain triggers exitJS() at the end of
@@ -1003,11 +1019,28 @@ async function doRender() {
     // The CGAL "assertion violation" / convex_hull_3.h applyHull line is
     // deliberately NOT filtered — it points at a real pre-existing bug
     // surfaced by sloped bar cuts that warrants visibility.
+    // In Laser-Cut mode the keyguard is flattened, so several hull()-based
+    // features collapse to degenerate (coplanar/collinear) point sets. The
+    // WASM build's stricter CGAL emits a convex_hull_3.h:684 assertion for
+    // those, but the laser-cut output still renders correctly (verified: a
+    // CLI render of the same params produces a valid manifold solid). These
+    // lines are therefore noise *only* in Laser-Cut mode — in 3D-Printed
+    // mode the same assertion flags a real sloped-bar-cut bug and MUST stay
+    // visible, so the suppression below is gated on laserCutMode.
+    const laserCutMode = currentFormValues().type_of_keyguard === 'Laser-Cut';
     let suppressedEmpty = false;
     function isNoise(t) {
       if (/Viewall and autocenter disabled/i.test(t)) return true;
       if (/Could not initialize localization/i.test(t)) return true;
       if (/__SPIKE_DIMS__/.test(t)) return true;
+      if (laserCutMode && (
+            /CGAL (error|ERROR): assertion violation/.test(t) ||
+            /in applyHull\(\)/.test(t) ||
+            /convex_hull_3\.h/.test(t) ||
+            /it != border\.end\(\)/.test(t) ||
+            /cgal\.org\/bug_report/.test(t) ||
+            /^\s*(Expression|Expr|Explanation|File|Line)\s*:/.test(t)
+          )) return true;
       // Per-render render-info dump (Manifold backend):
       if (/^Geometries in cache:/.test(t)) return true;
       if (/^Geometry cache size in bytes:/.test(t)) return true;
@@ -1191,6 +1224,15 @@ const EXPORT_FORMATS = {
   // not enabled when building the application."
 };
 
+// Base filename for exported STL/SVG/PNG: the current preset name with any
+// characters invalid in a filename stripped. Falls back to "keyguard" when
+// no project/preset is loaded or the sanitised name is empty.
+function exportBaseName() {
+  const raw = (project && project.currentPreset) ? project.currentPreset : 'keyguard';
+  const clean = raw.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  return clean || 'keyguard';
+}
+
 // Captures the current viewport as a PNG blob. Renders one synchronous frame
 // first so the buffer reflects the latest scene state (orbit/pan/zoom + any
 // pending mesh changes), then hands off to canvas.toBlob. Used both by the
@@ -1221,7 +1263,7 @@ async function exportPNG() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'keyguard.png';
+  a.download = exportBaseName() + '.png';
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
   logLine(`Exported PNG (${blob.size.toLocaleString()} bytes)`);
@@ -1300,7 +1342,7 @@ async function exportCurrent(fmt) {
     const url = URL.createObjectURL(new Blob([bytes], { type: spec.mime }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'keyguard.' + spec.ext;
+    a.download = exportBaseName() + '.' + spec.ext;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
     setStatus(prevStatusText, prevStatusKind);
@@ -1740,8 +1782,33 @@ document.getElementById('clear-btn').addEventListener('click', () => { consoleEl
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(consoleEl.textContent).then(() => alert('Console copied to clipboard'));
 });
-document.getElementById('save-btn').addEventListener('click', () => {
-  alert('In the real app this would prompt to save the console as a .log file in the project folder.');
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const text = consoleEl.textContent;
+  try {
+    if (window.showSaveFilePicker) {
+      // True Save As dialog with an empty filename box; .txt extension.
+      const handle = await window.showSaveFilePicker({
+        suggestedName: '',
+        types: [{ description: 'Text file', accept: { 'text/plain': ['.txt'] } }],
+      });
+      const w = await handle.createWritable();
+      await w.write(text);
+      await w.close();
+      logLine(`Saved console to "${handle.name}"`);
+    } else {
+      // Fallback for browsers without the File System Access API: a plain
+      // blob download (the browser, not us, decides whether to prompt).
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'console.txt';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;   // user cancelled the dialog
+    logLine('Save console failed: ' + e.message);
+  }
 });
 document.getElementById('open-project-btn').addEventListener('click', () => {
   openProject().catch(e => {
