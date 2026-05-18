@@ -557,7 +557,8 @@ function setStatus(msg, kind = '') {
 }
 
 // ===== Settings (app-wide, persisted in localStorage) =====
-const SETTINGS_KEY = 'keyguard-spike:settings';
+const SETTINGS_KEY = 'keyguard:settings';
+const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
 };
@@ -565,7 +566,17 @@ let settings = loadSettings();
 
 function loadSettings() {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    let raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw === null) {
+      // One-time migration from the old key name so a returning
+      // clinician keeps their settings across the rename.
+      const legacy = localStorage.getItem(LEGACY_SETTINGS_KEY);
+      if (legacy !== null) {
+        localStorage.setItem(SETTINGS_KEY, legacy);
+        localStorage.removeItem(LEGACY_SETTINGS_KEY);
+        raw = legacy;
+      }
+    }
     const stored = raw ? JSON.parse(raw) : {};
     return { ...SETTINGS_DEFAULTS, ...stored };
   } catch {
@@ -636,28 +647,42 @@ let project = null;
 // the location — one click + one permission dialog (covers read+write) gets
 // us back in. We always request 'readwrite' upfront so a later Save Preset
 // doesn't need a second prompt.
-const HANDLE_DB = 'keyguard-spike-db';
+const HANDLE_DB = 'keyguard-db';
+const LEGACY_HANDLE_DB = 'keyguard-spike-db';   // pre-rename
 const HANDLE_STORE = 'handles';
 const HANDLE_KEY = 'lastProject';
 
-function idbOpen() {
+function idbOpenNamed(name) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(HANDLE_DB, 1);
+    const req = indexedDB.open(name, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(HANDLE_STORE);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
+function idbOpen() { return idbOpenNamed(HANDLE_DB); }
+
 async function idbGetHandle() {
-  try {
-    const db = await idbOpen();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(HANDLE_STORE, 'readonly');
-      const req = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  } catch { return null; }
+  const readFrom = async (name) => {
+    try {
+      const db = await idbOpenNamed(name);
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE, 'readonly');
+        const req = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    } catch { return null; }
+  };
+  let handle = await readFrom(HANDLE_DB);
+  if (!handle) {
+    // One-time migration: a returning clinician's remembered folder was
+    // stored under the old DB name. Pull it forward so they don't have to
+    // re-pick the folder and re-grant permission.
+    const legacy = await readFrom(LEGACY_HANDLE_DB);
+    if (legacy) { await idbPutHandle(legacy); handle = legacy; }
+  }
+  return handle;
 }
 async function idbPutHandle(handle) {
   try {
@@ -1113,7 +1138,7 @@ async function doRender() {
       baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
     baseArgs.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
-    // include_screenshot is honoured by the spike's Three.js plane overlay,
+    // include_screenshot is honoured by the web app's Three.js plane overlay,
     // not by keyguard.scad's own SVG import — the .scad version renders a flat
     // slab inside the screen recess which fills every cell with a "floor".
     // Force the .scad's handling off; we add the screenshot ourselves below.
@@ -1128,7 +1153,7 @@ async function doRender() {
       for (const [name, val] of Object.entries(cur)) {
         if (baseline[name] === val) continue;
         if (name === 'fudge' || name === 'ff') continue;   // never let UI clobber the workaround
-        if (name === 'include_screenshot') continue;       // spike-managed; .scad must stay "no"
+        if (name === 'include_screenshot') continue;       // app-managed; .scad must stay "no"
         const t = typeMap[name];
         const expr = (t === 'string')
           ? `"${String(val).replace(/"/g, '\\"')}"`
@@ -1147,10 +1172,10 @@ async function doRender() {
     // every run, which tears down the Emscripten runtime. The instance can
     // therefore only do one render, so we spin up a fresh instance per render.
     // Captures the swm/shm/sat/kt values emitted by keyguard.scad's
-    // `echo("__SPIKE_DIMS__", ...)` line so the screenshot plane can be sized
+    // `echo("__KG_DIMS__", ...)` line so the screenshot plane can be sized
     // and positioned correctly. The echo is on stderr from the wasm.
     function maybeCaptureDims(line) {
-      if (!line.includes('__SPIKE_DIMS__')) return;
+      if (!line.includes('__KG_DIMS__')) return;
       const m = line.match(/swm\s*=\s*(-?\d+(?:\.\d+)?)/);
       const m2 = line.match(/shm\s*=\s*(-?\d+(?:\.\d+)?)/);
       const m3 = line.match(/sat\s*=\s*(-?\d+(?:\.\d+)?)/);
@@ -1174,7 +1199,7 @@ async function doRender() {
     //   - Per-render WASM cache/timing/manifold-info block — useful for
     //     openscad developers, not for clinicians; the user already sees
     //     the elapsed-time on the status bar after a successful render.
-    //   - "__SPIKE_DIMS__" is the keyguard.scad echo we use to populate
+    //   - "__KG_DIMS__" is the keyguard.scad echo we use to populate
     //     project.dims for the screenshot-underlay sizing. maybeCaptureDims
     //     extracts the numbers BEFORE this noise check runs, so suppressing
     //     the log doesn't break include_screenshot.
@@ -1194,7 +1219,7 @@ async function doRender() {
     function isNoise(t) {
       if (/Viewall and autocenter disabled/i.test(t)) return true;
       if (/Could not initialize localization/i.test(t)) return true;
-      if (/__SPIKE_DIMS__/.test(t)) return true;
+      if (/__KG_DIMS__/.test(t)) return true;
       if (laserCutMode && (
             /CGAL (error|ERROR): assertion violation/.test(t) ||
             /in applyHull\(\)/.test(t) ||
@@ -1317,7 +1342,7 @@ async function doRender() {
     // ---- Optional screenshot plane below the keyguard ----
     // Sits at the bottom of the screen recess so the clinician sees the
     // referenced app screenshot through the cell cutouts. Sized to swm × shm
-    // captured from keyguard.scad's __SPIKE_DIMS__ echo. Honours the
+    // captured from keyguard.scad's __KG_DIMS__ echo. Honours the
     // include_screenshot Customizer parameter.
     const cur = currentFormValues();
     const wantScreenshot = cur.include_screenshot === 'yes';
@@ -1440,13 +1465,13 @@ async function exportCurrent(fmt) {
   const prevStatusKind = statusEl.className;
   setStatus(`Exporting as ${fmt}...`, 'rendering');
   try {
-    // keyguard.scad unconditionally echoes the "__SPIKE_DIMS__" line (the
+    // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
     // screenshot-plane sizing hint). It's never user-relevant and is already
     // filtered out of normal renders by isNoise(); apply the same filter on
     // the export path so it doesn't leak into the console during Export.
     const oscad = await createOpenSCAD({
-      print:    t => { if (!/__SPIKE_DIMS__/.test(t)) logRaw(t); },
-      printErr: t => { if (!/__SPIKE_DIMS__/.test(t)) logRaw(t); }
+      print:    t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
+      printErr: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); }
     });
     addFonts(oscad.getInstance());
     const fs = oscad.getInstance().FS;
@@ -1832,7 +1857,7 @@ async function checkOAFile() {
 // include_screenshot flips to "yes" — so swapping the image file on disk and
 // switching presets are both reflected on the next render. SVG files are
 // intentionally ignored (Three.js can't texture them without a rasterisation
-// step we've deferred — see project_browser_spike memory note).
+// step we've deferred).
 async function rescanScreenshot() {
   if (!project || !project.dirHandle) return;
   const old = project.screenshotTexture;

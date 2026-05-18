@@ -92,10 +92,11 @@ After Ken reviews side-by-side pairs, may need to nudge FOV or vpd interpretatio
   and no pthreads. COOP/COEP response headers are **not required**.
 - **FSA API:** File System Access API requires an HTTPS (or localhost) origin. `file://` URLs
   kill the folder picker, O&A auto-watch, save-preset-in-place, and IndexedDB persistence.
-- **IndexedDB / localStorage keys** still use `keyguard-spike:settings` and `keyguard-spike-db`
-  — renaming would orphan existing user data; needs a migration, not just a rename.
-- **`__SPIKE_DIMS__`** echo magic string in `keyguard.scad` ↔ parsed by `app.html` — working
-  contract, no functional reason to change.
+- **IndexedDB / localStorage keys** are `keyguard:settings` and `keyguard-db`. The old
+  `keyguard-spike:*` names are read once as a fallback (`LEGACY_*` in `app.html`) and
+  migrated forward, so returning clinicians keep their settings and remembered folder.
+- **`__KG_DIMS__`** echo magic string in `keyguard.scad` ↔ parsed by `app.html` — working
+  contract (renamed from the old `__SPIKE_DIMS__`); keep the two sides in lockstep.
 
 ---
 
