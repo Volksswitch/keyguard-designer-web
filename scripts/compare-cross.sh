@@ -44,16 +44,21 @@ OUT_DIR="$PROJECT_ROOT/output/cross-compare"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# ── Thresholds (calibrated against TC3/TC5 + TC56 parallel refs) ──
-# A step flags if the silhouette IoU OR the structural SSIM crosses its
-# bound, OR an overlay is detected on BOTH sides but mis-placed. The
-# colour-keyed overlay check only GATES when both renderers' overlay is
-# detected (high confidence): the web's translucent pink and OpenSCAD's
-# "#" red differ enough that absence on one side is unreliable, so
-# "one side only" is reported as info, never a flag.
-IOU_MIN="${IOU_MIN:-0.95}"          # silhouette overlap below this = drift
-SPLIT_CENTRE_MAX="${SPLIT_CENTRE_MAX:-0.03}"  # overlay bbox-centre delta, frac of diagonal
-SPLIT_SIZE_MAX="${SPLIT_SIZE_MAX:-0.35}"      # overlay bbox-diagonal delta, frac
+# ── Thresholds (TUNED against a full 60-case run + visual inspection) ──
+# Only the silhouette IoU GATES. Visual calibration showed:
+#   IoU <= ~0.89  → genuine significant structural difference
+#                   (e.g. TC12: web renders a near-solid slab, all cell
+#                   cutouts missing; TC15: malformed/merged cells)
+#   IoU >= ~0.93  → cross-renderer framing/shading/AA variance only
+#                   (same geometry; e.g. TC6, TC9)
+# 0.90 sits in that validated gap. The colour-keyed overlay check is
+# INFORMATIONAL only (not gated): it false-positives badly when the web
+# colours a solid feature pink while OpenSCAD's Tomorrow scheme colours
+# it blue (TC38), or on small scattered "#" marks (TC54). edgeIoU is
+# also informational — a useful triage hint for the 0.90–0.95 band.
+IOU_MIN="${IOU_MIN:-0.90}"          # silhouette overlap below this = significant drift
+SPLIT_CENTRE_MAX="${SPLIT_CENTRE_MAX:-0.03}"  # (info) overlay bbox-centre delta
+SPLIT_SIZE_MAX="${SPLIT_SIZE_MAX:-0.35}"      # (info) overlay bbox-diagonal delta
 RED_MIN_FRAC="0.0004"               # below this red coverage = "no overlay"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -81,7 +86,7 @@ mkdir -p "$OUT_DIR"
 echo -e "${BOLD}Cross-project structural comparison${RESET}"
 info "web : $WEB_SNAP"
 info "scad: $SCAD_SNAP"
-info "gate: IoU>=$IOU_MIN, overlayΔcentre<=$SPLIT_CENTRE_MAX, overlayΔsize<=$SPLIT_SIZE_MAX (edgeIoU is informational)"
+info "gate: silhouette IoU>=$IOU_MIN  (overlayΔ and edgeIoU are informational)"
 echo
 
 # Fraction (0..1) of white in a 1-channel image.
@@ -141,7 +146,6 @@ for c in "${CASES[@]}"; do
         read -r wfrac wbb <<<"$(red_mask "$wf")"
         read -r sfrac sbb <<<"$(red_mask "$sf")"
         split_note="no overlay"
-        split_bad=0
         if [[ "$wbb" != "-" && "$sbb" != "-" ]]; then
             parse(){ echo "$1" | sed -E 's/x|\+/ /g'; }
             read -r ww wh wx wy <<<"$(parse "$wbb")"
@@ -155,17 +159,18 @@ for c in "${CASES[@]}"; do
                 wd=sqrt(ww*ww+wh*wh); sd=sqrt(sw*sw+sh*sh);
                 ds=(sd>0)?( (wd>sd)?(wd-sd)/sd:(sd-wd)/wd ):1;
                 printf "%.4f %.4f", dc, ds }')"
-            split_note="overlayΔcentre=$dC Δsize=$dS"
-            awk "BEGIN{exit !($dC > $SPLIT_CENTRE_MAX || $dS > $SPLIT_SIZE_MAX)}" && split_bad=1
+            # Informational only — not gated. The colour-keyed overlay
+            # comparison false-positives when a solid feature is pink in
+            # the web app but a different hue in OpenSCAD's Tomorrow scheme.
+            split_note="overlayΔcentre=$dC Δsize=$dS [info]"
+            awk "BEGIN{exit !($dC > $SPLIT_CENTRE_MAX || $dS > $SPLIT_SIZE_MAX)}" \
+                && split_note="$split_note ⚠large"
         elif [[ "$wbb" != "-" || "$sbb" != "-" ]]; then
-            # Info only — the two renderers' overlay colours differ too
-            # much for one-sided absence to be a reliable structural signal.
             split_note="overlay keyed on one side only (web:$wbb scad:$sbb) [info]"
         fi
 
         bad=0
         awk "BEGIN{exit !($iou < $IOU_MIN)}" && bad=1
-        [[ $split_bad -eq 1 ]] && bad=1
 
         msg="step $n  IoU=$iou  edgeIoU=$edge_iou  $split_note"
         if [[ $bad -eq 1 ]]; then

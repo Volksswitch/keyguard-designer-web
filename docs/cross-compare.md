@@ -12,9 +12,9 @@ drift:
 
 | Signal | Gated? | Meaning |
 |---|---|---|
-| **Silhouette IoU** | Yes (`IOU_MIN`, default 0.95) | Otsu foreground-mask overlap. Colour/shading-blind. Catches missing/shifted/rotated/scaled geometry and wrong cutout layout. |
-| **Overlay placement** | Yes (when keyed on **both** sides) | Colour-keyed pink/`#` overlay bbox centre + size delta. Flags a mis-placed split line / `#` highlight. "One side only" is **info**, never a flag (the two renderers' overlay colours differ too much for one-sided absence to be reliable). |
-| **Edge-structure IoU** | No (informational) | Canny-edge overlap on normalised grayscale; a human-readable second opinion on internal structure. |
+| **Silhouette IoU** | **Yes** (`IOU_MIN`, default **0.90**) | Otsu foreground-mask overlap. Colour/shading-blind. Catches missing/shifted/rotated/scaled geometry and wrong cutout layout. Tuned against a full 60-case run: IoU ≤ ~0.89 = genuine significant difference; ≥ ~0.93 = cross-renderer framing/shading variance only. |
+| **Overlay placement** | No (informational) | Colour-keyed pink/`#` overlay bbox delta, printed with `[info]` (and `⚠large` past `SPLIT_*_MAX`). NOT gated: it false-positives when the web colours a solid feature pink while OpenSCAD's Tomorrow scheme colours it another hue (e.g. blue), or on small scattered `#` marks. Useful as a human hint, not a verdict. |
+| **Edge-structure IoU** | No (informational) | Canny-edge overlap on normalised grayscale; a triage hint for the 0.90–0.95 band. |
 
 It is a **structural drift detector, not an equivalence test**: the two
 renderers genuinely differ, so a perfect-geometry pair never scores zero.
@@ -35,7 +35,8 @@ captures”). That authorises a run of `scripts/compare-cross.sh`.
 ```bash
 ./scripts/compare-cross.sh                       # every parallel case
 ./scripts/compare-cross.sh "Test Case 56"        # one case
-IOU_MIN=0.90 ./scripts/compare-cross.sh          # only gross drift
+IOU_MIN=0.95 ./scripts/compare-cross.sh          # pickier than the 0.90 default
+IOU_MIN=0.85 ./scripts/compare-cross.sh          # only gross drift
 ```
 
 Exit 0 = nothing flagged; exit 1 = at least one structural flag.
