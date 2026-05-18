@@ -44,6 +44,17 @@ OUT_DIR="$PROJECT_ROOT/output/cross-compare"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# NDJSON timings — same schema as tests/timings-reporter.mjs so this run's
+# results sit alongside the smoke/visual layers and can be tailed together.
+# Fresh per run (matches the project's "always reset test-timings.ndjson"
+# convention; the other layers truncate it the same way).
+TIMINGS_FILE="$PROJECT_ROOT/test-timings.ndjson"
+RUN_LABEL="$(date '+%Y-%m-%d_%H-%M-%S')"
+ndjson_ts(){ date '+%Y-%m-%d %I:%M:%S %p %Z'; }
+json_str(){ printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+ndjson(){ printf '%s\n' "$1" >> "$TIMINGS_FILE"; }
+: > "$TIMINGS_FILE"
+
 # ── Thresholds (TUNED against a full 60-case run + visual inspection) ──
 # Only the silhouette IoU GATES. Visual calibration showed:
 #   IoU <= ~0.89  → genuine significant structural difference
@@ -107,16 +118,26 @@ red_mask(){
 }
 
 FLAGS=0; STEPS=0
+RUN_START=$(date +%s)
+CASES_RUN=0; CASES_PASSED=0; CASES_FAILED=0
+ndjson "{\"event\":\"env\",\"session\":\"$RUN_LABEL\",\"tool\":\"compare-cross\",\"cases\":${#CASES[@]},\"ts\":\"$(ndjson_ts)\"}"
 for c in "${CASES[@]}"; do
     wdir="$WEB_SNAP/$c"; sdir="$SCAD_SNAP/$c"
     [[ -d "$wdir" && -d "$sdir" ]] || { info "skip '$c' (not in both trees)"; continue; }
     echo -e "${BOLD}$c${RESET}"
+    cjson="$(json_str "$c")"
+    step_count=$(find "$wdir" -maxdepth 1 -name 'step*_expected.png' 2>/dev/null | wc -l | tr -d ' ')
+    case_start=$(date +%s); case_pass=0; case_fail=0
     n=1
     while :; do
         wf="$wdir/step${n}_expected.png"; sf="$sdir/step${n}_expected.png"
         [[ -f "$wf" || -f "$sf" ]] || break
+        step_start=$(date +%s)
         if [[ ! -f "$wf" || ! -f "$sf" ]]; then
-            flag "step $n — reference missing on one side"; FLAGS=$((FLAGS+1)); n=$((n+1)); continue
+            flag "step $n — reference missing on one side"; FLAGS=$((FLAGS+1))
+            case_fail=$((case_fail+1))
+            ndjson "{\"event\":\"step\",\"run\":\"$RUN_LABEL\",\"case\":\"$cjson\",\"step\":$n,\"step_count\":$step_count,\"label\":\"compare\",\"status\":\"fail\",\"reason\":\"reference missing\",\"duration_s\":0,\"ts\":\"$(ndjson_ts)\"}"
+            n=$((n+1)); continue
         fi
         STEPS=$((STEPS+1))
 
@@ -173,17 +194,24 @@ for c in "${CASES[@]}"; do
         awk "BEGIN{exit !($iou < $IOU_MIN)}" && bad=1
 
         msg="step $n  IoU=$iou  edgeIoU=$edge_iou  $split_note"
+        step_dur=$(( $(date +%s) - step_start ))
         if [[ $bad -eq 1 ]]; then
             flag "$msg"
-            FLAGS=$((FLAGS+1))
+            FLAGS=$((FLAGS+1)); case_fail=$((case_fail+1))
             magick "$wf" "$sf" +append "$OUT_DIR/${c}_step${n}_sxs.png"
             info "  → side-by-side: output/cross-compare/${c}_step${n}_sxs.png"
         else
             pass "$msg"
+            case_pass=$((case_pass+1))
         fi
+        ndjson "{\"event\":\"step\",\"run\":\"$RUN_LABEL\",\"case\":\"$cjson\",\"step\":$n,\"step_count\":$step_count,\"label\":\"compare\",\"status\":\"$([[ $bad -eq 1 ]] && echo fail || echo pass)\",\"iou\":$iou,\"edge_iou\":$edge_iou,\"duration_s\":$step_dur,\"ts\":\"$(ndjson_ts)\"}"
         n=$((n+1))
     done
+    ndjson "{\"event\":\"case\",\"run\":\"$RUN_LABEL\",\"case\":\"$cjson\",\"steps\":$((case_pass+case_fail)),\"passed\":$case_pass,\"failed\":$case_fail,\"captured\":0,\"duration_s\":$(( $(date +%s) - case_start )),\"ts\":\"$(ndjson_ts)\"}"
+    CASES_RUN=$((CASES_RUN+1))
+    if [[ $case_fail -eq 0 ]]; then CASES_PASSED=$((CASES_PASSED+1)); else CASES_FAILED=$((CASES_FAILED+1)); fi
 done
+ndjson "{\"event\":\"run\",\"run\":\"$RUN_LABEL\",\"mode\":\"cross-compare\",\"cases_run\":$CASES_RUN,\"cases_passed\":$CASES_PASSED,\"cases_failed\":$CASES_FAILED,\"duration_s\":$(( $(date +%s) - RUN_START )),\"ts\":\"$(ndjson_ts)\"}"
 
 echo
 if [[ $FLAGS -eq 0 ]]; then

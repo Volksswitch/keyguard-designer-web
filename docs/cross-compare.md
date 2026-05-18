@@ -40,3 +40,9 @@ IOU_MIN=0.85 ./scripts/compare-cross.sh          # only gross drift
 ```
 
 Exit 0 = nothing flagged; exit 1 = at least one structural flag.
+
+Per-step results (with `iou`/`edge_iou`), per-case aggregates, and a final
+run summary are appended to `test-timings.ndjson` in the project root,
+using the same schema as `tests/timings-reporter.mjs` — so a compare run
+sits alongside the smoke/visual layers and can be tailed together. The
+file is truncated fresh at the start of each run.

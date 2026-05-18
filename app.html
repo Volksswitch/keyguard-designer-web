@@ -1098,6 +1098,46 @@ function keyguardColorName(cur) {
   return 'Turquoise';   // 3D-printed keyguard / halves (the common default)
 }
 
+// Build a flat, face-on plane showing an OpenSCAD-exported SVG (the
+// laser-cut "first layer"). The .scad emits a 2D object for that generate
+// mode, which has no STL — so instead of a failed 3D render we rasterise
+// the SVG onto a white canvas and texture a plane sized to the SVG's mm
+// dimensions, giving a clean 2-dimensional preview.
+function buildSvgPlane(svgText) {
+  return new Promise((resolve, reject) => {
+    const num = s => (s ? parseFloat(s[1]) : null);
+    let w = num(svgText.match(/width="([\d.]+)/));
+    let h = num(svgText.match(/height="([\d.]+)/));
+    const vb = svgText.match(/viewBox="[\d.\-]+ [\d.\-]+ ([\d.]+) ([\d.]+)"/);
+    if ((!w || !h) && vb) { w = parseFloat(vb[1]); h = parseFloat(vb[2]); }
+    if (!w || !h) { w = 200; h = 150; }
+    const px = Math.min(2048, Math.round(Math.max(w, h) * 6));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(px * w / Math.max(w, h));
+    canvas.height = Math.round(px * h / Math.max(w, h));
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+    img.onload = () => {
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+      );
+      const g = new THREE.Group();
+      g.add(plane);
+      resolve(g);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('could not rasterise SVG')); };
+    img.src = url;
+  });
+}
+
 async function doRender() {
   if (!project) {
     setStatus('Open a project folder first.', 'error');
@@ -1143,6 +1183,11 @@ async function doRender() {
     // slab inside the screen recess which fills every cell with a "floor".
     // Force the .scad's handling off; we add the screenshot ourselves below.
     baseArgs.push('-D', 'include_screenshot="no"');
+    // Opt into keyguard.scad's screen-dims echo (off by default there so
+    // native OpenSCAD users never see it). maybeCaptureDims() reads it to
+    // size the screenshot-underlay plane; isNoise() keeps it out of the
+    // console. Not passed on the export path — exports don't need dims.
+    baseArgs.push('-D', 'echo_dims="yes"');
     if (project.customizer) {
       const cur = currentFormValues();
       const baseline = project.baselineParams || {};
@@ -1234,9 +1279,9 @@ async function doRender() {
       if (/^CGAL Polyhedrons in cache:/.test(t)) return true;
       if (/^CGAL cache size in bytes:/.test(t)) return true;
       if (/^Total rendering time:/.test(t)) return true;
-      if (/^\s*Top level object is a 3D object/.test(t)) return true;
+      if (/^\s*Top level object is a [23]D object/.test(t)) return true;
       if (/^\s*Status:\s+NoError/.test(t)) return true;
-      if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple):/.test(t)) return true;
+      if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple|Convex|Area):/.test(t)) return true;
       if (/Current top level object is empty/i.test(t)) {
         suppressedEmpty = true;
         return true;
@@ -1292,6 +1337,24 @@ async function doRender() {
       // Per-render byte-count line removed; the user sees overall render
       // time on the status bar after both render passes complete.
       return { elapsed, bytes };
+    }
+
+    // ---- 2D laser-cut layer: render to SVG, show flat ----
+    // generate="first layer for SVG/DXF file" emits a 2D OpenSCAD object,
+    // which has no STL. Rather than attempt a 3D render (fails with "not a
+    // 3D object", leaving the previous mesh up + scary console errors),
+    // render straight to SVG and show it as a flat 2-dimensional plane.
+    if (currentFormValues().generate === 'first layer for SVG/DXF file') {
+      const svg = await runOnce([], '/kg.svg', 'SVG layer');
+      if (!svg.bytes) throw new Error('no 2D layer produced — is the keyguard set to Laser-Cut?');
+      const plane = await buildSvgPlane(new TextDecoder().decode(svg.bytes));
+      if (currentMesh) scene.remove(currentMesh);
+      currentMesh = plane;
+      scene.add(currentMesh);
+      fitCameraToObject(currentMesh);
+      cameraFitOnce = true;
+      setStatus(`Rendered 2D laser-cut layer in ${svg.elapsed.toFixed(1)} s`, 'ok');
+      return;
     }
 
     // ---- Render 1: keyguard (no overlays) ----
