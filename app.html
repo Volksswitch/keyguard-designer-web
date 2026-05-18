@@ -911,6 +911,26 @@ function applyOpenscadCamera(vpt, vpr, vpd) {
 }
 
 // ===== Render pipeline =====
+// Mirrors keyguard.scad's top-level color() dispatch (the big generate
+// if/else chain). Every generate mode emits a single-colour piece, so one
+// material colour per render is exact — no per-part multi-render needed.
+// THREE.Color accepts these CSS/X11 names directly. Echo-only branches
+// (e.g. "laser-cut frame not supported") produce no geometry, so their
+// colour is irrelevant and the Turquoise fallback is harmless.
+function keyguardColorName(cur) {
+  const g        = cur.generate || 'keyguard';
+  const lc       = cur.type_of_keyguard === 'Laser-Cut';
+  const hasFrame = cur.have_a_keyguard_frame === 'yes';
+  if (g.indexOf('clip') !== -1) return 'lime';                 // all clip variants
+  if (g === 'cell insert' && !lc) return 'LawnGreen';
+  if (!lc && (g === 'keyguard frame' ||
+              g === 'first half of keyguard frame' ||
+              g === 'second half of keyguard frame')) return 'Turquoise';
+  if (lc && !hasFrame && g === 'first layer for SVG/DXF file') return 'DarkSeaGreen';
+  if (lc && !hasFrame && g === 'keyguard') return 'Khaki';
+  return 'Turquoise';   // 3D-printed keyguard / halves (the common default)
+}
+
 async function doRender() {
   if (!project) {
     setStatus('Open a project folder first.', 'error');
@@ -1128,7 +1148,7 @@ async function doRender() {
     const toAB = u8 => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
     const kgGeom = loader.parse(toAB(kgBytes));
     kgGeom.computeVertexNormals();
-    const kgMat = new THREE.MeshPhongMaterial({ color: 0x40e1d1, shininess: 30, flatShading: false });
+    const kgMat = new THREE.MeshPhongMaterial({ color: new THREE.Color(keyguardColorName(currentFormValues())), shininess: 30, flatShading: false });
     const kgMesh = new THREE.Mesh(kgGeom, kgMat);
 
     const group = new THREE.Group();
