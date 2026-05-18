@@ -148,6 +148,20 @@
   #settings-panel .setting .opt { display: block; margin: 2px 0; font-weight: normal; }
   #settings-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
   #settings-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+
+  /* ---------- Confirm (unsaved-changes) modal ---------- */
+  #confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+                     display: none; align-items: center; justify-content: center; z-index: 1100; }
+  #confirm-overlay.open { display: flex; }
+  #confirm-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                   width: 420px; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  #confirm-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
+                      background: #e8e8e8; font-size: 14px; }
+  #confirm-msg { padding: 16px 14px; font-size: 12px; line-height: 1.5; }
+  #confirm-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right;
+                    background: #f0f0f0; }
+  #confirm-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; margin-left: 8px; }
+  #confirm-ok { font-weight: bold; color: #a33; }
 </style>
 </head>
 <body>
@@ -320,6 +334,18 @@
     </div>
     <div id="settings-footer">
       <button id="settings-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Unsaved-changes confirm modal ============ -->
+<div id="confirm-overlay">
+  <div id="confirm-modal">
+    <h3>Unsaved changes</h3>
+    <div id="confirm-msg"></div>
+    <div id="confirm-footer">
+      <button id="confirm-cancel">Cancel</button>
+      <button id="confirm-ok">Discard changes</button>
     </div>
   </div>
 </div>
@@ -656,10 +682,51 @@ async function idbClearHandle() {
   } catch {}
 }
 
+// Return the app to its initial "no project" layout: clear the 3D viewport,
+// console, and Customizer panes, drop every internal reference to the folder
+// (including the persisted IndexedDB handle), and restore the Open Project
+// prompt. Called when the user denies folder access — previously the denied
+// handle was persisted and reused, forcing the clinician to click "Don't
+// allow" several times before a different folder could be chosen.
+async function resetToNoProject() {
+  stopWatcher();
+  project = null;
+  try { await idbClearHandle(); } catch {}
+  if (currentMesh) { scene.remove(currentMesh); currentMesh = null; }
+  renderer.render(scene, camera);
+  cameraFitOnce = false;
+  consoleEl.textContent = '';
+  container.innerHTML = '';
+  document.getElementById('preset-select').innerHTML = '';
+  document.getElementById('preset-select').classList.remove('dirty');
+  document.getElementById('dirty-marker').classList.remove('visible');
+  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn']) {
+    const b = document.getElementById(id);
+    if (b) b.disabled = true;
+  }
+  const opBtn = document.getElementById('open-project-btn');
+  if (opBtn) {
+    opBtn.textContent = 'Open Project…';
+    opBtn.title = 'Pick a folder containing keyguard.scad and openings_and_additions.txt';
+  }
+  document.getElementById('project-folder-label').innerHTML = '<i>no project folder open</i>';
+  document.getElementById('watch-status').textContent = '';
+  setStatus('Click <b>Open Project…</b> to begin.');
+}
+
 async function openProject() {
   if (!window.showDirectoryPicker) {
     alert('This browser does not support the File System Access API. Please use Chrome or Edge.');
     return;
+  }
+  // Warn before abandoning unsaved preset edits. confirmDiscard() is a DOM
+  // modal (not native confirm) so its button click preserves the user
+  // gesture the directory picker needs further down.
+  if (project && isDirty()) {
+    const proceed = await confirmDiscard(
+      `You have unsaved changes to "${project.currentPreset}". ` +
+      `Opening a different project will discard them.`);
+    if (!proceed) return;
   }
   let dirHandle = null;
   // If a project is already loaded, this click means "switch to a different
@@ -677,7 +744,12 @@ async function openProject() {
         if (perm === 'granted') {
           dirHandle = stored;
         } else {
-          logLine('Re-open of last folder was not approved — showing picker.');
+          // User denied re-access to the remembered folder. Drop every
+          // reference (incl. the persisted handle) and return to the clean
+          // initial layout so the next click goes straight to the picker —
+          // no repeated "Don't allow" prompts for the same dead handle.
+          await resetToNoProject();
+          return;
         }
       } catch (e) {
         logLine(`Stored project handle could not be reused (${e.name || e.message}); showing picker.`);
@@ -692,13 +764,15 @@ async function openProject() {
       if (e.name === 'AbortError') return;       // user cancelled
       throw e;
     }
-    // Ensure write permission upfront so Save Preset doesn't re-prompt later.
-    try {
-      const perm = await dirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') {
-        logLine('Write permission was not granted — Save Preset will prompt again.');
-      }
-    } catch {}
+    // Ensure read+write upfront. If the user denies access, abort cleanly
+    // back to the initial layout rather than continuing with a dead handle
+    // (which previously threw mid-load and left the picker re-prompting).
+    let perm = 'denied';
+    try { perm = await dirHandle.requestPermission({ mode: 'readwrite' }); } catch {}
+    if (perm !== 'granted') {
+      await resetToNoProject();
+      return;
+    }
   }
   await idbPutHandle(dirHandle);
   stopWatcher();
@@ -1366,9 +1440,13 @@ async function exportCurrent(fmt) {
   const prevStatusKind = statusEl.className;
   setStatus(`Exporting as ${fmt}...`, 'rendering');
   try {
+    // keyguard.scad unconditionally echoes the "__SPIKE_DIMS__" line (the
+    // screenshot-plane sizing hint). It's never user-relevant and is already
+    // filtered out of normal renders by isNoise(); apply the same filter on
+    // the export path so it doesn't leak into the console during Export.
     const oscad = await createOpenSCAD({
-      print:    t => logRaw(t),
-      printErr: t => logRaw(t)
+      print:    t => { if (!/__SPIKE_DIMS__/.test(t)) logRaw(t); },
+      printErr: t => { if (!/__SPIKE_DIMS__/.test(t)) logRaw(t); }
     });
     addFonts(oscad.getInstance());
     const fs = oscad.getInstance().FS;
@@ -1427,12 +1505,28 @@ async function exportCurrent(fmt) {
     if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
     const bytes = fs.readFile(outPath);
     logLine(`Export render (${fmt}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
-    const url = URL.createObjectURL(new Blob([bytes], { type: spec.mime }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = exportBaseName() + '.' + spec.ext;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    const fname = exportBaseName() + '.' + spec.ext;
+    // Prefer writing STL/SVG straight into the project folder so the
+    // deliverable lands next to the .scad it came from. Falls back to a
+    // browser download if there's no writable folder handle (fixture mode
+    // or denied permission). PNG never reaches here — exportPNG() always
+    // downloads it, deliberately, so it can't clobber the project's
+    // screenshot .png.
+    if (project.dirHandle && await ensureWritePermission()) {
+      const fh = await project.dirHandle.getFileHandle(fname, { create: true });
+      const w = await fh.createWritable();
+      await w.write(bytes);
+      await w.close();
+      logLine(`Saved ${fmt} to project folder as "${fname}"`);
+    } else {
+      const url = URL.createObjectURL(new Blob([bytes], { type: spec.mime }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      logLine(`Downloaded "${fname}" (no writable project folder)`);
+    }
     setStatus(prevStatusText, prevStatusKind);
   } catch (e) {
     logLine('Export failed: ' + e.message);
@@ -1782,14 +1876,49 @@ function triggerWatchRerender() {
   doRender();
 }
 
-function updateDirty() {
-  if (!project) return;
+// True when the current form values differ from the loaded preset's
+// baseline (i.e. there are unsaved changes).
+function isDirty() {
+  if (!project) return false;
   const cur = currentFormValues();
   const base = project.baselineParams || {};
-  let dirty = false;
   for (const k of Object.keys(cur)) {
-    if (String(cur[k]) !== String(base[k] ?? '')) { dirty = true; break; }
+    if (String(cur[k]) !== String(base[k] ?? '')) return true;
   }
+  return false;
+}
+
+// DOM-based replacement for confirm(). A native confirm() consumes the
+// page's transient user activation, which would then make the folder
+// picker / requestPermission throw in openProject(). The modal's button
+// click is itself a fresh user gesture, so the picker still works after it.
+function confirmDiscard(message) {
+  return new Promise(resolve => {
+    const ov = document.getElementById('confirm-overlay');
+    document.getElementById('confirm-msg').textContent = message;
+    const ok = document.getElementById('confirm-ok');
+    const cancel = document.getElementById('confirm-cancel');
+    function cleanup(val) {
+      ov.classList.remove('open');
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKey);
+      resolve(val);
+    }
+    function onOk() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+    function onKey(e) { if (e.key === 'Escape') cleanup(false); }
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKey);
+    ov.classList.add('open');
+    cancel.focus();
+  });
+}
+
+function updateDirty() {
+  if (!project) return;
+  const dirty = isDirty();
   document.getElementById('dirty-marker').classList.toggle('visible', dirty);
   document.getElementById('preset-select').classList.toggle('dirty', dirty);
   document.getElementById('save-preset-btn').disabled = !dirty;
@@ -1875,10 +2004,13 @@ document.getElementById('save-btn').addEventListener('click', async () => {
   try {
     if (window.showSaveFilePicker) {
       // True Save As dialog with an empty filename box; .txt extension.
-      const handle = await window.showSaveFilePicker({
+      // Default the dialog to the open project folder when there is one.
+      const opts = {
         suggestedName: '',
         types: [{ description: 'Text file', accept: { 'text/plain': ['.txt'] } }],
-      });
+      };
+      if (project && project.dirHandle) opts.startIn = project.dirHandle;
+      const handle = await window.showSaveFilePicker(opts);
       const w = await handle.createWritable();
       await w.write(text);
       await w.close();
@@ -1987,6 +2119,15 @@ const resetBtn = document.getElementById('reset-btn');
 
 presetSelect.addEventListener('change', async () => {
   if (!project) return;
+  if (isDirty()) {
+    const proceed = await confirmDiscard(
+      `You have unsaved changes to "${project.currentPreset}". ` +
+      `Switching presets will discard them.`);
+    if (!proceed) {
+      presetSelect.value = project.currentPreset;   // revert the dropdown
+      return;
+    }
+  }
   project.currentPreset = presetSelect.value;
   populateFormFromPreset(presetSelect.value);
   updateDelPresetButton();
