@@ -1,5 +1,6 @@
 # Render outputs are throwaway.
 outputs/
+output/
 
 # Redundant — the openscad-wasm/ folder is what we use.
 openscad-wasm.tgz
