@@ -2208,14 +2208,18 @@ async function checkOAFile() {
 const IMAGE_EXT = /\.(jpe?g|png)$/i;
 
 // The FIRST .jpg/.jpeg/.png in the project folder (deterministic iteration
-// order), as { name, file }, or null. Shared by rescanScreenshot() and the
-// watcher so both agree on which image "the screenshot" is.
+// order), as { name, handle }, or null. Deliberately does NOT call
+// getFile(): a freshly added file (especially under OneDrive) can make
+// getFile() throw transiently, and presence detection must not hinge on
+// reading the file's bytes/metadata — that's what made an added image go
+// unnoticed after a removal. The actual read happens in rescanScreenshot,
+// which logs + retries on failure.
 async function firstImageEntry() {
   if (!project || !project.dirHandle) return null;
   for await (const [name, handle] of project.dirHandle.entries()) {
     if (handle.kind !== 'file') continue;
     if (!IMAGE_EXT.test(name)) continue;
-    return { name, file: await handle.getFile() };
+    return { name, handle };
   }
   return null;
 }
@@ -2259,7 +2263,8 @@ async function rescanScreenshot() {
     return;
   }
   try {
-    const { name, file } = entry;
+    const { name, handle } = entry;
+    const file = await handle.getFile();
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
     const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
@@ -2281,7 +2286,14 @@ async function rescanScreenshot() {
     }
   } catch (e) {
     project.imgSig = null;
-    logLine(`Screenshot scan failed: ${e.message}`);
+    // Deduped: a placeholder that won't hydrate would otherwise log this
+    // every poll. Report once per (file, error); a later successful read
+    // clears it via the normal "using" path.
+    const key = `err:${entry.name}:${e.message}`;
+    if (project.reportedImg !== key) {
+      logLine(`Screenshot scan failed for "${entry.name}": ${e.message}`);
+      project.reportedImg = key;
+    }
   }
 }
 
@@ -2293,12 +2305,23 @@ async function checkScreenshotFile() {
   if (!project || !project.dirHandle) return;
   let entry;
   try {
-    entry = await firstImageEntry();
+    entry = await firstImageEntry();   // {name, handle} | null — no getFile, robust
   } catch (e) {
-    return;   // transient FS error; try again next poll
+    return;   // entries() itself failed; try again next poll
   }
   const oldSig = project.imgSig ?? null;
-  const newSig = entry ? imageSig(entry.name, entry.file) : null;
+  let newSig = null;
+  if (entry) {
+    // Prefer a content signature (name|mtime|size); if the file can't be
+    // read yet (e.g. a OneDrive placeholder just dropped in), still treat
+    // it as present-and-changed so rescanScreenshot runs, logs, and the
+    // next poll retries — rather than silently doing nothing.
+    try {
+      newSig = imageSig(entry.name, await entry.handle.getFile());
+    } catch (e) {
+      newSig = `${entry.name}|?`;
+    }
+  }
   if (newSig === oldSig) return;   // unchanged on disk
 
   // rescanScreenshot() is the single console reporter (deduped by
