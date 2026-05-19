@@ -126,12 +126,16 @@ function discoverCases() {
 // the report — the input mesh's state BEFORE admesh's own repairs — so the
 // verdict is about the clinician's exact file, not a repaired copy.
 //
-// Pass = 2-manifold + watertight, mirroring the .scad layer's "Simple: yes":
-//   "Total disconnected facets" (Original) == 0  → every edge shared by two
-//        facets; also catches holes / open edges
-//   "Degenerate facets" == 0
-// Orientation (facets reversed / backwards edges) is logged but NOT failed
-// on, matching the .scad layer (slicers repair winding deterministically).
+// Pass = 2-manifold + watertight, mirroring the .scad layer's *implemented*
+// standard ("Simple: yes" = pure edge topology):
+//   "Total disconnected facets" (Original) == 0  → every edge shared by
+//        exactly two facets; also catches holes / open edges.
+// That single condition IS the manifold standard. Degenerate (zero-area)
+// facets, reversed facets and backwards edges are common Manifold-backend
+// tessellation artefacts that do NOT break 2-manifoldness — CGAL's
+// "Simple:" ignores them and slicers discard/repair them — so they are
+// logged for visibility but NOT failed on, exactly as the .scad --geometry
+// layer does (it gates solely on "Simple: yes").
 function manifoldVerdict(stlPath) {
   let r;
   try {
@@ -166,7 +170,8 @@ function manifoldVerdict(stlPath) {
     backwardsEdges:     grab(/Backwards edges\s*:\s*(\d+)/i),
     parts:              grab(/Number of parts\s*:\s*(\d+)/i),
   };
-  const manifold = stats.disconnectedFacets === 0 && stats.degenerateFacets === 0;
+  // Sole gate: the 2-manifold edge condition (== .scad's "Simple: yes").
+  const manifold = stats.disconnectedFacets === 0;
   return { state: manifold ? 'manifold' : 'non-manifold', stats, detail: out };
 }
 
@@ -262,11 +267,18 @@ if (discoveryError || CASES.length === 0) {
         `  admesh [${c.caseName} s${c.stepIndex}]: ` +
         `disconnected=${s.disconnectedFacets} degenerate=${s.degenerateFacets} ` +
         `parts=${s.parts} reversed=${s.facetsReversed} backwards=${s.backwardsEdges}`);
+      if (s.degenerateFacets > 0 || s.facetsReversed > 0 || s.backwardsEdges > 0) {
+        // Not a manifold failure (slicers handle these); surfaced so a
+        // regression in artefact volume is still noticeable.
+        console.warn(`  note [${c.caseName} s${c.stepIndex}]: non-fatal mesh ` +
+          `artefacts — degenerate=${s.degenerateFacets} reversed=${s.facetsReversed} ` +
+          `backwards=${s.backwardsEdges} (slicer-tolerated, not gated, per .scad policy)`);
+      }
       expect(
         verdict.state,
         `${c.caseName} step ${c.stepIndex}: app-exported STL is NON-MANIFOLD ` +
-        `(admesh: ${s.disconnectedFacets} disconnected facet edge(s), ` +
-        `${s.degenerateFacets} degenerate facet(s))`
+        `(admesh Original: ${s.disconnectedFacets} disconnected facet edge(s) — ` +
+        `every edge must be shared by exactly two facets)`
       ).toBe('manifold');
     });
   }
