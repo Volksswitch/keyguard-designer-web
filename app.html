@@ -454,6 +454,7 @@ controls.mouseButtons = {
 
 let currentMesh = null;          // Group containing keyguard + highlights meshes
 let cameraFitOnce = false;       // true after we've framed the scene at least once for this project
+let lastFitAngle = null;         // keyguard_display_angle at the last auto-fit (re-fit when it changes)
 
 function fitCameraToObject(object) {
   const box = new THREE.Box3().setFromObject(object);
@@ -1630,17 +1631,17 @@ async function doRender() {
     positionGrid();
 
     // Preserve the user's framing across O&A edits, parameter changes, and
-    // preset switches. Re-fit only on the very first render of a project,
-    // or when the design itself is being viewed at an angle (the .scad has
-    // tilted the keyguard via keyguard_display_angle), since that materially
-    // changes the bounding box orientation in a way the previous framing
-    // won't accommodate.
-    const angleStr = cur.keyguard_display_angle;
-    const angleNonZero = angleStr !== undefined && Number(angleStr) !== 0;
-    if (!cameraFitOnce || angleNonZero) {
+    // preset switches. Re-fit on the very first render of a project, or
+    // whenever keyguard_display_angle *changes* (including back to 0): the
+    // .scad tilts the keyguard by that angle, so any change reorients the
+    // bounding box in a way the previous framing won't accommodate. A steady
+    // angle (even a non-zero one) leaves the user's framing untouched.
+    const dispAngle = Number(cur.keyguard_display_angle) || 0;
+    if (!cameraFitOnce || dispAngle !== lastFitAngle) {
       fitCameraToObject(currentMesh);
       cameraFitOnce = true;
     }
+    lastFitAngle = dispAngle;
 
     const totalElapsed = tkElapsed + thElapsed;
     setStatus(`Rendered in ${totalElapsed.toFixed(1)} s`, 'ok');
