@@ -1628,6 +1628,87 @@ async function exportPNG() {
   logLine(`Exported PNG (${blob.size.toLocaleString()} bytes)`);
 }
 
+// Render the current design to STL/SVG bytes exactly as the user-facing
+// Export does — same args, same Manifold backend, same param derivation.
+// Both exportCurrent() (which writes/downloads) and the geometry-test hook
+// window.__exportSTLBytes call this, so a tested STL is byte-identical to
+// the file a clinician produces via Export → STL.
+async function renderExportBytes(fmt) {
+  const spec = EXPORT_FORMATS[fmt];
+  if (!spec) throw new Error(`Unknown export format: ${fmt}`);
+  // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
+  // screenshot-plane sizing hint). It's never user-relevant and is already
+  // filtered out of normal renders by isNoise(); apply the same filter on
+  // the export path so it doesn't leak into the console during Export.
+  const oscad = await createOpenSCAD({
+    print:    t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
+    printErr: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); }
+  });
+  addFonts(oscad.getInstance());
+  const fs = oscad.getInstance().FS;
+  fs.writeFile('/' + project.scadName, project.scadText);
+  fs.writeFile('/openings_and_additions.txt', project.oaText);
+  if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
+  for (const [name, bytes] of Object.entries(project.files)) {
+    if (name === project.scadName) continue;
+    if (name === project.jsonName) continue;
+    if (name === 'openings_and_additions.txt') continue;
+    fs.writeFile('/' + name, bytes);
+  }
+  const outPath = '/keyguard.' + spec.ext;
+  // Order matters: -D values placed after -p/-P win against the preset.
+  // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
+  // clobber our Manifold-precision workaround and leave cell floors in
+  // the exported file.
+  const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold'];
+  if (project.jsonText && project.currentPreset !== 'design default values') {
+    args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
+  }
+  args.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+  // Exports should never bake in the screenshot overlay (it's a viewport-only
+  // alignment aid). Force the .scad's SVG import off regardless of preset/form.
+  args.push('-D', 'include_screenshot="no"');
+  if (project.customizer) {
+    const cur = currentFormValues();
+    const baseline = project.baselineParams || {};
+    const typeMap = {};
+    for (const sec of project.customizer)
+      for (const p of sec.params) typeMap[p.name] = p.valueType;
+    for (const [name, val] of Object.entries(cur)) {
+      if (baseline[name] === val) continue;
+      if (name === 'fudge' || name === 'ff') continue;
+      if (name === 'include_screenshot') continue;
+      const t = typeMap[name];
+      const expr = (t === 'string')
+        ? `"${String(val).replace(/"/g, '\\"')}"`
+        : String(val);
+      args.push('-D', `${name}=${expr}`);
+    }
+  }
+  // SVG/DXF are 2D laser-cut deliverables. keyguard.scad only emits the
+  // correct 2D outline when it runs its dedicated first-layer code path,
+  // which is gated to laser-cut (a 3D-printed keyguard in this mode just
+  // errors). Force both params here, appended last so they override any
+  // preset/form value, mirroring how the .scad designer is driven:
+  //   type_of_keyguard="Laser-Cut" + generate="first layer for SVG/DXF file"
+  if (fmt === 'SVG') {
+    args.push('-D', 'type_of_keyguard="Laser-Cut"');
+    args.push('-D', 'generate="first layer for SVG/DXF file"');
+  }
+  const t0 = performance.now();
+  const rc = oscad.getInstance().callMain(args);
+  const elapsed = (performance.now() - t0) / 1000;
+  if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
+  const bytes = fs.readFile(outPath);
+  logLine(`Export render (${fmt}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
+  return bytes;
+}
+
+// Test-only hook: returns the exact bytes a clinician's Export → STL
+// produces (no folder write, no download). Used by tests/geometry.spec.mjs.
+// Array (not Uint8Array) so it survives Playwright's structured clone.
+window.__exportSTLBytes = async () => Array.from(await renderExportBytes('STL'));
+
 async function exportCurrent(fmt) {
   if (fmt === 'PNG') return exportPNG();
   if (!project) { alert('Open a project first.'); return; }
@@ -1637,71 +1718,7 @@ async function exportCurrent(fmt) {
   const prevStatusKind = statusEl.className;
   setStatus(`Exporting as ${fmt}...`, 'rendering');
   try {
-    // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
-    // screenshot-plane sizing hint). It's never user-relevant and is already
-    // filtered out of normal renders by isNoise(); apply the same filter on
-    // the export path so it doesn't leak into the console during Export.
-    const oscad = await createOpenSCAD({
-      print:    t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
-      printErr: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); }
-    });
-    addFonts(oscad.getInstance());
-    const fs = oscad.getInstance().FS;
-    fs.writeFile('/' + project.scadName, project.scadText);
-    fs.writeFile('/openings_and_additions.txt', project.oaText);
-    if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
-    for (const [name, bytes] of Object.entries(project.files)) {
-      if (name === project.scadName) continue;
-      if (name === project.jsonName) continue;
-      if (name === 'openings_and_additions.txt') continue;
-      fs.writeFile('/' + name, bytes);
-    }
-    const outPath = '/keyguard.' + spec.ext;
-    // Order matters: -D values placed after -p/-P win against the preset.
-    // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
-    // clobber our Manifold-precision workaround and leave cell floors in
-    // the exported file.
-    const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold'];
-    if (project.jsonText && project.currentPreset !== 'design default values') {
-      args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
-    }
-    args.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
-    // Exports should never bake in the screenshot overlay (it's a viewport-only
-    // alignment aid). Force the .scad's SVG import off regardless of preset/form.
-    args.push('-D', 'include_screenshot="no"');
-    if (project.customizer) {
-      const cur = currentFormValues();
-      const baseline = project.baselineParams || {};
-      const typeMap = {};
-      for (const sec of project.customizer)
-        for (const p of sec.params) typeMap[p.name] = p.valueType;
-      for (const [name, val] of Object.entries(cur)) {
-        if (baseline[name] === val) continue;
-        if (name === 'fudge' || name === 'ff') continue;
-        if (name === 'include_screenshot') continue;
-        const t = typeMap[name];
-        const expr = (t === 'string')
-          ? `"${String(val).replace(/"/g, '\\"')}"`
-          : String(val);
-        args.push('-D', `${name}=${expr}`);
-      }
-    }
-    // SVG/DXF are 2D laser-cut deliverables. keyguard.scad only emits the
-    // correct 2D outline when it runs its dedicated first-layer code path,
-    // which is gated to laser-cut (a 3D-printed keyguard in this mode just
-    // errors). Force both params here, appended last so they override any
-    // preset/form value, mirroring how the .scad designer is driven:
-    //   type_of_keyguard="Laser-Cut" + generate="first layer for SVG/DXF file"
-    if (fmt === 'SVG') {
-      args.push('-D', 'type_of_keyguard="Laser-Cut"');
-      args.push('-D', 'generate="first layer for SVG/DXF file"');
-    }
-    const t0 = performance.now();
-    const rc = oscad.getInstance().callMain(args);
-    const elapsed = (performance.now() - t0) / 1000;
-    if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
-    const bytes = fs.readFile(outPath);
-    logLine(`Export render (${fmt}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
+    const bytes = await renderExportBytes(fmt);
     const fname = exportBaseName() + '.' + spec.ext;
     // Prefer writing STL/SVG straight into the project folder so the
     // deliverable lands next to the .scad it came from. Falls back to a
