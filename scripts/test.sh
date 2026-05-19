@@ -26,7 +26,7 @@
 #   - Node.js LTS on PATH                   (install from https://nodejs.org/)
 #   - `npm install` from the project root   (installs Playwright)
 #   - `npx playwright install chromium`     (~200 MB browser bundle)
-#   - native `openscad` on PATH             (--geometry only; OPENSCAD=… to override)
+#   - `admesh` on PATH                      (--geometry only; ADMESH=… to override)
 # If any are missing, the affected layer fails with a clear pointer.
 
 set -euo pipefail
@@ -43,29 +43,6 @@ fail()   { echo -e "${RED}  ✗ FAIL${RESET}  $*"; FAILURES=$((FAILURES + 1)); }
 warn()   { echo -e "${YELLOW}  ⚠ WARN${RESET}  $*"; }
 info()   { echo -e "${BLUE}  ·${RESET} $*"; }
 header() { echo -e "\n${BOLD}$*${RESET}"; }
-
-# Locate native OpenSCAD for the --geometry layer. Honour an explicit
-# $OPENSCAD; else PATH; else standard Windows installs (prefer openscad.com,
-# the headless console wrapper that actually emits the "Simple:" line).
-# Mirrors find_openscad() in the .scad project's scripts/test.sh.
-find_openscad() {
-    if [[ -n "${OPENSCAD:-}" ]] && command -v "$OPENSCAD" >/dev/null 2>&1; then
-        echo "$OPENSCAD"; return
-    fi
-    if command -v openscad >/dev/null 2>&1; then echo "openscad"; return; fi
-    local p
-    for p in \
-        "/mnt/c/Program Files/OpenSCAD/openscad.com" \
-        "/mnt/c/Program Files (x86)/OpenSCAD/openscad.com" \
-        "/c/Program Files/OpenSCAD/openscad.com" \
-        "/mnt/c/Program Files/OpenSCAD/openscad.exe" \
-        "/mnt/c/Program Files (x86)/OpenSCAD/openscad.exe" \
-        "/c/Program Files/OpenSCAD/openscad.exe"
-    do
-        [[ -x "$p" ]] && { echo "$p"; return; }
-    done
-    echo ""
-}
 
 # Argument parsing
 RUN_LINT=0; RUN_SMOKE=0; RUN_VISUAL=0; RUN_GEOMETRY=0; UPDATE_SNAPSHOTS=0
@@ -162,23 +139,16 @@ fi
 # Layer 4 — Geometry validation (opt-in; not in default or --all)
 if [[ $RUN_GEOMETRY -eq 1 ]]; then
     header "Layer 4 — Geometry validation (app-exported STL, manifold check)"
-    OPENSCAD_BIN="$(find_openscad)"
     if ! command -v node >/dev/null 2>&1; then
         fail "node not on PATH — install Node.js LTS from https://nodejs.org/"
     elif [[ ! -d "$PROJECT_ROOT/node_modules/@playwright" ]]; then
         fail "Playwright not installed — run 'npm install' from project root"
-    elif [[ -z "$OPENSCAD_BIN" ]]; then
-        fail "OpenSCAD not found — install it, put it on PATH, or set OPENSCAD=/path/to/openscad. Required only for --geometry."
+    elif ! command -v "${ADMESH:-admesh}" >/dev/null 2>&1; then
+        fail "ADMesh not found — install 'admesh' and put it on PATH (or set ADMESH=/path/to/admesh). Required only for --geometry."
     else
-        # The spec runs under Windows-native Node, which can't read Git-Bash
-        # paths like /c/Program Files/...; hand it a native path.
-        if command -v cygpath >/dev/null 2>&1 && [[ "$OPENSCAD_BIN" == /* ]]; then
-            OPENSCAD_BIN="$(cygpath -m "$OPENSCAD_BIN")"
-        fi
-        info "Using OpenSCAD: $OPENSCAD_BIN"
         info "Running tests/geometry.spec.mjs (every shared case with 3D geometry)"
         info "Filter with KEYGUARD_GEOMETRY_CASES='Test Case 17,Test Case 49'"
-        if (cd "$PROJECT_ROOT" && KEYGUARD_TEST_MODE=geometry OPENSCAD="$OPENSCAD_BIN" npx playwright test --config=playwright.config.mjs tests/geometry.spec.mjs); then
+        if (cd "$PROJECT_ROOT" && KEYGUARD_TEST_MODE=geometry npx playwright test --config=playwright.config.mjs tests/geometry.spec.mjs); then
             pass "Geometry — every exported STL is manifold"
         else
             fail "Geometry — non-manifold or failed export (see report above)"

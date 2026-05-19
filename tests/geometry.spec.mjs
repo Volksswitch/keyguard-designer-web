@@ -5,9 +5,25 @@
 // For every shared test-case step that produces 3D geometry, this layer
 // exports an STL *through the app's own export code* (window.__exportSTLBytes,
 // which calls the exact renderExportBytes() that Export → STL uses — same
-// args, same Manifold backend, same param derivation) and then asserts the
-// STL is 2-manifold by the same criterion the .scad project's --geometry
-// layer uses: native OpenSCAD/CGAL must not report "Simple: no".
+// --backend=Manifold, same params) and then runs `admesh` on those exact
+// bytes to assert the mesh is 2-manifold and watertight.
+//
+// Why admesh, not OpenSCAD's "Simple:" line: the .scad --geometry layer
+// gets "Simple:" because it renders the CSG *model*. Here we only have the
+// finished STL; the bundled native OpenSCAD (2021.01) never prints "Simple:"
+// for an imported mesh and has no --backend flag. admesh inspects the STL
+// file directly — no re-render, no OpenSCAD, no backend ambiguity — so the
+// thing judged is byte-for-byte the file a clinician downloads.
+//
+// Pass criterion (mirrors the .scad layer's definition of manifold):
+//   Original "Total disconnected facets" == 0   (every edge shared by two
+//                                                 facets — the 2-manifold
+//                                                 condition; also catches
+//                                                 holes / open edges)
+//   "Degenerate facets" == 0
+// Reversed normals / backwards edges are NOT failed on — consistent with
+// the .scad layer, which treats orientation as a non-deterministic artefact
+// that slicers repair. Those counts are still logged for diagnostics.
 //
 // No comparison to the .scad project's STL is made or implied — the bar is
 // intrinsic correctness of what the clinician actually downloads.
@@ -21,10 +37,8 @@
 //   KEYGUARD_GEOMETRY_CASES=Test Case 1,Test Case 17  — run only these
 //   (default: every qualifying case — this is the standard Ken asked for)
 //
-// Prerequisites (test.sh guards these and fails the layer with a pointer):
-//   - native `openscad` on PATH (override with OPENSCAD=/path/to/openscad)
-//   - `admesh` is optional; if present its summary is logged, informational
-//     only (never pass/fail), mirroring the .scad layer's settled policy.
+// Prerequisites (test.sh guards this and fails the layer with a pointer):
+//   - `admesh` on PATH
 //
 // Locating the upstream .scad project (same env vars as visual.spec.mjs):
 //   KEYGUARD_DESIGNER_ROOT, KEYGUARD_DESIGNER_TESTS_DIR
@@ -52,7 +66,7 @@ const SCAD_SOURCE_URL_PREFIX = '/scad-source';
 const SCAD_CASES_URL_PREFIX  = '/scad-cases';
 const SCAD_FILE = 'keyguard.scad';
 
-const OPENSCAD = process.env.OPENSCAD || 'openscad';
+const ADMESH = process.env.ADMESH || 'admesh';
 
 // Default: every qualifying case. Ken's standard is that ALL test cases
 // with geometry meet the manifold bar, so unlike the visual layer there is
@@ -108,61 +122,52 @@ function discoverCases() {
   return { cases: out };
 }
 
-// Run native OpenSCAD over an `import()` wrapper so CGAL evaluates the
-// app-exported STL and prints its "Simple: yes/no" verdict — the exact
-// criterion the .scad project's --geometry layer greps for. "no" fails;
-// "yes" passes.
+// Judge the app-exported STL with admesh. We read the "Original" column of
+// the report — the input mesh's state BEFORE admesh's own repairs — so the
+// verdict is about the clinician's exact file, not a repaired copy.
 //
-// --backend=CGAL is REQUIRED: the "Simple:" line is CGAL-Nef output.
-// Modern OpenSCAD defaults to the Manifold backend, which never prints it,
-// so without this flag every case returned "unknown" and the layer was
-// toothless. With CGAL forced, a missing "Simple:" line means the run
-// itself failed (e.g. flag unsupported on an old OpenSCAD) — surfaced as
-// an error, never silently passed.
+// Pass = 2-manifold + watertight, mirroring the .scad layer's "Simple: yes":
+//   "Total disconnected facets" (Original) == 0  → every edge shared by two
+//        facets; also catches holes / open edges
+//   "Degenerate facets" == 0
+// Orientation (facets reversed / backwards edges) is logged but NOT failed
+// on, matching the .scad layer (slicers repair winding deterministically).
 function manifoldVerdict(stlPath) {
-  const tmpScad = stlPath.replace(/\.stl$/i, '.check.scad');
-  const tmpOut  = stlPath.replace(/\.stl$/i, '.check.stl');
-  // OpenSCAD accepts forward slashes on every platform.
-  fs.writeFileSync(tmpScad, `import("${stlPath.replace(/\\/g, '/')}");\n`);
-  let combined = '';
-  let status = null;
-  let spawnErr = null;
+  let r;
   try {
-    const r = spawnSync(OPENSCAD, ['--backend=CGAL', '-o', tmpOut, tmpScad], {
-      encoding: 'utf8',
-      timeout: 180_000,
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    if (r.error) spawnErr = r.error;
-    status = r.status;
-    combined = `${r.stdout || ''}\n${r.stderr || ''}`;
+    r = spawnSync(ADMESH, [stlPath],
+      { encoding: 'utf8', timeout: 120_000, maxBuffer: 32 * 1024 * 1024 });
   } catch (e) {
-    spawnErr = e;
-  } finally {
-    for (const f of [tmpScad, tmpOut]) { try { fs.unlinkSync(f); } catch {} }
+    return { state: 'error', detail: e.message };
   }
-  if (spawnErr) {
-    if (spawnErr.code === 'ENOENT') {
-      return { state: 'no-openscad', detail:
-        `'${OPENSCAD}' not found on PATH. Install OpenSCAD or set OPENSCAD=/path/to/openscad.` };
+  if (r.error) {
+    if (r.error.code === 'ENOENT') {
+      return { state: 'no-admesh', detail:
+        `'${ADMESH}' not found on PATH. Install ADMesh or set ADMESH=/path/to/admesh.` };
     }
-    return { state: 'error', detail: spawnErr.message };
+    return { state: 'error', detail: r.error.message };
   }
-  const m = combined.match(/Simple:\s*(yes|no)/i);
-  if (m) return { state: m[1].toLowerCase() === 'no' ? 'non-manifold' : 'manifold', detail: combined };
-  // No verdict with CGAL forced = the check did not actually run. Fail loud
-  // rather than silently pass (the bug TC17 exposed).
-  return { state: 'error', detail:
-    `OpenSCAD produced no "Simple:" line (exit ${status}). ` +
-    `'--backend=CGAL' may be unsupported by this OpenSCAD build.\n${combined.slice(-1500)}` };
-}
-
-function admeshSummary(stlPath) {
-  const r = spawnSync('admesh', [stlPath], { encoding: 'utf8', timeout: 60_000 });
-  if (r.error) return null;                       // not installed → silent
-  const text = `${r.stdout || ''}\n${r.stderr || ''}`;
-  const line = text.split(/\r?\n/).find(l => /Number of parts|degenerate|edges fixed|holes/i.test(l));
-  return line ? line.trim() : '(admesh ran; no summary line parsed)';
+  const out = `${r.stdout || ''}\n${r.stderr || ''}`;
+  // "Total disconnected facets : <Original> <Final>" — first int = Original.
+  const disc  = out.match(/Total disconnected facets\s*:\s*(\d+)/i);
+  const degen = out.match(/Degenerate facets\s*:\s*(\d+)/i);
+  if (!disc || !degen) {
+    return { state: 'error', detail:
+      `Could not parse admesh report (missing facet-status lines).\n${out.slice(-1500)}` };
+  }
+  const grab = (re) => { const m = out.match(re); return m ? parseInt(m[1], 10) : 0; };
+  const stats = {
+    disconnectedFacets: parseInt(disc[1], 10),
+    degenerateFacets:   parseInt(degen[1], 10),
+    edgesFixed:         grab(/Edges fixed\s*:\s*(\d+)/i),
+    facetsRemoved:      grab(/Facets removed\s*:\s*(\d+)/i),
+    facetsAdded:        grab(/Facets added\s*:\s*(\d+)/i),
+    facetsReversed:     grab(/Facets reversed\s*:\s*(\d+)/i),
+    backwardsEdges:     grab(/Backwards edges\s*:\s*(\d+)/i),
+    parts:              grab(/Number of parts\s*:\s*(\d+)/i),
+  };
+  const manifold = stats.disconnectedFacets === 0 && stats.degenerateFacets === 0;
+  return { state: manifold ? 'manifold' : 'non-manifold', stats, detail: out };
 }
 
 const { cases: CASES, error: discoveryError } = discoverCases();
@@ -241,25 +246,27 @@ if (discoveryError || CASES.length === 0) {
       let verdict;
       try {
         fs.writeFileSync(stlPath, stlBuf);
-
-        const admesh = admeshSummary(stlPath);
-        if (admesh) console.log(`  admesh [${c.caseName} s${c.stepIndex}]: ${admesh}`);
-
         verdict = manifoldVerdict(stlPath);
       } finally {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
       }
 
-      if (verdict.state === 'no-openscad') {
+      if (verdict.state === 'no-admesh') {
         throw new Error(verdict.detail);   // prerequisite missing → hard fail
       }
       if (verdict.state === 'error') {
-        throw new Error(`OpenSCAD manifold check failed to run: ${verdict.detail}`);
+        throw new Error(`admesh manifold check failed to run: ${verdict.detail}`);
       }
+      const s = verdict.stats;
+      console.log(
+        `  admesh [${c.caseName} s${c.stepIndex}]: ` +
+        `disconnected=${s.disconnectedFacets} degenerate=${s.degenerateFacets} ` +
+        `parts=${s.parts} reversed=${s.facetsReversed} backwards=${s.backwardsEdges}`);
       expect(
         verdict.state,
         `${c.caseName} step ${c.stepIndex}: app-exported STL is NON-MANIFOLD ` +
-        `(OpenSCAD reported "Simple: no")`
+        `(admesh: ${s.disconnectedFacets} disconnected facet edge(s), ` +
+        `${s.degenerateFacets} degenerate facet(s))`
       ).toBe('manifold');
     });
   }
