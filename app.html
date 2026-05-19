@@ -454,7 +454,7 @@ controls.mouseButtons = {
 
 let currentMesh = null;          // Group containing keyguard + highlights meshes
 let cameraFitOnce = false;       // true after we've framed the scene at least once for this project
-let lastFitAngle = null;         // keyguard_display_angle at the last auto-fit (re-fit when it changes)
+let lastCamKey = null;           // camera-affecting params at last frame (re-apply when they change)
 
 function fitCameraToObject(object) {
   const box = new THREE.Box3().setFromObject(object);
@@ -1209,7 +1209,7 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
     rawPresetNames, presetNames, currentPreset,
     customizer, baselineParams: {},
     screenshotName: null, screenshotBytes: null, screenshotTexture: null,
-    dims: null, warnedNoScreenshot: false
+    dims: null, warnedNoScreenshot: false, isFixture: true
   };
 
   document.getElementById('project-folder-label').innerHTML =
@@ -1430,6 +1430,21 @@ async function doRender() {
       if (m && m2 && m3 && m4) {
         project.dims = { swm: +m[1], shm: +m2[1], sat: +m3[1], kt: +m4[1] };
       }
+      // keyguard.scad also echoes the resolved viewport camera so the web
+      // app can match OpenSCAD's keyguard_display_angle (which moves only
+      // the camera — the exported solid is identical at every angle).
+      const num = '(-?\\d+(?:\\.\\d+)?)';
+      const vec = n => line.match(
+        new RegExp(`${n}\\s*=\\s*\\[\\s*${num}\\s*,\\s*${num}\\s*,\\s*${num}\\s*\\]`));
+      const vpt = vec('vpt'), vpr = vec('vpr');
+      const vpd = line.match(new RegExp(`vpd\\s*=\\s*${num}`));
+      if (vpt && vpr && vpd) {
+        project.osCam = {
+          vpt: [+vpt[1], +vpt[2], +vpt[3]],
+          vpr: [+vpr[1], +vpr[2], +vpr[3]],
+          vpd: +vpd[1],
+        };
+      }
     }
 
     // Lines we know are pure noise from openscad-wasm and don't want
@@ -1630,18 +1645,35 @@ async function doRender() {
     scene.add(currentMesh);
     positionGrid();
 
-    // Preserve the user's framing across O&A edits, parameter changes, and
-    // preset switches. Re-fit on the very first render of a project, or
-    // whenever keyguard_display_angle *changes* (including back to 0): the
-    // .scad tilts the keyguard by that angle, so any change reorients the
-    // bounding box in a way the previous framing won't accommodate. A steady
-    // angle (even a non-zero one) leaves the user's framing untouched.
+    // Camera. keyguard_display_angle (and show_back_of_keyguard) move only
+    // OpenSCAD's viewport — the exported solid is identical at every angle —
+    // so to match what the clinician sees in OpenSCAD we drive the Three.js
+    // camera from the resolved $vpt/$vpr/$vpd that keyguard.scad echoes.
     const dispAngle = Number(cur.keyguard_display_angle) || 0;
-    if (!cameraFitOnce || dispAngle !== lastFitAngle) {
-      fitCameraToObject(currentMesh);
-      cameraFitOnce = true;
+    const showBack  = cur.show_back_of_keyguard;
+    const camKey    = `${dispAngle}|${showBack}`;
+    const camChanged = camKey !== lastCamKey;
+    if (project.isFixture) {
+      // Visual/geometry harness applies its own explicit camera AFTER this
+      // render (loadFixture); just frame once and never fight it.
+      if (!cameraFitOnce) { fitCameraToObject(currentMesh); cameraFitOnce = true; }
+    } else if (project.osCam && (dispAngle > 0 || showBack === 'yes')) {
+      // A display angle / back view is requested: snap the camera to
+      // OpenSCAD's view on EVERY render. The user may orbit/pan between
+      // changes, but any parameter change re-renders and resets the view
+      // to the specified display angle (deliberate — keeps the angle the
+      // clinician chose authoritative).
+      applyOpenscadCamera(project.osCam.vpt, project.osCam.vpr, project.osCam.vpd);
+    } else {
+      // Flat front view: pleasant auto-framing; re-fit on first render or
+      // when returning from an angled / back view, otherwise preserve the
+      // user's framing across parameter changes.
+      if (!cameraFitOnce || camChanged) {
+        fitCameraToObject(currentMesh);
+        cameraFitOnce = true;
+      }
     }
-    lastFitAngle = dispAngle;
+    lastCamKey = camKey;
 
     const totalElapsed = tkElapsed + thElapsed;
     setStatus(`Rendered in ${totalElapsed.toFixed(1)} s`, 'ok');
