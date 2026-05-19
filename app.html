@@ -16,6 +16,9 @@
 <style>
   /* ---------- reset / base ---------- */
   * { box-sizing: border-box; }
+  /* Customizer text sizes are driven by these so the Settings → Text panel
+     can retune them live. Defaults match the historical hard-coded values. */
+  :root { --kg-section-heading-pt: 14px; --kg-param-text-pt: 12px; }
   html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", -apple-system, sans-serif;
                font-size: 13px; background: #f0f0f0; color: #222; }
 
@@ -90,15 +93,18 @@
   #cust-sections { flex: 1; overflow-y: auto; }
   .section { border-bottom: 1px solid #e0e0e0; }
   .section-header { padding: 7px 10px; cursor: pointer; user-select: none;
-                    display: flex; align-items: center; gap: 4px; font-weight: bold; font-size: 14px;
+                    display: flex; align-items: center; gap: 4px; font-weight: bold;
+                    font-size: var(--kg-section-heading-pt);
                     background: #fafafa; }
   .section-header:hover { background: #eef2f7; }
   .section-header .caret { display: inline-block; width: 10px; transition: transform 0.1s; color: #555; }
   .section.open .section-header .caret { transform: rotate(90deg); }
-  .section-body { display: none; padding: 8px 10px 10px 10px; background: #fff; font-size: 12px; }
+  .section-body { display: none; padding: 8px 10px 10px 10px; background: #fff;
+                  font-size: var(--kg-param-text-pt); }
   .section.open .section-body { display: block; }
   .param { margin-bottom: 8px; }
-  .param-label { display: block; font-weight: bold; margin-bottom: 2px; }
+  .param-label { display: block; font-weight: bold; margin-bottom: 2px;
+                 font-size: var(--kg-param-text-pt); }
   .param-help { color: #777; font-size: 11px; margin-bottom: 3px; }
   .param select, .param input[type=text], .param input[type=number] {
     width: 100%; padding: 2px 4px; font-size: 12px; }
@@ -148,6 +154,17 @@
   #settings-panel .setting .opt { display: block; margin: 2px 0; font-weight: normal; }
   #settings-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
   #settings-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+  #settings-panel input[type=number] { width: 64px; font-size: 12px; padding: 2px 4px; }
+  .swatch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 6px 0 4px; }
+  .swatch { height: 34px; border: 2px solid #bbb; border-radius: 4px; cursor: pointer;
+            position: relative; outline: none; }
+  .swatch:hover { border-color: #888; }
+  .swatch.sel { border-color: #06c; box-shadow: 0 0 0 2px #cfe0fa; }
+  .swatch.sel::after { content: '✓'; position: absolute; top: 50%; left: 50%;
+                       transform: translate(-50%, -50%); font-size: 15px; font-weight: bold;
+                       color: var(--kg-check, #fff); text-shadow: 0 0 2px rgba(0,0,0,0.55); }
+  .swatch-name { font-size: 11px; color: #555; margin-bottom: 8px; }
+  .set-reset { margin-top: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 
   /* ---------- Confirm (unsaved-changes) modal ---------- */
   #confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -328,6 +345,8 @@
       <div id="settings-cats">
         <div class="cat active" data-cat="general">General</div>
         <div class="cat" data-cat="grid">Grid</div>
+        <div class="cat" data-cat="text">Text</div>
+        <div class="cat" data-cat="colors">Colors</div>
         <div class="cat" data-cat="about">About</div>
       </div>
       <div id="settings-panel">
@@ -365,7 +384,8 @@ const viewport = document.getElementById('viewport');
 const statusEl = document.getElementById('viewport-status');
 
 const scene = new THREE.Scene();
-// Pale cream — sampled from OpenSCAD's Cornfield-style viewport background.
+// Pale cream — OpenSCAD's Cornfield-style default. applyAppearance() below
+// replaces this with the user's saved choice once settings have loaded.
 scene.background = new THREE.Color(0xffffe5);
 
 const camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
@@ -640,12 +660,61 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // Integer release number shown on the About tab. Bump by one on every
 // release, in lock-step with sw.js CACHE_NAME (see RELEASING.md).
 const APP_RELEASE = 2;
+// Default teal / cornfield are the long-standing viewport colours; the
+// Customizer text sizes mirror the CSS :root defaults.
+const DEFAULT_ITEM_COLOR = '#40E0D0';   // Turquoise — the default teal
+const DEFAULT_BG_COLOR   = '#FFFFE5';   // OpenSCAD Cornfield-style cream
+const DEFAULT_SECTION_PT  = 14;
+const DEFAULT_PARAM_PT    = 12;
+
+// Eight saturated item colours; eight neutral backgrounds chosen to stay
+// distinct from the item set and keep good contrast for any pairing.
+const ITEM_COLORS = [
+  { name: 'Teal',   hex: '#40E0D0' },
+  { name: 'Blue',   hex: '#4682B4' },
+  { name: 'Green',  hex: '#3CB371' },
+  { name: 'Gold',   hex: '#DAA520' },
+  { name: 'Coral',  hex: '#FF7F50' },
+  { name: 'Purple', hex: '#9370DB' },
+  { name: 'Gray',   hex: '#708090' },
+  { name: 'Red',    hex: '#DC143C' },
+];
+const BG_COLORS = [
+  { name: 'Cornfield',  hex: '#FFFFE5' },
+  { name: 'White',      hex: '#FFFFFF' },
+  { name: 'Light gray', hex: '#E8E8E8' },
+  { name: 'Sky',        hex: '#DCEBF5' },
+  { name: 'Sand',       hex: '#EAE0CC' },
+  { name: 'Sage',       hex: '#DDE6DA' },
+  { name: 'Slate',      hex: '#33373B' },
+  { name: 'Charcoal',   hex: '#1E1E1E' },
+];
+
 const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
   gridX: 256,                    // reference-grid extent in mm (build-plate X)
   gridY: 256,                    // reference-grid extent in mm (build-plate Y)
+  sectionHeadingPt: DEFAULT_SECTION_PT,  // Customizer section-heading point size
+  paramTextPt: DEFAULT_PARAM_PT,         // Customizer parameter text point size
+  itemColor: DEFAULT_ITEM_COLOR,         // generated piece colour in the viewport
+  backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
 };
 let settings = loadSettings();
+applyAppearance();   // honour persisted text sizes + viewport colours on load
+
+function clampPt(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(8, Math.min(36, n)) : DEFAULT_PARAM_PT;
+}
+
+// Pick a tick mark that stays legible on the swatch it sits on.
+function contrastInk(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const lum = 0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255);
+  return lum > 150 ? '#222' : '#fff';
+}
 
 function loadSettings() {
   try {
@@ -683,6 +752,37 @@ function onSettingsChanged(key) {
     rebuildPresetDropdown();
   }
   if (key === 'gridX' || key === 'gridY') rebuildGridIfVisible();
+  if (key === 'sectionHeadingPt' || key === 'paramTextPt') applyTextSizes();
+  if (key === 'backgroundColor') applyBackgroundColor();
+  if (key === 'itemColor') applyItemColor();
+}
+
+// ----- Appearance application (text sizes + viewport colours) -----
+// These read straight from `settings` so a Reset that rewrites several
+// keys at once only needs one apply call.
+function applyTextSizes() {
+  const root = document.documentElement.style;
+  root.setProperty('--kg-section-heading-pt', clampPt(settings.sectionHeadingPt) + 'px');
+  root.setProperty('--kg-param-text-pt', clampPt(settings.paramTextPt) + 'px');
+}
+function applyBackgroundColor() {
+  scene.background = new THREE.Color(settings.backgroundColor || DEFAULT_BG_COLOR);
+}
+// Recolour the already-rendered keyguard body in place so a colour change
+// is instant — no OpenSCAD re-render. New renders read settings.itemColor
+// via keyguardColorName().
+function applyItemColor() {
+  if (!currentMesh) return;
+  currentMesh.traverse(o => {
+    if (o.isMesh && o.userData.kgBody && o.material) {
+      o.material.color.set(settings.itemColor || DEFAULT_ITEM_COLOR);
+    }
+  });
+}
+function applyAppearance() {
+  applyTextSizes();
+  applyBackgroundColor();
+  applyItemColor();
 }
 
 // Sort preset names according to the current setting. 'design default values'
@@ -1190,24 +1290,13 @@ function applyOpenscadCamera(vpt, vpr, vpd) {
 }
 
 // ===== Render pipeline =====
-// Mirrors keyguard.scad's top-level color() dispatch (the big generate
-// if/else chain). Every generate mode emits a single-colour piece, so one
-// material colour per render is exact — no per-part multi-render needed.
-// THREE.Color accepts these CSS/X11 names directly. Echo-only branches
-// (e.g. "laser-cut frame not supported") produce no geometry, so their
-// colour is irrelevant and the Turquoise fallback is harmless.
-function keyguardColorName(cur) {
-  const g        = cur.generate || 'keyguard';
-  const lc       = cur.type_of_keyguard === 'Laser-Cut';
-  const hasFrame = cur.have_a_keyguard_frame === 'yes';
-  if (g.indexOf('clip') !== -1) return 'lime';                 // all clip variants
-  if (g === 'cell insert' && !lc) return 'LawnGreen';
-  if (!lc && (g === 'keyguard frame' ||
-              g === 'first half of keyguard frame' ||
-              g === 'second half of keyguard frame')) return 'Turquoise';
-  if (lc && !hasFrame && g === 'first layer for SVG/DXF file') return 'DarkSeaGreen';
-  if (lc && !hasFrame && g === 'keyguard') return 'Khaki';
-  return 'Turquoise';   // 3D-printed keyguard / halves (the common default)
+// Every generate mode emits a single solid piece, and the keyguard-in-a-frame
+// case now shows the keyguard as a transparent pink highlight rather than a
+// second solid colour. So a clip, insert, frame, or laser-cut keyguard is
+// just "the generated item" — all rendered in the user's chosen item colour
+// (default teal). Returns a hex string THREE.Color accepts directly.
+function keyguardColorName() {
+  return settings.itemColor || DEFAULT_ITEM_COLOR;
 }
 
 // Build a flat, face-on plane showing an OpenSCAD-exported SVG (the
@@ -1486,8 +1575,9 @@ async function doRender() {
     const toAB = u8 => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
     const kgGeom = loader.parse(toAB(kgBytes));
     kgGeom.computeVertexNormals();
-    const kgMat = new THREE.MeshPhongMaterial({ color: new THREE.Color(keyguardColorName(currentFormValues())), shininess: 30, flatShading: false });
+    const kgMat = new THREE.MeshPhongMaterial({ color: new THREE.Color(keyguardColorName()), shininess: 30, flatShading: false });
     const kgMesh = new THREE.Mesh(kgGeom, kgMat);
+    kgMesh.userData.kgBody = true;   // lets a live item-colour change recolour it
 
     const group = new THREE.Group();
     group.add(kgMesh);
@@ -2510,6 +2600,22 @@ const settingsPanel = document.getElementById('settings-panel');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 
+// Name shown above each swatch grid for the currently-selected colour.
+function colorLabel(list, hex) {
+  const h = (hex || '').toUpperCase();
+  const m = list.find(c => c.hex.toUpperCase() === h);
+  return m ? m.name : 'Custom';
+}
+// A 4-column grid of clickable colour swatches; the active one is ticked.
+function swatchGridHTML(list, selectedHex, group) {
+  const sel = (selectedHex || '').toUpperCase();
+  return `<div class="swatch-grid">` + list.map(c =>
+    `<button type="button" class="swatch${c.hex.toUpperCase() === sel ? ' sel' : ''}"
+       data-group="${group}" data-hex="${c.hex}" title="${c.name}"
+       style="background:${c.hex}; --kg-check:${contrastInk(c.hex)};"></button>`
+  ).join('') + `</div>`;
+}
+
 const SETTINGS_PANELS = {
   general: () => `
     <div class="setting">
@@ -2536,6 +2642,35 @@ const SETTINGS_PANELS = {
         <input type="number" id="set-gridY" min="20" max="2000" step="1"
           value="${clampGridDim(settings.gridY)}" style="width:70px;"></label>
     </div>
+  `,
+  text: () => `
+    <div class="setting">
+      <label>Customizer text size</label>
+      <div style="color:#666; margin-bottom:8px;">
+        Point size for the Customizer pane on the right. Larger values help
+        when the panel is read at a distance or on a high-resolution display.
+      </div>
+      <label class="opt">Section headings (pt)
+        <input type="number" id="set-sectionHeadingPt" min="8" max="36" step="1"
+          value="${clampPt(settings.sectionHeadingPt)}"></label>
+      <label class="opt">Parameter text (pt)
+        <input type="number" id="set-paramTextPt" min="8" max="36" step="1"
+          value="${clampPt(settings.paramTextPt)}"></label>
+      <button class="set-reset" id="reset-text">Reset to defaults</button>
+    </div>
+  `,
+  colors: () => `
+    <div class="setting">
+      <label>Generated item color</label>
+      <div class="swatch-name">${colorLabel(ITEM_COLORS, settings.itemColor)}</div>
+      ${swatchGridHTML(ITEM_COLORS, settings.itemColor, 'item')}
+    </div>
+    <div class="setting">
+      <label>Viewport background</label>
+      <div class="swatch-name">${colorLabel(BG_COLORS, settings.backgroundColor)}</div>
+      ${swatchGridHTML(BG_COLORS, settings.backgroundColor, 'bg')}
+    </div>
+    <button class="set-reset" id="reset-colors">Reset to defaults</button>
   `,
   about: () => `
     <div class="setting">
@@ -2572,6 +2707,34 @@ function renderSettingsPanel(cat) {
     };
     inp.addEventListener('change', commit);
   }
+  for (const k of ['sectionHeadingPt', 'paramTextPt']) {
+    const inp = settingsPanel.querySelector('#set-' + k);
+    if (!inp) continue;
+    inp.addEventListener('change', () => {
+      const v = clampPt(inp.value);
+      inp.value = v;
+      if (v !== settings[k]) setSetting(k, v);
+    });
+  }
+  const resetText = settingsPanel.querySelector('#reset-text');
+  if (resetText) resetText.addEventListener('click', () => {
+    setSetting('sectionHeadingPt', DEFAULT_SECTION_PT);
+    setSetting('paramTextPt', DEFAULT_PARAM_PT);
+    renderSettingsPanel('text');
+  });
+  settingsPanel.querySelectorAll('.swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      const key = sw.dataset.group === 'bg' ? 'backgroundColor' : 'itemColor';
+      if (settings[key] !== sw.dataset.hex) setSetting(key, sw.dataset.hex);
+      renderSettingsPanel('colors');
+    });
+  });
+  const resetColors = settingsPanel.querySelector('#reset-colors');
+  if (resetColors) resetColors.addEventListener('click', () => {
+    setSetting('itemColor', DEFAULT_ITEM_COLOR);
+    setSetting('backgroundColor', DEFAULT_BG_COLOR);
+    renderSettingsPanel('colors');
+  });
 }
 
 function openSettings() {
