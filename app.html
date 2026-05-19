@@ -344,6 +344,7 @@
     <div id="settings-body">
       <div id="settings-cats">
         <div class="cat active" data-cat="general">General</div>
+        <div class="cat" data-cat="viewport">Viewport</div>
         <div class="cat" data-cat="grid">Grid</div>
         <div class="cat" data-cat="text">Text</div>
         <div class="cat" data-cat="colors">Colors</div>
@@ -375,6 +376,8 @@
 // ===== Three.js viewport setup =====
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
+import { ArcballControls } from 'three/addons/controls/ArcballControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { createOpenSCAD } from './openscad-wasm/openscad.js';
 import { addFonts } from './openscad-wasm/openscad.fonts.js';
@@ -442,15 +445,62 @@ camera.add(fill);
 // A camera's children only render when the camera itself is in the scene graph.
 scene.add(camera);
 
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.1;
-// Match OpenSCAD: left=rotate, right=pan, middle=rotate, wheel=zoom
-controls.mouseButtons = {
-  LEFT:   THREE.MOUSE.ROTATE,
-  MIDDLE: THREE.MOUSE.ROTATE,
-  RIGHT:  THREE.MOUSE.PAN
-};
+// Three selectable orbit schemes (Settings → Viewport):
+//   turntable — OrbitControls: fixed world-up, hard vertical stop
+//   tumble    — TrackballControls: free roll in any direction, no stop
+//   guided    — ArcballControls: free roll with an on-screen ring guide
+// Per-scheme base rotate speed so the sensitivity slider feels consistent
+// across schemes (Trackball needs a much larger raw speed than the others
+// to cover the same drag distance).
+const ORBIT_BASE_ROTATE   = { turntable: 1.0, tumble: 4.0, guided: 1.0 };
+const ORBIT_SCHEME_DEFAULT = 'tumble';
+const ORBIT_SENS_DEFAULT   = 0.6;       // 0.2 (slow) … 2.0 (fast)
+
+// Mirror the persisted settings so the early controls build (which runs
+// before `settings` is initialised) never has to touch it.
+let orbitScheme = ORBIT_SCHEME_DEFAULT;
+let orbitSens   = ORBIT_SENS_DEFAULT;
+let controls    = null;
+
+function applyOrbitSensitivity() {
+  if (controls) controls.rotateSpeed = ORBIT_BASE_ROTATE[orbitScheme] * orbitSens;
+}
+
+// (Re)create the controls for the active scheme, preserving the current
+// view (camera is untouched; only the orbit target is carried over).
+function buildOrbitControls() {
+  const savedTarget = controls ? controls.target.clone() : null;
+  if (controls) { controls.dispose(); controls = null; }
+
+  if (orbitScheme === 'tumble') {
+    controls = new TrackballControls(camera, canvas);
+    controls.staticMoving = false;
+    controls.dynamicDampingFactor = 0.15;
+    controls.panSpeed = 0.6;
+    controls.zoomSpeed = 1.2;
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN
+    };
+  } else if (orbitScheme === 'guided') {
+    controls = new ArcballControls(camera, canvas, scene);
+    controls.setGizmosVisible(true);
+    controls.cursorZoom = true;
+  } else {
+    orbitScheme = 'turntable';
+    controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+    // Match OpenSCAD: left=rotate, right=pan, middle=rotate, wheel=zoom
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN
+    };
+  }
+  if (savedTarget) controls.target.copy(savedTarget);
+  applyOrbitSensitivity();
+  controls.update();
+}
+
+buildOrbitControls();
 
 let currentMesh = null;          // Group containing keyguard + highlights meshes
 let cameraFitOnce = false;       // true after we've framed the scene at least once for this project
@@ -530,6 +580,9 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  // TrackballControls caches the canvas rect; refresh it on every resize
+  // or its rotate/pan math drifts. Orbit/Arcball read the rect per event.
+  if (controls && typeof controls.handleResize === 'function') controls.handleResize();
 }
 new ResizeObserver(resize).observe(viewport);
 resize();
@@ -732,8 +785,22 @@ const SETTINGS_DEFAULTS = {
   paramTextPt: DEFAULT_PARAM_PT,         // Customizer parameter text point size
   itemColor: DEFAULT_ITEM_COLOR,         // generated piece colour in the viewport
   backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
+  orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
+  orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
 };
 let settings = loadSettings();
+
+// Adopt the persisted orbit scheme / sensitivity now that `settings`
+// exists, rebuilding the controls only if the scheme actually changed.
+function syncOrbitFromSettings() {
+  const v = Number(settings.orbitSensitivity);
+  orbitSens = Number.isFinite(v) ? Math.max(0.2, Math.min(2.0, v)) : ORBIT_SENS_DEFAULT;
+  const want = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
+                                                       : ORBIT_SCHEME_DEFAULT;
+  if (want !== orbitScheme) { orbitScheme = want; buildOrbitControls(); }
+  else applyOrbitSensitivity();
+}
+syncOrbitFromSettings();
 applyAppearance();   // honour persisted text sizes + viewport colours on load
 
 function clampPt(v) {
@@ -789,6 +856,7 @@ function onSettingsChanged(key) {
   if (key === 'sectionHeadingPt' || key === 'paramTextPt') applyTextSizes();
   if (key === 'backgroundColor') applyBackgroundColor();
   if (key === 'itemColor') applyItemColor();
+  if (key === 'orbitScheme' || key === 'orbitSensitivity') syncOrbitFromSettings();
 }
 
 // ----- Appearance application (text sizes + viewport colours) -----
@@ -2729,7 +2797,11 @@ document.getElementById('add-preset-btn').addEventListener('click', async () => 
     logLine('Add preset: write permission was not granted.');
     return;
   }
-  let name = (prompt('Name for the new preset:') || '').trim();
+  // Prefill with the current preset name so the clinician can tweak it
+  // rather than retype from scratch (blank for the reserved default).
+  const seed = project.currentPreset === 'design default values'
+    ? '' : (project.currentPreset || '');
+  let name = (prompt('Name for the new preset:', seed) || '').trim();
   if (!name) return;
   if (name === 'design default values') {
     alert('That name is reserved.');
@@ -2785,6 +2857,40 @@ const SETTINGS_PANELS = {
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
   `,
+  viewport: () => {
+    const sch = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
+                                                         : ORBIT_SCHEME_DEFAULT;
+    const sens = Number.isFinite(Number(settings.orbitSensitivity))
+      ? Math.max(0.2, Math.min(2.0, Number(settings.orbitSensitivity)))
+      : ORBIT_SENS_DEFAULT;
+    const opt = (v, name, desc) => `
+      <label class="opt"><input type="radio" name="orbitScheme" value="${v}"
+        ${sch === v ? 'checked' : ''}> <b>${name}</b>
+        <div style="color:#666; margin:1px 0 6px 20px;">${desc}</div></label>`;
+    return `
+    <div class="setting">
+      <label>Rotation style</label>
+      <div style="color:#666; margin-bottom:8px;">
+        How dragging in the viewport rotates the model.
+      </div>
+      ${opt('tumble', 'Free tumble',
+        'Grab the keyguard and roll it any direction — no vertical stop, no limits. Recommended.')}
+      ${opt('guided', 'Guided tumble',
+        'Free rotation with an on-screen ring guide; double-click a point to centre on it.')}
+      ${opt('turntable', 'Turntable',
+        'Spins around an upright axis. Steady, but tilt stops when level overhead and side-drag spins the view in place. (Original behaviour.)')}
+    </div>
+    <div class="setting">
+      <label>Rotation sensitivity</label>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="color:#666;">Slow</span>
+        <input type="range" id="set-orbitSensitivity" min="0.2" max="2.0"
+          step="0.05" value="${sens}" style="flex:1;">
+        <span style="color:#666;">Fast</span>
+      </div>
+    </div>
+  `;
+  },
   grid: () => `
     <div class="setting">
       <label>Reference grid size</label>
@@ -2855,6 +2961,13 @@ function renderSettingsPanel(cat) {
   settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
   settingsPanel.querySelectorAll('input[type=radio][name=presetOrder]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('presetOrder', r.value); });
+  });
+  settingsPanel.querySelectorAll('input[type=radio][name=orbitScheme]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('orbitScheme', r.value); });
+  });
+  const sens = settingsPanel.querySelector('#set-orbitSensitivity');
+  if (sens) sens.addEventListener('input', () => {
+    setSetting('orbitSensitivity', Number(sens.value));
   });
   for (const dim of ['gridX', 'gridY']) {
     const inp = settingsPanel.querySelector('#set-' + dim);
