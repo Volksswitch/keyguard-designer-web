@@ -745,12 +745,29 @@ async function idbGetHandle() {
   let handle = await readFrom(HANDLE_DB);
   if (!handle) {
     // One-time migration: a returning clinician's remembered folder was
-    // stored under the old DB name. Pull it forward so they don't have to
-    // re-pick the folder and re-grant permission.
+    // stored under the old DB name. Pull it forward — and delete the legacy
+    // copy — so it's migrated exactly once. Leaving it in place meant a
+    // later idbClearHandle() (e.g. the remembered folder no longer exists)
+    // would be undone here on the very next click: an inescapable loop.
     const legacy = await readFrom(LEGACY_HANDLE_DB);
-    if (legacy) { await idbPutHandle(legacy); handle = legacy; }
+    if (legacy) {
+      await idbPutHandle(legacy);
+      await idbDeleteFrom(LEGACY_HANDLE_DB);
+      handle = legacy;
+    }
   }
   return handle;
+}
+async function idbDeleteFrom(name) {
+  try {
+    const db = await idbOpenNamed(name);
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
 }
 async function idbPutHandle(handle) {
   try {
@@ -764,15 +781,11 @@ async function idbPutHandle(handle) {
   } catch (e) { console.warn('Could not persist directory handle:', e); }
 }
 async function idbClearHandle() {
-  try {
-    const db = await idbOpen();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(HANDLE_STORE, 'readwrite');
-      tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {}
+  // Clear BOTH the current and the legacy (pre-rename) DB. Clearing only the
+  // current one left the dead handle in the legacy DB, where idbGetHandle()'s
+  // migration would resurrect it on the next click.
+  await idbDeleteFrom(HANDLE_DB);
+  await idbDeleteFrom(LEGACY_HANDLE_DB);
 }
 
 // Return the app to its initial "no project" layout: clear the 3D viewport,
