@@ -110,24 +110,31 @@ function discoverCases() {
 
 // Run native OpenSCAD over an `import()` wrapper so CGAL evaluates the
 // app-exported STL and prints its "Simple: yes/no" verdict — the exact
-// criterion the .scad project's --geometry layer greps for. Verdict
-// semantics mirror that layer: "no" fails; "yes" passes; absent passes
-// as "unknown" (a non-deterministic OpenSCAD/back-end artefact, not a
-// geometry defect).
+// criterion the .scad project's --geometry layer greps for. "no" fails;
+// "yes" passes.
+//
+// --backend=CGAL is REQUIRED: the "Simple:" line is CGAL-Nef output.
+// Modern OpenSCAD defaults to the Manifold backend, which never prints it,
+// so without this flag every case returned "unknown" and the layer was
+// toothless. With CGAL forced, a missing "Simple:" line means the run
+// itself failed (e.g. flag unsupported on an old OpenSCAD) — surfaced as
+// an error, never silently passed.
 function manifoldVerdict(stlPath) {
   const tmpScad = stlPath.replace(/\.stl$/i, '.check.scad');
   const tmpOut  = stlPath.replace(/\.stl$/i, '.check.stl');
   // OpenSCAD accepts forward slashes on every platform.
   fs.writeFileSync(tmpScad, `import("${stlPath.replace(/\\/g, '/')}");\n`);
   let combined = '';
+  let status = null;
   let spawnErr = null;
   try {
-    const r = spawnSync(OPENSCAD, ['-o', tmpOut, tmpScad], {
+    const r = spawnSync(OPENSCAD, ['--backend=CGAL', '-o', tmpOut, tmpScad], {
       encoding: 'utf8',
-      timeout: 120_000,
+      timeout: 180_000,
       maxBuffer: 32 * 1024 * 1024,
     });
     if (r.error) spawnErr = r.error;
+    status = r.status;
     combined = `${r.stdout || ''}\n${r.stderr || ''}`;
   } catch (e) {
     spawnErr = e;
@@ -143,7 +150,11 @@ function manifoldVerdict(stlPath) {
   }
   const m = combined.match(/Simple:\s*(yes|no)/i);
   if (m) return { state: m[1].toLowerCase() === 'no' ? 'non-manifold' : 'manifold', detail: combined };
-  return { state: 'unknown', detail: combined };
+  // No verdict with CGAL forced = the check did not actually run. Fail loud
+  // rather than silently pass (the bug TC17 exposed).
+  return { state: 'error', detail:
+    `OpenSCAD produced no "Simple:" line (exit ${status}). ` +
+    `'--backend=CGAL' may be unsupported by this OpenSCAD build.\n${combined.slice(-1500)}` };
 }
 
 function admeshSummary(stlPath) {
@@ -244,13 +255,6 @@ if (discoveryError || CASES.length === 0) {
       }
       if (verdict.state === 'error') {
         throw new Error(`OpenSCAD manifold check failed to run: ${verdict.detail}`);
-      }
-      if (verdict.state === 'unknown') {
-        // Match the .scad layer: no "Simple:" line is treated as a pass
-        // (back-end/version artefact), but make it visible.
-        console.warn(`  manifold status UNKNOWN for ${c.caseName} s${c.stepIndex} ` +
-                     `(no "Simple:" line) — treated as pass, per .scad-layer policy`);
-        return;
       }
       expect(
         verdict.state,
