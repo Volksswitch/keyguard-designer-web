@@ -542,9 +542,25 @@ function buildGridGroup(gx, gy) {
   return group;   // already in the XY plane; no rotation needed
 }
 
+// Clearance between the model's lowest point and the grid plane, so the
+// grid sits visibly below the keyguard (and below the screenshot canvas,
+// which keyguard.scad places just under the keyguard) rather than slicing
+// through it at z = 0.
+const GRID_GAP_MM = 3;
+
+function gridZForModel() {
+  if (!currentMesh) return 0;
+  const box = new THREE.Box3().setFromObject(currentMesh);
+  return box.isEmpty() ? 0 : box.min.z - GRID_GAP_MM;
+}
+function positionGrid() {
+  if (gridHelper) gridHelper.position.z = gridZForModel();
+}
+
 function ensureGrid() {
   if (gridHelper) return;
   gridHelper = buildGridGroup(settings.gridX, settings.gridY);
+  gridHelper.position.z = gridZForModel();
   scene.add(gridHelper);
 }
 function disposeGrid() {
@@ -799,6 +815,7 @@ async function resetToNoProject() {
   project = null;
   try { await idbClearHandle(); } catch {}
   if (currentMesh) { scene.remove(currentMesh); currentMesh = null; }
+  positionGrid();   // no model → grid returns to the z = 0 plane
   renderer.render(scene, camera);
   cameraFitOnce = false;
   consoleEl.textContent = '';
@@ -1441,6 +1458,7 @@ async function doRender() {
       if (currentMesh) scene.remove(currentMesh);
       currentMesh = plane;
       scene.add(currentMesh);
+      positionGrid();
       fitCameraToObject(currentMesh);
       cameraFitOnce = true;
       setStatus(`Rendered 2D laser-cut layer in ${svg.elapsed.toFixed(1)} s`, 'ok');
@@ -1519,6 +1537,7 @@ async function doRender() {
     if (currentMesh) scene.remove(currentMesh);
     currentMesh = group;
     scene.add(currentMesh);
+    positionGrid();
 
     // Preserve the user's framing across O&A edits, parameter changes, and
     // preset switches. Re-fit only on the very first render of a project,
