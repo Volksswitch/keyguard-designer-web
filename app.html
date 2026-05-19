@@ -456,39 +456,72 @@ let currentMesh = null;          // Group containing keyguard + highlights meshe
 let cameraFitOnce = false;       // true after we've framed the scene at least once for this project
 let lastCamKey = null;           // camera-affecting params at last frame (re-apply when they change)
 
-function fitCameraToObject(object) {
+// Frame `object` as large as the viewport allows from view direction `dir`
+// (object → camera), with `up` as the world-up hint. Projects the actual
+// bounding-box corners onto the camera's screen axes and solves the exact
+// perspective distance for BOTH axes (using the real aspect ratio), so the
+// keyguard fills the frame instead of floating tiny in the middle. `pad`
+// is the fraction of breathing room left around it.
+function frameObject(object, dir, up, pad = 0.06) {
   const box = new THREE.Box3().setFromObject(object);
-  const size = box.getSize(new THREE.Vector3());
+  if (box.isEmpty()) return;
   const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const fitDist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2));
-  camera.position.copy(center.clone().add(new THREE.Vector3(maxDim * 0.9, -maxDim * 1.2, maxDim * 0.9)));
+  const f = dir.clone().normalize();                       // center → camera
+  let u = up.clone().normalize();
+  if (Math.abs(f.dot(u)) > 0.999) u = new THREE.Vector3(0, 1, 0);
+  const right  = new THREE.Vector3().crossVectors(u, f).normalize();
+  const trueUp = new THREE.Vector3().crossVectors(f, right).normalize();
+
+  let halfW = 0, halfH = 0, depth = 0;
+  for (const X of [box.min.x, box.max.x])
+    for (const Y of [box.min.y, box.max.y])
+      for (const Z of [box.min.z, box.max.z]) {
+        const c = new THREE.Vector3(X, Y, Z).sub(center);
+        halfW = Math.max(halfW, Math.abs(c.dot(right)));
+        halfH = Math.max(halfH, Math.abs(c.dot(trueUp)));
+        depth = Math.max(depth, c.dot(f));                 // nearest face toward camera
+      }
+  const vFov = camera.fov * Math.PI / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const dist = Math.max(halfH / Math.tan(vFov / 2),
+                        halfW / Math.tan(hFov / 2)) * (1 + pad) + depth;
+
+  camera.up.copy(trueUp);
+  camera.position.copy(center.clone().add(f.multiplyScalar(dist)));
   controls.target.copy(center);
-  camera.near = Math.max(1, fitDist / 100);
-  camera.far  = fitDist * 100;
+  const diag = box.getSize(new THREE.Vector3()).length();
+  camera.near = Math.max(0.1, dist - diag);
+  camera.far  = dist + diag * 2 + 10;
   camera.updateProjectionMatrix();
+  camera.lookAt(center);
   controls.update();
 }
 
-// Move the camera to a Z-up orthographic-style view from `dir` and frame
-// the current scene contents. `dir` is a unit-ish vector pointing FROM the
-// scene TO the camera in OpenSCAD-style world coords (X right, Y forward, Z up).
+// Default interactive view: the same 3/4 orientation as before, now framed
+// tight. Used by the "View all" button and the flat-view auto-fit.
+const DEFAULT_VIEW_DIR = new THREE.Vector3(0.9, -1.2, 0.9);
+function fitCameraToObject(object) {
+  frameObject(object, DEFAULT_VIEW_DIR, new THREE.Vector3(0, 0, 1));
+}
+
+// Move the camera to a Z-up view from `dir` and frame the scene tight.
 function viewFromDirection(dir, upHint) {
   const target = currentMesh ? currentMesh : scene;
-  const box = new THREE.Box3().setFromObject(target);
-  if (box.isEmpty()) return;
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  const fitDist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.5;
-  const d = dir.clone().normalize().multiplyScalar(fitDist);
-  camera.position.copy(center.clone().add(d));
-  camera.up.copy(upHint);
-  controls.target.copy(center);
-  camera.near = Math.max(1, fitDist / 100);
-  camera.far  = fitDist * 100;
-  camera.updateProjectionMatrix();
-  controls.update();
+  if (!target) return;
+  frameObject(target, dir, upHint);
+}
+
+// Unit view direction (object → camera) for OpenSCAD viewport rotation
+// $vpr=[rx,ry,rz] (degrees). Mirrors the rotation order in
+// applyOpenscadCamera so the display-angle view matches OpenSCAD's, while
+// the distance is refit to the viewport rather than using $vpd.
+function vprToDir(vpr) {
+  const [rx, ry, rz] = vpr.map(d => d * Math.PI / 180);
+  let x = 0, y = 0, z = 1;
+  [x, z] = [x * Math.cos(ry) + z * Math.sin(ry), -x * Math.sin(ry) + z * Math.cos(ry)];
+  [y, z] = [y * Math.cos(rx) - z * Math.sin(rx), y * Math.sin(rx) + z * Math.cos(rx)];
+  [x, y] = [x * Math.cos(rz) - y * Math.sin(rz), x * Math.sin(rz) + y * Math.cos(rz)];
+  return new THREE.Vector3(x, y, z);
 }
 
 function resize() {
@@ -1658,12 +1691,12 @@ async function doRender() {
       // render (loadFixture); just frame once and never fight it.
       if (!cameraFitOnce) { fitCameraToObject(currentMesh); cameraFitOnce = true; }
     } else if (project.osCam && (dispAngle > 0 || showBack === 'yes')) {
-      // A display angle / back view is requested: snap the camera to
-      // OpenSCAD's view on EVERY render. The user may orbit/pan between
-      // changes, but any parameter change re-renders and resets the view
-      // to the specified display angle (deliberate — keeps the angle the
-      // clinician chose authoritative).
-      applyOpenscadCamera(project.osCam.vpt, project.osCam.vpr, project.osCam.vpd);
+      // A display angle / back view is requested: snap to OpenSCAD's
+      // orientation on EVERY render (the user may orbit/pan between
+      // changes, but any parameter change resets to the chosen angle).
+      // Use OpenSCAD's view ANGLE ($vpr) but refit the distance to the
+      // viewport — $vpd would leave the keyguard tiny.
+      frameObject(currentMesh, vprToDir(project.osCam.vpr), new THREE.Vector3(0, 0, 1));
     } else {
       // Flat front view: pleasant auto-framing; re-fit on first render or
       // when returning from an angled / back view, otherwise preserve the
