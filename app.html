@@ -2155,8 +2155,14 @@ function stopWatcher() {
 function startWatcher() {
   if (!project || !project.dirHandle) return;
   stopWatcher();
-  setWatchStatus('👁 watching openings_and_additions.txt');
-  watchTimer = setInterval(checkOAFile, WATCH_INTERVAL_MS);
+  setWatchStatus('👁 watching project folder (O&A + screenshot image)');
+  watchTimer = setInterval(watchTick, WATCH_INTERVAL_MS);
+}
+
+async function watchTick() {
+  // Independent: an error in one check must not stop the other.
+  try { await checkOAFile(); }         catch (e) { /* checkOAFile self-reports */ }
+  try { await checkScreenshotFile(); } catch (e) { /* logged below */ }
 }
 
 async function checkOAFile() {
@@ -2197,12 +2203,33 @@ async function checkOAFile() {
 }
 
 // ===== Screenshot-under-keyguard plane =====
-// Scans the project folder for the FIRST .jpg/.jpeg/.png and caches the bytes
-// + a Three.js texture. Called on Open Project, on preset change, and when
-// include_screenshot flips to "yes" — so swapping the image file on disk and
-// switching presets are both reflected on the next render. SVG files are
-// intentionally ignored (Three.js can't texture them without a rasterisation
-// step we've deferred).
+// SVG files are intentionally ignored (Three.js can't texture them without
+// a rasterisation step we've deferred).
+const IMAGE_EXT = /\.(jpe?g|png)$/i;
+
+// The FIRST .jpg/.jpeg/.png in the project folder (deterministic iteration
+// order), as { name, file }, or null. Shared by rescanScreenshot() and the
+// watcher so both agree on which image "the screenshot" is.
+async function firstImageEntry() {
+  if (!project || !project.dirHandle) return null;
+  for await (const [name, handle] of project.dirHandle.entries()) {
+    if (handle.kind !== 'file') continue;
+    if (!IMAGE_EXT.test(name)) continue;
+    return { name, file: await handle.getFile() };
+  }
+  return null;
+}
+
+// Cheap identity of an image file — name + mtime + size. Lets the watcher
+// detect add / remove / replace without reading the bytes every poll.
+function imageSig(name, file) {
+  return `${name}|${file.lastModified}|${file.size}`;
+}
+
+// Scans the project folder for the FIRST image and caches the bytes + a
+// Three.js texture. Called on Open Project, on preset change, when
+// include_screenshot flips to "yes", and by the folder watcher when the
+// image changes on disk.
 async function rescanScreenshot() {
   if (!project || !project.dirHandle) return;
   const old = project.screenshotTexture;
@@ -2211,31 +2238,69 @@ async function rescanScreenshot() {
   project.screenshotTexture = null;
   if (old) old.dispose();
 
-  const imageExt = /\.(jpe?g|png)$/i;
+  let entry;
   try {
-    for await (const [name, handle] of project.dirHandle.entries()) {
-      if (handle.kind !== 'file') continue;
-      if (!imageExt.test(name)) continue;
-      const file = await handle.getFile();
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
-      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
-      const tex = await new Promise((resolve, reject) => {
-        new THREE.TextureLoader().load(url, t => { URL.revokeObjectURL(url); resolve(t); },
-          undefined, err => { URL.revokeObjectURL(url); reject(err); });
-      });
-      tex.colorSpace = THREE.SRGBColorSpace;
-      project.screenshotName = name;
-      project.screenshotBytes = bytes;
-      project.screenshotTexture = tex;
-      project.warnedNoScreenshot = false;
-      logLine(`Screenshot: using "${name}"`);
-      return;
-    }
+    entry = await firstImageEntry();
   } catch (e) {
     logLine(`Screenshot scan failed: ${e.message}`);
+    return;
   }
-  logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+  if (!entry) {
+    project.imgSig = null;
+    logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+    return;
+  }
+  try {
+    const { name, file } = entry;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    const tex = await new Promise((resolve, reject) => {
+      new THREE.TextureLoader().load(url, t => { URL.revokeObjectURL(url); resolve(t); },
+        undefined, err => { URL.revokeObjectURL(url); reject(err); });
+    });
+    tex.colorSpace = THREE.SRGBColorSpace;
+    project.screenshotName = name;
+    project.screenshotBytes = bytes;
+    project.screenshotTexture = tex;
+    project.imgSig = imageSig(name, file);
+    project.warnedNoScreenshot = false;
+    logLine(`Screenshot: using "${name}"`);
+  } catch (e) {
+    project.imgSig = null;
+    logLine(`Screenshot scan failed: ${e.message}`);
+  }
+}
+
+// Watcher hook: detect a screenshot image being placed in, removed from, or
+// replaced in the project folder and reflect it in the Console pane. Only
+// re-renders when the screenshot is actually shown (include_screenshot=yes);
+// otherwise the texture is just refreshed for when it's switched on.
+async function checkScreenshotFile() {
+  if (!project || !project.dirHandle) return;
+  let entry;
+  try {
+    entry = await firstImageEntry();
+  } catch (e) {
+    return;   // transient FS error; try again next poll
+  }
+  const oldSig  = project.imgSig ?? null;
+  const oldName = project.screenshotName;
+  const newSig  = entry ? imageSig(entry.name, entry.file) : null;
+  if (newSig === oldSig) return;   // unchanged
+
+  if (!oldSig && newSig) {
+    logLine(`Screenshot image "${entry.name}" added to project folder`);
+  } else if (oldSig && !newSig) {
+    logLine(`Screenshot image "${oldName}" removed from project folder`);
+  } else if (oldName && entry && oldName !== entry.name) {
+    logLine(`Screenshot image changed: "${oldName}" → "${entry.name}"`);
+  } else {
+    logLine(`Screenshot image "${entry ? entry.name : oldName}" replaced on disk`);
+  }
+
+  await rescanScreenshot();
+  if (currentFormValues().include_screenshot === 'yes') triggerWatchRerender();
 }
 
 function triggerWatchRerender() {
