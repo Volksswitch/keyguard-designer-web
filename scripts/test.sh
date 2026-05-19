@@ -124,7 +124,7 @@ if [[ $RUN_SMOKE -eq 1 ]]; then
         fail "Playwright not installed — run 'npm install' from project root"
     else
         info "Running tests/smoke.spec.mjs"
-        if (cd "$PROJECT_ROOT" && npx playwright test --config=playwright.config.mjs tests/smoke.spec.mjs); then
+        if (cd "$PROJECT_ROOT" && KEYGUARD_TEST_MODE=smoke npx playwright test --config=playwright.config.mjs tests/smoke.spec.mjs); then
             pass "Smoke test — page loaded, no console errors"
         else
             fail "Smoke test — see report above"
@@ -147,7 +147,7 @@ if [[ $RUN_VISUAL -eq 1 ]]; then
         else
             info "Running tests/visual.spec.mjs"
         fi
-        if (cd "$PROJECT_ROOT" && npx playwright test "${VISUAL_ARGS[@]}"); then
+        if (cd "$PROJECT_ROOT" && KEYGUARD_TEST_MODE=visual npx playwright test "${VISUAL_ARGS[@]}"); then
             if [[ $UPDATE_SNAPSHOTS -eq 1 ]]; then
                 pass "Visual references updated — review tests/visual.spec.mjs-snapshots/ and commit"
             else
@@ -178,7 +178,7 @@ if [[ $RUN_GEOMETRY -eq 1 ]]; then
         info "Using OpenSCAD: $OPENSCAD_BIN"
         info "Running tests/geometry.spec.mjs (every shared case with 3D geometry)"
         info "Filter with KEYGUARD_GEOMETRY_CASES='Test Case 17,Test Case 49'"
-        if (cd "$PROJECT_ROOT" && OPENSCAD="$OPENSCAD_BIN" npx playwright test --config=playwright.config.mjs tests/geometry.spec.mjs); then
+        if (cd "$PROJECT_ROOT" && KEYGUARD_TEST_MODE=geometry OPENSCAD="$OPENSCAD_BIN" npx playwright test --config=playwright.config.mjs tests/geometry.spec.mjs); then
             pass "Geometry — every exported STL is manifold"
         else
             fail "Geometry — non-manifold or failed export (see report above)"
