@@ -1363,23 +1363,30 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
 // Translate OpenSCAD's vpt/vpr/vpd (the same numbers you'd pass to
 // `openscad --camera=tx,ty,tz,rx,ry,rz,dist`) into a Three.js camera frame.
 // OpenSCAD applies rotations in Z * X * Y order (extrinsic) to an initial
-// camera placed at (0, 0, vpd) above the target, looking down -Z, Z-up.
-// We're using the same Z-up convention in Three.js (camera.up = (0,0,1)),
-// so once we compute the rotated offset the rest is just position + lookAt.
+// camera placed at (0, 0, vpd) above the target, looking down -Z with
+// screen-up = world +Y. We rotate BOTH the camera offset (initial
+// (0,0,vpd)) AND the up vector (initial (0,1,0)) by the same composition,
+// then lookAt — that way the screen roll matches OpenSCAD's viewer for any
+// vpr, including the top-down case (rx=ry=rz=0) where leaving up=(0,0,1)
+// would be parallel to the view direction and three.js's lookAt would pick
+// an arbitrary perpendicular, rotating the model 90° on screen.
 function applyOpenscadCamera(vpt, vpr, vpd) {
   const [tx, ty, tz] = vpt;
   const [rx, ry, rz] = vpr.map(d => d * Math.PI / 180);
-  // Initial offset from target: camera above target by vpd.
-  let x = 0, y = 0, z = vpd;
-  // R_y(ry)
-  [x, z] = [x * Math.cos(ry) + z * Math.sin(ry), -x * Math.sin(ry) + z * Math.cos(ry)];
-  // R_x(rx)
-  [y, z] = [y * Math.cos(rx) - z * Math.sin(rx), y * Math.sin(rx) + z * Math.cos(rx)];
-  // R_z(rz)
-  [x, y] = [x * Math.cos(rz) - y * Math.sin(rz), x * Math.sin(rz) + y * Math.cos(rz)];
+  const rotateVprZXY = (vx, vy, vz) => {
+    // R_y(ry)
+    [vx, vz] = [vx * Math.cos(ry) + vz * Math.sin(ry), -vx * Math.sin(ry) + vz * Math.cos(ry)];
+    // R_x(rx)
+    [vy, vz] = [vy * Math.cos(rx) - vz * Math.sin(rx), vy * Math.sin(rx) + vz * Math.cos(rx)];
+    // R_z(rz)
+    [vx, vy] = [vx * Math.cos(rz) - vy * Math.sin(rz), vx * Math.sin(rz) + vy * Math.cos(rz)];
+    return [vx, vy, vz];
+  };
+  const [ox, oy, oz] = rotateVprZXY(0, 0, vpd);     // camera offset from target
+  const [ux, uy, uz] = rotateVprZXY(0, 1, 0);       // camera up in world frame
   controls.target.set(tx, ty, tz);
-  camera.position.set(tx + x, ty + y, tz + z);
-  camera.up.set(0, 0, 1);
+  camera.position.set(tx + ox, ty + oy, tz + oz);
+  camera.up.set(ux, uy, uz);
   camera.lookAt(controls.target);
   // Suppress the next auto-fit so doRender doesn't re-frame on the next
   // tick. cameraFitOnce being true means "already fit, don't touch".
