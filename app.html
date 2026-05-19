@@ -2247,7 +2247,15 @@ async function rescanScreenshot() {
   }
   if (!entry) {
     project.imgSig = null;
-    logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+    // reportedImg is the filename we last told the user we're using, or
+    // 'none' once we've reported the no-image state. Report each transition
+    // exactly once.
+    if (project.reportedImg && project.reportedImg !== 'none') {
+      logLine(`Screenshot: no longer using "${project.reportedImg}"`);
+    } else if (project.reportedImg !== 'none') {
+      logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+    }
+    project.reportedImg = 'none';
     return;
   }
   try {
@@ -2265,7 +2273,12 @@ async function rescanScreenshot() {
     project.screenshotTexture = tex;
     project.imgSig = imageSig(name, file);
     project.warnedNoScreenshot = false;
-    logLine(`Screenshot: using "${name}"`);
+    // Report only when the in-use file changes (deduped by filename), so a
+    // re-scan that resolves to the same image stays silent.
+    if (project.reportedImg !== name) {
+      logLine(`Screenshot: using "${name}"`);
+      project.reportedImg = name;
+    }
   } catch (e) {
     project.imgSig = null;
     logLine(`Screenshot scan failed: ${e.message}`);
@@ -2284,21 +2297,13 @@ async function checkScreenshotFile() {
   } catch (e) {
     return;   // transient FS error; try again next poll
   }
-  const oldSig  = project.imgSig ?? null;
-  const oldName = project.screenshotName;
-  const newSig  = entry ? imageSig(entry.name, entry.file) : null;
-  if (newSig === oldSig) return;   // unchanged
+  const oldSig = project.imgSig ?? null;
+  const newSig = entry ? imageSig(entry.name, entry.file) : null;
+  if (newSig === oldSig) return;   // unchanged on disk
 
-  if (!oldSig && newSig) {
-    logLine(`Screenshot image "${entry.name}" added to project folder`);
-  } else if (oldSig && !newSig) {
-    logLine(`Screenshot image "${oldName}" removed from project folder`);
-  } else if (oldName && entry && oldName !== entry.name) {
-    logLine(`Screenshot image changed: "${oldName}" → "${entry.name}"`);
-  } else {
-    logLine(`Screenshot image "${entry ? entry.name : oldName}" replaced on disk`);
-  }
-
+  // rescanScreenshot() is the single console reporter (deduped by
+  // filename: "using X" / "no longer using X"), so the watcher just
+  // refreshes state and re-renders when the screenshot is shown.
   await rescanScreenshot();
   if (currentFormValues().include_screenshot === 'yes') triggerWatchRerender();
 }
