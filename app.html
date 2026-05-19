@@ -241,7 +241,7 @@
               <path d="M17.5 16.5 20.5 19 17.5 21.5M2.5 6.5 5 3.5 7.5 6.5M11 11 14 10 13 13"/>
             </svg>
           </button>
-          <button class="vp-btn" id="view-grid"   title="Show Scale Markers">
+          <button class="vp-btn" id="view-grid"   title="Show grid">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
               <path d="M4 4H20V20H4Z"/>
               <path d="M9.3 4V20M14.7 4V20M4 9.3H20M4 14.7H20"/>
@@ -260,9 +260,9 @@
           </span>
           <div class="vp-sep" style="margin-left:auto;"></div>
           <button class="vp-btn" id="settings-btn" title="Settings">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3.2"/>
-              <path d="M12 3.4V6M12 18V20.6M3.4 12H6M18 12H20.6M6 6 7.8 7.8M16.2 16.2 18 18M18 6 16.2 7.8M7.8 16.2 6 18"/>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
           </button>
         </div>
@@ -327,6 +327,8 @@
     <div id="settings-body">
       <div id="settings-cats">
         <div class="cat active" data-cat="general">General</div>
+        <div class="cat" data-cat="grid">Grid</div>
+        <div class="cat" data-cat="about">About</div>
       </div>
       <div id="settings-panel">
         <!-- panel content rendered by JS -->
@@ -492,19 +494,79 @@ function ensureAxes() {
   axesHelper = new THREE.AxesHelper(80);
   scene.add(axesHelper);
 }
+// Reference grid: a build-plate-sized rectangle in the XY plane (z = 0) with
+// minor lines every 10 mm and major lines every 50 mm. Lines are generated
+// outward from the centre, so when a dimension isn't a whole number of 50 mm
+// cells the leftover is split equally between the two opposite edges.
+const GRID_MINOR_MM = 10;
+const GRID_MAJOR_EVERY = 5;   // every 5th minor line (= 50 mm) is a major line
+
+function clampGridDim(v) {
+  const n = Math.round(Number(v));
+  return isFinite(n) ? Math.min(2000, Math.max(20, n)) : 256;
+}
+
+function buildGridGroup(gx, gy) {
+  const hx = clampGridDim(gx) / 2;
+  const hy = clampGridDim(gy) / 2;
+  const EPS = 1e-6;
+  const minor = [];
+  const major = [];
+  for (let i = 0; i * GRID_MINOR_MM < hx - EPS; i++) {
+    const x = i * GRID_MINOR_MM;
+    const arr = (i % GRID_MAJOR_EVERY === 0) ? major : minor;
+    arr.push(x, -hy, 0, x, hy, 0);
+    if (i > 0) arr.push(-x, -hy, 0, -x, hy, 0);
+  }
+  for (let j = 0; j * GRID_MINOR_MM < hy - EPS; j++) {
+    const y = j * GRID_MINOR_MM;
+    const arr = (j % GRID_MAJOR_EVERY === 0) ? major : minor;
+    arr.push(-hx, y, 0, hx, y, 0);
+    if (j > 0) arr.push(-hx, -y, 0, hx, -y, 0);
+  }
+  const border = [
+    -hx, -hy, 0,  hx, -hy, 0,
+     hx, -hy, 0,  hx,  hy, 0,
+     hx,  hy, 0, -hx,  hy, 0,
+    -hx,  hy, 0, -hx, -hy, 0,
+  ];
+  const seg = (pts, color) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
+  };
+  const group = new THREE.Group();
+  group.add(seg(minor,  0xdedede));
+  group.add(seg(major,  0xa8a8a8));
+  group.add(seg(border, 0x707070));
+  return group;   // already in the XY plane; no rotation needed
+}
+
 function ensureGrid() {
   if (gridHelper) return;
-  // 400 mm × 400 mm grid, 20 mm cells; rotate so it lies in the XY plane (Z-up).
-  gridHelper = new THREE.GridHelper(400, 20, 0xa0a0a0, 0xd0d0d0);
-  gridHelper.rotation.x = Math.PI / 2;
+  gridHelper = buildGridGroup(settings.gridX, settings.gridY);
   scene.add(gridHelper);
+}
+function disposeGrid() {
+  if (!gridHelper) return;
+  scene.remove(gridHelper);
+  gridHelper.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+  });
+  gridHelper = null;
+}
+function rebuildGridIfVisible() {
+  if (!gridHelper) return;
+  disposeGrid();
+  ensureGrid();
 }
 function toggleAxes() {
   if (axesHelper) { scene.remove(axesHelper); axesHelper.dispose && axesHelper.dispose(); axesHelper = null; }
   else ensureAxes();
 }
 function toggleGrid() {
-  if (gridHelper) { scene.remove(gridHelper); gridHelper.dispose && gridHelper.dispose(); gridHelper = null; }
+  if (gridHelper) disposeGrid();
   else ensureGrid();
 }
 
@@ -559,8 +621,13 @@ function setStatus(msg, kind = '') {
 // ===== Settings (app-wide, persisted in localStorage) =====
 const SETTINGS_KEY = 'keyguard:settings';
 const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
+// Integer release number shown on the About tab. Bump by one on every
+// release, in lock-step with sw.js CACHE_NAME (see RELEASING.md).
+const APP_RELEASE = 2;
 const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
+  gridX: 256,                    // reference-grid extent in mm (build-plate X)
+  gridY: 256,                    // reference-grid extent in mm (build-plate Y)
 };
 let settings = loadSettings();
 
@@ -599,6 +666,7 @@ function onSettingsChanged(key) {
     project.presetNames = orderedPresetNames(project.rawPresetNames);
     rebuildPresetDropdown();
   }
+  if (key === 'gridX' || key === 'gridY') rebuildGridIfVisible();
 }
 
 // Sort preset names according to the current setting. 'design default values'
@@ -784,17 +852,31 @@ async function openProject() {
   }
   if (!dirHandle) {
     try {
-      dirHandle = await window.showDirectoryPicker({ id: 'keyguard-project', mode: 'readwrite' });
+      // No `mode` on purpose: asking for readwrite *in the picker* raises
+      // its own edit-permission prompt, and the explicit requestPermission()
+      // below raises a second one — so a single "Don't allow" used to cost
+      // the user two prompts per attempt. Pick (read), then ask for
+      // readwrite exactly once.
+      dirHandle = await window.showDirectoryPicker({ id: 'keyguard-project' });
     } catch (e) {
       if (e.name === 'AbortError') return;       // user cancelled
       throw e;
     }
-    // Ensure read+write upfront. If the user denies access, abort cleanly
-    // back to the initial layout rather than continuing with a dead handle
-    // (which previously threw mid-load and left the picker re-prompting).
     let perm = 'denied';
-    try { perm = await dirHandle.requestPermission({ mode: 'readwrite' }); } catch {}
+    try {
+      perm = await dirHandle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await dirHandle.requestPermission({ mode: 'readwrite' });
+    } catch {}
     if (perm !== 'granted') {
+      // Denied. If a project is already open (this was a "Change Project"
+      // attempt) keep it intact and just abort the switch — the user isn't
+      // punished for declining, the button still reads "Change Project…",
+      // and they can retry immediately. Only fall back to the clean
+      // no-project layout when there was nothing open to keep.
+      if (project) {
+        logLine('Folder access was not granted — keeping the current project.');
+        return;
+      }
       await resetToNoProject();
       return;
     }
@@ -2389,6 +2471,41 @@ const SETTINGS_PANELS = {
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
   `,
+  grid: () => `
+    <div class="setting">
+      <label>Reference grid size</label>
+      <div style="color:#666; margin-bottom:8px;">
+        Set this to match your printer's build plate. The grid shows minor
+        lines every 10&nbsp;mm and major lines every 50&nbsp;mm; any leftover
+        is split equally around the edges. Toggle the grid with the grid
+        button on the viewport toolbar.
+      </div>
+      <label class="opt">Width X (mm)
+        <input type="number" id="set-gridX" min="20" max="2000" step="1"
+          value="${clampGridDim(settings.gridX)}" style="width:70px;"></label>
+      <label class="opt">Depth Y (mm)
+        <input type="number" id="set-gridY" min="20" max="2000" step="1"
+          value="${clampGridDim(settings.gridY)}" style="width:70px;"></label>
+    </div>
+  `,
+  about: () => `
+    <div class="setting">
+      <label>Keyguard Designer (web)</label>
+      <div style="margin-bottom:10px;">Release ${APP_RELEASE}</div>
+      <label>License</label>
+      <div style="margin-bottom:10px;">
+        CC0 1.0 Universal — dedicated to the public domain. You are free to
+        use, modify, and share this tool for any purpose, with no restrictions
+        and no attribution required.
+      </div>
+      <label>Created by</label>
+      <div>
+        Volksswitch —
+        <a href="https://www.volksswitch.org" target="_blank"
+           rel="noopener">www.volksswitch.org</a>
+      </div>
+    </div>
+  `,
 };
 
 function renderSettingsPanel(cat) {
@@ -2396,6 +2513,16 @@ function renderSettingsPanel(cat) {
   settingsPanel.querySelectorAll('input[type=radio][name=presetOrder]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('presetOrder', r.value); });
   });
+  for (const dim of ['gridX', 'gridY']) {
+    const inp = settingsPanel.querySelector('#set-' + dim);
+    if (!inp) continue;
+    const commit = () => {
+      const v = clampGridDim(inp.value);
+      inp.value = v;
+      if (v !== settings[dim]) setSetting(dim, v);
+    };
+    inp.addEventListener('change', commit);
+  }
 }
 
 function openSettings() {
