@@ -13,6 +13,8 @@ const SHELL = [
   './vendor/three/examples/jsm/libs/fflate.module.js',
   './vendor/three/examples/jsm/loaders/3MFLoader.js',
   './vendor/three/examples/jsm/controls/OrbitControls.js',
+  './vendor/three/examples/jsm/controls/TrackballControls.js',
+  './vendor/three/examples/jsm/controls/ArcballControls.js',
   './vendor/three/examples/jsm/loaders/STLLoader.js',
 ];
 
