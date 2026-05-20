@@ -271,6 +271,7 @@
                     title="Choose export format" style="color:#06c">▾</button>
             <div class="split-menu" id="export-menu">
               <div class="split-item" data-fmt="STL">Export as STL <span class="hint">3D print</span></div>
+              <div class="split-item" data-fmt="STL-CGAL">Export as STL (precision) <span class="hint">slower &mdash; cleaner output</span></div>
               <div class="split-item" data-fmt="SVG">Export as SVG <span class="hint">laser-cut</span></div>
               <div class="split-item" data-fmt="PNG">Export as PNG <span class="hint">current view</span></div>
             </div>
@@ -1859,12 +1860,17 @@ async function exportPNG() {
   logLine(`Exported PNG (${blob.size.toLocaleString()} bytes)`);
 }
 
-// Render the current design to STL/SVG bytes exactly as the user-facing
-// Export does — same args, same Manifold backend, same param derivation.
+
+// Render the current design to STL/SVG bytes. Default backend is Manifold
+// — ~100× faster than CGAL and what the user sees in the viewport. The
+// "Export STL (precision)" menu item passes backend='CGAL' as an escape
+// hatch when Manifold's convex_hull_3 UB produces a slicer-visible STL
+// (TC57 was the first reported case; see project memory). CGAL takes
+// several minutes per render but is verifiably manifold.
 // Both exportCurrent() (which writes/downloads) and the geometry-test hook
 // window.__exportSTLBytes call this, so a tested STL is byte-identical to
 // the file a clinician produces via Export → STL.
-async function renderExportBytes(fmt) {
+async function renderExportBytes(fmt, backend = 'Manifold') {
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) throw new Error(`Unknown export format: ${fmt}`);
   // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
@@ -1891,7 +1897,7 @@ async function renderExportBytes(fmt) {
   // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
   // clobber our Manifold-precision workaround and leave cell floors in
   // the exported file.
-  const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold'];
+  const args = ['/' + project.scadName, '-o', outPath, `--backend=${backend}`];
   if (project.jsonText && project.currentPreset !== 'design default values') {
     args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
   }
@@ -1931,25 +1937,41 @@ async function renderExportBytes(fmt) {
   const elapsed = (performance.now() - t0) / 1000;
   if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
   const bytes = fs.readFile(outPath);
-  logLine(`Export render (${fmt}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
+  logLine(`Export render (${fmt}, ${backend}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
   return bytes;
 }
 
-// Test-only hook: returns the exact bytes a clinician's Export → STL
-// produces (no folder write, no download). Used by tests/geometry.spec.mjs.
+// Test-only hooks: return the exact bytes a clinician's Export → STL
+// produces (no folder write, no download). Used by tests/geometry.spec.mjs
+// (fast Manifold path) and tests/precision-export.spec.mjs (CGAL path).
 // Array (not Uint8Array) so it survives Playwright's structured clone.
-window.__exportSTLBytes = async () => Array.from(await renderExportBytes('STL'));
+window.__exportSTLBytes          = async () => Array.from(await renderExportBytes('STL'));
+window.__exportSTLBytesPrecision = async () => Array.from(await renderExportBytes('STL', 'CGAL'));
 
 async function exportCurrent(fmt) {
   if (fmt === 'PNG') return exportPNG();
   if (!project) { alert('Open a project first.'); return; }
+  // "STL-CGAL" is a synthetic format key from the "Export STL (precision)"
+  // menu item — it means "render STL using the CGAL backend instead of
+  // Manifold." Slow (minutes), but produces a verifiably manifold STL for
+  // designs where Manifold's convex_hull_3 UB leaves slicer-visible
+  // artifacts (TC57 was the first reported instance). Resolve to a real
+  // fmt + backend pair before any spec / status / log code runs so the rest
+  // of this function doesn't have to know about the synthetic key.
+  const backend = fmt === 'STL-CGAL' ? 'CGAL' : 'Manifold';
+  if (fmt === 'STL-CGAL') fmt = 'STL';
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
   const prevStatusText = statusEl.innerHTML;
   const prevStatusKind = statusEl.className;
-  setStatus(`Exporting as ${fmt}...`, 'rendering');
+  setStatus(
+    backend === 'CGAL'
+      ? `Exporting as ${fmt} (precision) — this may take several minutes...`
+      : `Exporting as ${fmt}...`,
+    'rendering'
+  );
   try {
-    const bytes = await renderExportBytes(fmt);
+    const bytes = await renderExportBytes(fmt, backend);
     const fname = exportBaseName() + '.' + spec.ext;
     // Prefer writing STL/SVG straight into the project folder so the
     // deliverable lands next to the .scad it came from. Falls back to a
@@ -2639,12 +2661,24 @@ exportArrow.addEventListener('click', e => {
   exportMenu.classList.toggle('open');
 });
 document.addEventListener('click', () => exportMenu.classList.remove('open'));
+// Label / tooltip differ for "STL-CGAL" (the precision escape hatch) — that
+// synthetic key isn't user-readable, and clinicians shouldn't see it in the
+// main-button label. Map known formats to clean display strings; everything
+// else falls back to "Export as <fmt>".
+const EXPORT_LABELS = {
+  'STL':      { label: 'Export as STL',             title: 'Export current design as STL' },
+  'STL-CGAL': { label: 'Export as STL (precision)', title: 'Export current design as STL — slower, cleaner output' },
+  'SVG':      { label: 'Export as SVG',             title: 'Export current design as SVG' },
+  'PNG':      { label: 'Export as PNG',             title: 'Export current design as PNG' },
+};
 exportMenu.addEventListener('click', e => {
   const item = e.target.closest('.split-item');
   if (!item) return;
   currentExportFormat = item.dataset.fmt;
-  document.getElementById('export-label').textContent = `Export as ${currentExportFormat}`;
-  exportMain.title = `Export current design as ${currentExportFormat}`;
+  const meta = EXPORT_LABELS[currentExportFormat]
+    || { label: `Export as ${currentExportFormat}`, title: `Export current design as ${currentExportFormat}` };
+  document.getElementById('export-label').textContent = meta.label;
+  exportMain.title = meta.title;
   exportMenu.classList.remove('open');
   exportCurrent(currentExportFormat);
 });
