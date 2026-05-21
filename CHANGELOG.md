@@ -8,6 +8,10 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
+_Nothing yet._
+
+## Release 3
+
 ### New features
 
 - **Dark mode for the side panels.** The Customizer (right) and Console
