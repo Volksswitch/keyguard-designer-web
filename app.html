@@ -83,6 +83,11 @@
                        pointer-events: none; color: #555; font-size: 12px; }
   #viewport-status { background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 3px;
                      display: inline-block; pointer-events: auto; }
+  /* An empty pill (e.g. after a render/export clears the text) would still
+     paint its translucent background + padding as a small box — invisible on
+     the cream default but an obvious artifact on a dark viewport background.
+     Collapse it whenever there's no text. */
+  #viewport-status:empty { display: none; }
   #viewport-status.rendering { color: #aa6; background: rgba(255,250,200,0.9); }
   #viewport-status.error { color: #c00; background: rgba(255,220,220,0.9); }
   #viewport-status.ok { color: #060; background: rgba(220,250,220,0.9); }
