@@ -452,8 +452,8 @@
     <h3 id="export-title">Exporting…</h3>
     <div class="export-bar"><div class="export-bar-fill"></div></div>
     <div id="export-sub">
-      Elapsed <span id="export-elapsed">0:00</span> — precision (CGAL) renders
-      can take several minutes. You can cancel anytime.
+      Elapsed <span id="export-elapsed">0:00</span> — precision renders can
+      take several minutes. You can cancel anytime.
     </div>
     <div id="export-footer">
       <button id="export-cancel">Cancel export</button>
@@ -2121,7 +2121,9 @@ async function renderExportBytes(fmt, backend = 'Manifold') {
     onLog: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
   });
   const elapsed = (performance.now() - t0) / 1000;
-  logLine(`Export render (${fmt}, ${backend}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
+  // Console is clinician-visible: say "precision" rather than the backend's
+  // internal name (CGAL / Manifold), which means nothing to a clinician.
+  logLine(`Export render (${fmt}${backend === 'CGAL' ? ', precision' : ''}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
   return bytes;
 }
 
