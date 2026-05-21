@@ -74,11 +74,16 @@ numbers don't have to be equal — `CACHE_NAME` started at v1 and `APP_RELEASE` 
 they just both increment by one per release.) Like the cache number, it only ever
 goes up.
 
+Now update `CHANGELOG.md`: rename the **`## Unreleased (next release)`** heading to
+**`## Release <new APP_RELEASE>`**, and add a fresh empty `## Unreleased (next release)`
+section above it for the next cycle. The changelog is clinician-facing — keep entries to
+what a clinician can see or do differently; leave test/build/tooling changes out.
+
 Finish the atomic commit (the `--no-commit` above left the merge staged; this single
-commit *is* the merge commit, now carrying the cache + release bump too):
+commit *is* the merge commit, now carrying the cache + release + changelog bump too):
 
 ```
-git add sw.js app.html
+git add sw.js app.html CHANGELOG.md
 git commit -m "Release: <one-line summary of the chunk> (cache keyguard-v2)"
 git push origin main
 ```
