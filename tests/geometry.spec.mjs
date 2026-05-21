@@ -92,6 +92,28 @@ try {
   GOLDEN_LOAD_ERROR = `${GOLDEN_MANIFEST_PATH}: ${e.message}`;
 }
 
+// When a step fails either gate, write its exact Manifold STL bytes here
+// (gitignored) so the broken file can be opened in a slicer next to the CGAL
+// golden STL (.scad output/golden-stl/). Only failing steps are saved, so the
+// folder stays small and the latest failures are easy to find.
+const FAILED_STL_DIR = path.join(PROJECT_ROOT, 'output', 'failed-stl');
+function preserveFailingStl(caseName, stepIndex, buf) {
+  try {
+    fs.mkdirSync(FAILED_STL_DIR, { recursive: true });
+    const safe = `${caseName}_step${stepIndex}`.replace(/[^\w.-]+/g, '_');
+    const p = path.join(FAILED_STL_DIR, `${safe}.stl`);
+    fs.writeFileSync(p, buf);
+    return p;
+  } catch (e) {
+    return `(could not save STL: ${e.message})`;
+  }
+}
+// Mirror the .scad --keep-stls filename transform (tr ' /' '__') so the failure
+// message can point at the matching CGAL golden STL.
+function goldenStlName(preset) {
+  return preset.replace(/[ /]/g, '_') + '.stl';
+}
+
 // Default: every qualifying case. Ken's standard is that ALL test cases
 // with geometry meet the manifold bar, so unlike the visual layer there is
 // no curated short list — filter explicitly with KEYGUARD_GEOMETRY_CASES.
@@ -298,12 +320,16 @@ if (discoveryError || CASES.length === 0) {
           `artefacts — degenerate=${s.degenerateFacets} reversed=${s.facetsReversed} ` +
           `backwards=${s.backwardsEdges} (slicer-tolerated, not gated, per .scad policy)`);
       }
-      expect(
-        verdict.state,
-        `${c.caseName} step ${c.stepIndex}: app-exported STL is NON-MANIFOLD ` +
-        `(admesh Original: ${s.disconnectedFacets} disconnected facet edge(s) — ` +
-        `every edge must be shared by exactly two facets)`
-      ).toBe('manifold');
+      if (verdict.state !== 'manifold') {
+        const saved = preserveFailingStl(c.caseName, c.stepIndex, stlBuf);
+        expect(
+          verdict.state,
+          `${c.caseName} step ${c.stepIndex}: app-exported STL is NON-MANIFOLD ` +
+          `(admesh Original: ${s.disconnectedFacets} disconnected facet edge(s) — ` +
+          `every edge must be shared by exactly two facets).\n` +
+          `  Manifold STL saved for inspection: ${saved}`
+        ).toBe('manifold');
+      }
 
       // ── Golden-manifest stats comparison ────────────────────────────────
       // Independent from admesh. admesh catches gross failures (open meshes,
@@ -332,11 +358,17 @@ if (discoveryError || CASES.length === 0) {
           `area=${observed.surface_area_mm2} (Δ${((observed.surface_area_mm2 - expected.surface_area_mm2) / (expected.surface_area_mm2 || 1) * 100).toFixed(3)}%) ` +
           `parts=${observed.parts}/${expected.parts} ` +
           `facets=${observed.facets}/${expected.facets}`);
-        expect(
-          verdict2.ok,
-          `${c.caseName} step ${c.stepIndex}: Manifold STL diverges from CGAL golden ` +
-          `manifest for preset "${c.preset}":\n  ${verdict2.failures.join('\n  ')}`
-        ).toBe(true);
+        if (!verdict2.ok) {
+          const saved = preserveFailingStl(c.caseName, c.stepIndex, stlBuf);
+          expect(
+            verdict2.ok,
+            `${c.caseName} step ${c.stepIndex}: Manifold STL diverges from CGAL golden ` +
+            `manifest for preset "${c.preset}":\n  ${verdict2.failures.join('\n  ')}\n` +
+            `  Manifold STL saved for inspection: ${saved}\n` +
+            `  Compare to the CGAL golden STL: <scad-project>/output/golden-stl/${goldenStlName(c.preset)}\n` +
+            `  (regenerate the golden STLs with: scripts/test.sh --update-golden --keep-stls)`
+          ).toBe(true);
+        }
       }
     });
   }
