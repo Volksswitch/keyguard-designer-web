@@ -66,11 +66,24 @@ const CACHE_NAME = 'keyguard-v1';   →   const CACHE_NAME = 'keyguard-v2';
 Edit it by hand in your editor — it's a single digit and a manual edit is the least
 error-prone. The number must only ever **go up**.
 
+Now bump the **release number** in `app.html` to match. Find `const APP_RELEASE = 2;`
+(near `SETTINGS_KEY`) and increment the integer by one. This is the number clinicians
+see on **Settings → About**, so it must move in lock-step with `CACHE_NAME`: one
+release = one `CACHE_NAME` bump *and* one `APP_RELEASE` bump, every time. (The two
+numbers don't have to be equal — `CACHE_NAME` started at v1 and `APP_RELEASE` at 2 —
+they just both increment by one per release.) Like the cache number, it only ever
+goes up.
+
+Now update `CHANGELOG.md`: rename the **`## Unreleased (next release)`** heading to
+**`## Release <new APP_RELEASE>`**, and add a fresh empty `## Unreleased (next release)`
+section above it for the next cycle. The changelog is clinician-facing — keep entries to
+what a clinician can see or do differently; leave test/build/tooling changes out.
+
 Finish the atomic commit (the `--no-commit` above left the merge staged; this single
-commit *is* the merge commit, now carrying the cache bump too):
+commit *is* the merge commit, now carrying the cache + release + changelog bump too):
 
 ```
-git add sw.js
+git add sw.js app.html CHANGELOG.md
 git commit -m "Release: <one-line summary of the chunk> (cache keyguard-v2)"
 git push origin main
 ```
@@ -88,6 +101,8 @@ Then keep working on `dev` as usual.
 - **Never commit app changes straight to `main`.** Only the release merge moves `main`.
 - **The cache number only increases** (v5 → v6, never back to v4). Browsers detect a
   *changed* `sw.js`, and a lower/old number can leave clients stuck.
+- **`APP_RELEASE` moves with `CACHE_NAME`, never on its own.** It only ever increases,
+  only during the ritual, only on `main`. Never bump it on `dev`.
 - If `git merge` reports a conflict in `sw.js`, the **`main` side's version number always
   wins** — resolve in favor of `main`, then bump it as normal. (Conflicts here are rare:
   `dev` never touches the `CACHE_NAME` line.)

@@ -94,9 +94,21 @@ export default class TimingsReporter {
       this.stepCountByCase.set(parsed.caseName, (this.stepCountByCase.get(parsed.caseName) || 0) + 1);
     }
 
+    // Which layer is this? test.sh runs one spec per invocation, so the
+    // spec filename is an unambiguous signal. An explicit KEYGUARD_TEST_MODE
+    // wins if set. Recorded so a geometry run logs mode:"geometry" (not
+    // "visual"), matching the .scad project's test-timings.ndjson.
+    this.mode = process.env.KEYGUARD_TEST_MODE || (() => {
+      const files = new Set(allTests.map(t => path.basename(t.location?.file || '')));
+      if ([...files].some(f => f.includes('geometry'))) return 'geometry';
+      if ([...files].some(f => f.includes('smoke')))    return 'smoke';
+      return 'visual';
+    })();
+
     appendEvent({
       event: 'env',
       session: this.runLabel,
+      mode: this.mode,
       node: process.version,
       playwright: 'workers=' + (config.workers || 1),
       tests: allTests.length,
@@ -159,7 +171,7 @@ export default class TimingsReporter {
     appendEvent({
       event: 'run',
       run: this.runLabel,
-      mode: 'visual',
+      mode: this.mode || 'visual',
       cases_run: this.totalCasesRun,
       cases_passed: this.totalCasesPassed,
       cases_failed: this.totalCasesFailed,

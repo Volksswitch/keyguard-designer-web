@@ -16,6 +16,47 @@
 <style>
   /* ---------- reset / base ---------- */
   * { box-sizing: border-box; }
+  /* Customizer text sizes are driven by these so the Settings → Text panel
+     can retune them live. Defaults match the historical hard-coded values. */
+  :root { --kg-section-heading-pt: 14px; --kg-param-text-pt: 12px; }
+
+  /* Light/dark theming for the Customizer (#right) and Console (#console-wrap)
+     panes. The viewport and menubar are intentionally NOT themed here — the
+     viewport has its own background-colour setting. Light values below are the
+     historical hard-coded colours; the dark overrides live in the
+     body[data-kg-theme="dark"] block. `color-scheme` lets native form
+     controls (selects, inputs, scrollbars) follow the theme automatically. */
+  :root {
+    --kg-pane-scheme:        light;
+    --kg-pane-bg:            #fafafa;  /* customizer column body            */
+    --kg-pane-header-bg:     #f4f4f4;  /* cust header + section headers     */
+    --kg-pane-section-bg:    #fafafa;  /* collapsed section header          */
+    --kg-pane-body-bg:       #fff;     /* open section body                 */
+    --kg-pane-text:          #222;
+    --kg-pane-text-dim:      #777;     /* param help / caret                */
+    --kg-pane-border:        #bbb;
+    --kg-pane-border-soft:   #e0e0e0;
+    --kg-pane-hover:         #eef2f7;
+    --kg-console-bg:         #fff;
+    --kg-console-toolbar-bg: #ececec;
+    --kg-console-text:       #222;
+  }
+  body[data-kg-theme="dark"] {
+    --kg-pane-scheme:        dark;
+    --kg-pane-bg:            #25282c;
+    --kg-pane-header-bg:     #2d3136;
+    --kg-pane-section-bg:    #2a2e33;
+    --kg-pane-body-bg:       #1f2226;
+    --kg-pane-text:          #e6e6e6;
+    --kg-pane-text-dim:      #9aa0a6;
+    --kg-pane-border:        #44494f;
+    --kg-pane-border-soft:   #3a3f45;
+    --kg-pane-hover:         #343a41;
+    --kg-console-bg:         #1b1d20;
+    --kg-console-toolbar-bg: #2a2e33;
+    --kg-console-text:       #d6d6d6;
+  }
+
   html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", -apple-system, sans-serif;
                font-size: 13px; background: #f0f0f0; color: #222; }
 
@@ -30,8 +71,9 @@
   #app { display: flex; flex-direction: column; height: 100vh; }
   #main { display: flex; flex: 1; min-height: 0; }
   #left { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-  #right { width: 280px; flex-shrink: 0; background: #fafafa; border-left: 1px solid #bbb;
-           display: flex; flex-direction: column; min-width: 180px; }
+  #right { width: 280px; flex-shrink: 0; background: var(--kg-pane-bg); border-left: 1px solid var(--kg-pane-border);
+           display: flex; flex-direction: column; min-width: 180px;
+           color: var(--kg-pane-text); color-scheme: var(--kg-pane-scheme); }
 
   /* the left column is itself (viewport on top + horizontal splitter + console at bottom) */
   #viewport-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -41,6 +83,11 @@
                        pointer-events: none; color: #555; font-size: 12px; }
   #viewport-status { background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 3px;
                      display: inline-block; pointer-events: auto; }
+  /* An empty pill (e.g. after a render/export clears the text) would still
+     paint its translucent background + padding as a small box — invisible on
+     the cream default but an obvious artifact on a dark viewport background.
+     Collapse it whenever there's no text. */
+  #viewport-status:empty { display: none; }
   #viewport-status.rendering { color: #aa6; background: rgba(255,250,200,0.9); }
   #viewport-status.error { color: #c00; background: rgba(255,220,220,0.9); }
   #viewport-status.ok { color: #060; background: rgba(220,250,220,0.9); }
@@ -60,15 +107,18 @@
   .vp-sep { width: 1px; background: #bbb; height: 18px; margin: 0 4px; }
 
   /* ---------- console pane ---------- */
-  #console-wrap { background: #fff; border-top: 1px solid #bbb; display: flex; flex-direction: column;
+  #console-wrap { background: var(--kg-console-bg); border-top: 1px solid var(--kg-pane-border);
+                  display: flex; flex-direction: column; color: var(--kg-console-text);
+                  color-scheme: var(--kg-pane-scheme);
                   height: 180px; min-height: 60px; flex-shrink: 0; }
   #console-toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px;
-                     background: #ececec; border-bottom: 1px solid #ccc; flex-shrink: 0; font-size: 12px; }
+                     background: var(--kg-console-toolbar-bg); border-bottom: 1px solid var(--kg-pane-border);
+                     flex-shrink: 0; font-size: 12px; color: var(--kg-pane-text); }
   #console-toolbar .label { font-weight: bold; margin-right: auto; }
   #console-toolbar button { font-size: 11px; padding: 2px 8px; cursor: pointer; }
   #console-toolbar label { font-size: 11px; user-select: none; }
   #console { flex: 1; overflow-y: auto; padding: 6px 10px; font-family: Consolas, Menlo, monospace;
-             font-size: 11.5px; color: #222; white-space: pre; }
+             font-size: 11.5px; color: var(--kg-console-text); white-space: pre; }
   #console.wrap { white-space: pre-wrap; }
 
   /* ---------- splitters ---------- */
@@ -80,7 +130,8 @@
   .vsplit:hover { background: #b0c0e0; }
 
   /* ---------- Customizer ---------- */
-  #cust-header { padding: 8px 10px; border-bottom: 1px solid #ddd; background: #f4f4f4; flex-shrink: 0; }
+  #cust-header { padding: 8px 10px; border-bottom: 1px solid var(--kg-pane-border-soft);
+                 background: var(--kg-pane-header-bg); flex-shrink: 0; }
   #cust-header h2 { margin: 0 0 6px 0; font-size: 13px; font-weight: bold; }
   #cust-header .preset-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
   #cust-header select, #cust-header input { flex: 1; min-width: 0; font-size: 12px; padding: 2px 4px; }
@@ -88,18 +139,21 @@
   #cust-header .preset-btns { display: flex; gap: 4px; }
   #cust-header .preset-btns button { flex: 1; }
   #cust-sections { flex: 1; overflow-y: auto; }
-  .section { border-bottom: 1px solid #e0e0e0; }
+  .section { border-bottom: 1px solid var(--kg-pane-border-soft); }
   .section-header { padding: 7px 10px; cursor: pointer; user-select: none;
-                    display: flex; align-items: center; gap: 4px; font-weight: bold; font-size: 14px;
-                    background: #fafafa; }
-  .section-header:hover { background: #eef2f7; }
-  .section-header .caret { display: inline-block; width: 10px; transition: transform 0.1s; color: #555; }
+                    display: flex; align-items: center; gap: 4px; font-weight: bold;
+                    font-size: var(--kg-section-heading-pt);
+                    background: var(--kg-pane-section-bg); }
+  .section-header:hover { background: var(--kg-pane-hover); }
+  .section-header .caret { display: inline-block; width: 10px; transition: transform 0.1s; color: var(--kg-pane-text-dim); }
   .section.open .section-header .caret { transform: rotate(90deg); }
-  .section-body { display: none; padding: 8px 10px 10px 10px; background: #fff; font-size: 12px; }
+  .section-body { display: none; padding: 8px 10px 10px 10px; background: var(--kg-pane-body-bg);
+                  font-size: var(--kg-param-text-pt); }
   .section.open .section-body { display: block; }
   .param { margin-bottom: 8px; }
-  .param-label { display: block; font-weight: bold; margin-bottom: 2px; }
-  .param-help { color: #777; font-size: 11px; margin-bottom: 3px; }
+  .param-label { display: block; font-weight: bold; margin-bottom: 2px;
+                 font-size: var(--kg-param-text-pt); }
+  .param-help { color: var(--kg-pane-text-dim); font-size: 11px; margin-bottom: 3px; }
   .param select, .param input[type=text], .param input[type=number] {
     width: 100%; padding: 2px 4px; font-size: 12px; }
 
@@ -148,6 +202,17 @@
   #settings-panel .setting .opt { display: block; margin: 2px 0; font-weight: normal; }
   #settings-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
   #settings-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+  #settings-panel input[type=number] { width: 64px; font-size: 12px; padding: 2px 4px; }
+  .swatch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 6px 0 4px; }
+  .swatch { height: 34px; border: 2px solid #bbb; border-radius: 4px; cursor: pointer;
+            position: relative; outline: none; }
+  .swatch:hover { border-color: #888; }
+  .swatch.sel { border-color: #06c; box-shadow: 0 0 0 2px #cfe0fa; }
+  .swatch.sel::after { content: '✓'; position: absolute; top: 50%; left: 50%;
+                       transform: translate(-50%, -50%); font-size: 15px; font-weight: bold;
+                       color: var(--kg-check, #fff); text-shadow: 0 0 2px rgba(0,0,0,0.55); }
+  .swatch-name { font-size: 11px; color: #555; margin-bottom: 8px; }
+  .set-reset { margin-top: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 
   /* ---------- Confirm (unsaved-changes) modal ---------- */
   #confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -162,6 +227,32 @@
                     background: #f0f0f0; }
   #confirm-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; margin-left: 8px; }
   #confirm-ok { font-weight: bold; color: #a33; }
+
+  /* ---------- export progress modal ---------- */
+  #export-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+                    display: none; align-items: center; justify-content: center; z-index: 1200; }
+  #export-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                  width: 420px; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  #export-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
+                     background: #e8e8e8; font-size: 14px; }
+  #export-sub { padding: 4px 14px 14px; font-size: 12px; line-height: 1.5; color: #555; }
+  #export-sub #export-elapsed { font-variant-numeric: tabular-nums; font-weight: bold; color: #222; }
+  #export-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
+  #export-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+  /* Indeterminate bar: a fixed-width sliver sweeps across the track because
+     OpenSCAD's wasm build exposes no granular progress to drive a real %. */
+  .export-bar { margin: 16px 14px 6px; height: 10px; border-radius: 5px; overflow: hidden;
+                background: #e0e0e0; position: relative; }
+  .export-bar-fill { position: absolute; top: 0; left: 0; height: 100%; width: 35%;
+                     border-radius: 5px; background: #4682B4;
+                     animation: export-indeterminate 1.3s ease-in-out infinite; }
+  @keyframes export-indeterminate {
+    0%   { left: -35%; }
+    100% { left: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .export-bar-fill { animation-duration: 2.6s; }
+  }
 </style>
 </head>
 <body>
@@ -241,7 +332,7 @@
               <path d="M17.5 16.5 20.5 19 17.5 21.5M2.5 6.5 5 3.5 7.5 6.5M11 11 14 10 13 13"/>
             </svg>
           </button>
-          <button class="vp-btn" id="view-grid"   title="Show Scale Markers">
+          <button class="vp-btn" id="view-grid"   title="Show grid">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
               <path d="M4 4H20V20H4Z"/>
               <path d="M9.3 4V20M14.7 4V20M4 9.3H20M4 14.7H20"/>
@@ -254,15 +345,16 @@
                     title="Choose export format" style="color:#06c">▾</button>
             <div class="split-menu" id="export-menu">
               <div class="split-item" data-fmt="STL">Export as STL <span class="hint">3D print</span></div>
+              <div class="split-item" data-fmt="STL-CGAL">Export as STL (precision) <span class="hint">slower &mdash; cleaner output</span></div>
               <div class="split-item" data-fmt="SVG">Export as SVG <span class="hint">laser-cut</span></div>
               <div class="split-item" data-fmt="PNG">Export as PNG <span class="hint">current view</span></div>
             </div>
           </span>
           <div class="vp-sep" style="margin-left:auto;"></div>
           <button class="vp-btn" id="settings-btn" title="Settings">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3.2"/>
-              <path d="M12 3.4V6M12 18V20.6M3.4 12H6M18 12H20.6M6 6 7.8 7.8M16.2 16.2 18 18M18 6 16.2 7.8M7.8 16.2 6 18"/>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
           </button>
         </div>
@@ -327,6 +419,11 @@
     <div id="settings-body">
       <div id="settings-cats">
         <div class="cat active" data-cat="general">General</div>
+        <div class="cat" data-cat="viewport">Viewport</div>
+        <div class="cat" data-cat="grid">Grid</div>
+        <div class="cat" data-cat="text">Text</div>
+        <div class="cat" data-cat="colors">Colors</div>
+        <div class="cat" data-cat="about">About</div>
       </div>
       <div id="settings-panel">
         <!-- panel content rendered by JS -->
@@ -350,10 +447,26 @@
   </div>
 </div>
 
+<div id="export-overlay">
+  <div id="export-modal">
+    <h3 id="export-title">Exporting…</h3>
+    <div class="export-bar"><div class="export-bar-fill"></div></div>
+    <div id="export-sub">
+      Elapsed <span id="export-elapsed">0:00</span> — precision renders can
+      take several minutes. You can cancel anytime.
+    </div>
+    <div id="export-footer">
+      <button id="export-cancel">Cancel export</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 // ===== Three.js viewport setup =====
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
+import { ArcballControls } from 'three/addons/controls/ArcballControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { createOpenSCAD } from './openscad-wasm/openscad.js';
 import { addFonts } from './openscad-wasm/openscad.fonts.js';
@@ -363,7 +476,8 @@ const viewport = document.getElementById('viewport');
 const statusEl = document.getElementById('viewport-status');
 
 const scene = new THREE.Scene();
-// Pale cream — sampled from OpenSCAD's Cornfield-style viewport background.
+// Pale cream — OpenSCAD's Cornfield-style default. applyAppearance() below
+// replaces this with the user's saved choice once settings have loaded.
 scene.background = new THREE.Color(0xffffe5);
 
 const camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
@@ -420,52 +534,155 @@ camera.add(fill);
 // A camera's children only render when the camera itself is in the scene graph.
 scene.add(camera);
 
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.1;
-// Match OpenSCAD: left=rotate, right=pan, middle=rotate, wheel=zoom
-controls.mouseButtons = {
-  LEFT:   THREE.MOUSE.ROTATE,
-  MIDDLE: THREE.MOUSE.ROTATE,
-  RIGHT:  THREE.MOUSE.PAN
-};
+// Three selectable orbit schemes (Settings → Viewport):
+//   turntable — OrbitControls: fixed world-up, hard vertical stop
+//   tumble    — TrackballControls: free roll in any direction, no stop
+//   guided    — ArcballControls: free roll with an on-screen ring guide
+// Per-scheme base rotate speed so the sensitivity slider feels consistent
+// across schemes (Trackball needs a much larger raw speed than the others
+// to cover the same drag distance).
+const ORBIT_BASE_ROTATE   = { turntable: 1.0, tumble: 4.0, guided: 1.0 };
+const ORBIT_SCHEME_DEFAULT = 'tumble';
+const ORBIT_SENS_DEFAULT   = 0.6;       // 0.2 (slow) … 2.0 (fast)
 
-let currentMesh = null;          // Group containing keyguard + highlights meshes
-let cameraFitOnce = false;       // true after we've framed the scene at least once for this project
+// Mouse-wheel zoom amount. turntable/tumble drive `zoomSpeed` (a linear
+// multiplier; three's defaults are 1.0 and 1.2). guided (ArcballControls)
+// has no zoomSpeed — its wheel zoom is governed by `scaleFactor`, the base
+// of a power function (1.1 ≈ 10 % per notch). For guided we therefore
+// scale the *step above 1*, so the slider stays intuitive ("higher = more
+// zoom per notch") across all three schemes.
+const ORBIT_BASE_ZOOM     = { turntable: 1.0, tumble: 1.2, guided: 1.0 };
+const ARCBALL_BASE_STEP   = 0.1;        // guided scaleFactor = 1 + step·mult
+const ORBIT_ZOOM_DEFAULT  = 1.0;        // 0.25 (slow) … 3.0 (fast)
 
-function fitCameraToObject(object) {
-  const box = new THREE.Box3().setFromObject(object);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const fitDist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2));
-  camera.position.copy(center.clone().add(new THREE.Vector3(maxDim * 0.9, -maxDim * 1.2, maxDim * 0.9)));
-  controls.target.copy(center);
-  camera.near = Math.max(1, fitDist / 100);
-  camera.far  = fitDist * 100;
-  camera.updateProjectionMatrix();
+// Mirror the persisted settings so the early controls build (which runs
+// before `settings` is initialised) never has to touch it.
+let orbitScheme = ORBIT_SCHEME_DEFAULT;
+let orbitSens   = ORBIT_SENS_DEFAULT;
+let orbitZoom   = ORBIT_ZOOM_DEFAULT;
+let controls    = null;
+
+function applyOrbitSensitivity() {
+  if (controls) controls.rotateSpeed = ORBIT_BASE_ROTATE[orbitScheme] * orbitSens;
+}
+
+// Apply the wheel-zoom amount to whichever property the active scheme uses.
+function applyOrbitZoom() {
+  if (!controls) return;
+  if (orbitScheme === 'guided') {
+    controls.scaleFactor = 1 + ARCBALL_BASE_STEP * orbitZoom;
+  } else {
+    controls.zoomSpeed = ORBIT_BASE_ZOOM[orbitScheme] * orbitZoom;
+  }
+}
+
+// (Re)create the controls for the active scheme, preserving the current
+// view (camera is untouched; only the orbit target is carried over).
+function buildOrbitControls() {
+  const savedTarget = controls ? controls.target.clone() : null;
+  if (controls) { controls.dispose(); controls = null; }
+
+  if (orbitScheme === 'tumble') {
+    controls = new TrackballControls(camera, canvas);
+    controls.staticMoving = false;
+    controls.dynamicDampingFactor = 0.15;
+    controls.panSpeed = 0.6;
+    // zoomSpeed is set by applyOrbitZoom() below (honours the user setting).
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN
+    };
+  } else if (orbitScheme === 'guided') {
+    controls = new ArcballControls(camera, canvas, scene);
+    controls.setGizmosVisible(true);
+    controls.cursorZoom = true;
+  } else {
+    orbitScheme = 'turntable';
+    controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+    // Match OpenSCAD: left=rotate, right=pan, middle=rotate, wheel=zoom
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN
+    };
+  }
+  if (savedTarget) controls.target.copy(savedTarget);
+  applyOrbitSensitivity();
+  applyOrbitZoom();
   controls.update();
 }
 
-// Move the camera to a Z-up orthographic-style view from `dir` and frame
-// the current scene contents. `dir` is a unit-ish vector pointing FROM the
-// scene TO the camera in OpenSCAD-style world coords (X right, Y forward, Z up).
+buildOrbitControls();
+
+let currentMesh = null;          // Group containing keyguard + highlights meshes
+let cameraFitOnce = false;       // true after we've framed the scene at least once for this project
+let lastCamKey = null;           // camera-affecting params at last frame (re-apply when they change)
+
+// Frame `object` as large as the viewport allows from view direction `dir`
+// (object → camera), with `up` as the world-up hint. Projects the actual
+// bounding-box corners onto the camera's screen axes and solves the exact
+// perspective distance for BOTH axes (using the real aspect ratio), so the
+// keyguard fills the frame instead of floating tiny in the middle. `pad`
+// is the fraction of breathing room left around it.
+function frameObject(object, dir, up, pad = 0.06) {
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3());
+  const f = dir.clone().normalize();                       // center → camera
+  let u = up.clone().normalize();
+  if (Math.abs(f.dot(u)) > 0.999) u = new THREE.Vector3(0, 1, 0);
+  const right  = new THREE.Vector3().crossVectors(u, f).normalize();
+  const trueUp = new THREE.Vector3().crossVectors(f, right).normalize();
+
+  let halfW = 0, halfH = 0, depth = 0;
+  for (const X of [box.min.x, box.max.x])
+    for (const Y of [box.min.y, box.max.y])
+      for (const Z of [box.min.z, box.max.z]) {
+        const c = new THREE.Vector3(X, Y, Z).sub(center);
+        halfW = Math.max(halfW, Math.abs(c.dot(right)));
+        halfH = Math.max(halfH, Math.abs(c.dot(trueUp)));
+        depth = Math.max(depth, c.dot(f));                 // nearest face toward camera
+      }
+  const vFov = camera.fov * Math.PI / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const dist = Math.max(halfH / Math.tan(vFov / 2),
+                        halfW / Math.tan(hFov / 2)) * (1 + pad) + depth;
+
+  camera.up.copy(trueUp);
+  camera.position.copy(center.clone().add(f.multiplyScalar(dist)));
+  controls.target.copy(center);
+  const diag = box.getSize(new THREE.Vector3()).length();
+  camera.near = Math.max(0.1, dist - diag);
+  camera.far  = dist + diag * 2 + 10;
+  camera.updateProjectionMatrix();
+  camera.lookAt(center);
+  controls.update();
+}
+
+// Default interactive view: the same 3/4 orientation as before, now framed
+// tight. Used by the "View all" button and the flat-view auto-fit.
+const DEFAULT_VIEW_DIR = new THREE.Vector3(0.9, -1.2, 0.9);
+function fitCameraToObject(object) {
+  frameObject(object, DEFAULT_VIEW_DIR, new THREE.Vector3(0, 0, 1));
+}
+
+// Move the camera to a Z-up view from `dir` and frame the scene tight.
 function viewFromDirection(dir, upHint) {
   const target = currentMesh ? currentMesh : scene;
-  const box = new THREE.Box3().setFromObject(target);
-  if (box.isEmpty()) return;
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  const fitDist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.5;
-  const d = dir.clone().normalize().multiplyScalar(fitDist);
-  camera.position.copy(center.clone().add(d));
-  camera.up.copy(upHint);
-  controls.target.copy(center);
-  camera.near = Math.max(1, fitDist / 100);
-  camera.far  = fitDist * 100;
-  camera.updateProjectionMatrix();
-  controls.update();
+  if (!target) return;
+  frameObject(target, dir, upHint);
+}
+
+// Unit view direction (object → camera) for OpenSCAD viewport rotation
+// $vpr=[rx,ry,rz] (degrees). Mirrors the rotation order in
+// applyOpenscadCamera so the display-angle view matches OpenSCAD's, while
+// the distance is refit to the viewport rather than using $vpd.
+function vprToDir(vpr) {
+  const [rx, ry, rz] = vpr.map(d => d * Math.PI / 180);
+  let x = 0, y = 0, z = 1;
+  [x, z] = [x * Math.cos(ry) + z * Math.sin(ry), -x * Math.sin(ry) + z * Math.cos(ry)];
+  [y, z] = [y * Math.cos(rx) - z * Math.sin(rx), y * Math.sin(rx) + z * Math.cos(rx)];
+  [x, y] = [x * Math.cos(rz) - y * Math.sin(rz), x * Math.sin(rz) + y * Math.cos(rz)];
+  return new THREE.Vector3(x, y, z);
 }
 
 function resize() {
@@ -474,6 +691,9 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  // TrackballControls caches the canvas rect; refresh it on every resize
+  // or its rotate/pan math drifts. Orbit/Arcball read the rect per event.
+  if (controls && typeof controls.handleResize === 'function') controls.handleResize();
 }
 new ResizeObserver(resize).observe(viewport);
 resize();
@@ -492,19 +712,95 @@ function ensureAxes() {
   axesHelper = new THREE.AxesHelper(80);
   scene.add(axesHelper);
 }
+// Reference grid: a build-plate-sized rectangle in the XY plane (z = 0) with
+// minor lines every 10 mm and major lines every 50 mm. Lines are generated
+// outward from the centre, so when a dimension isn't a whole number of 50 mm
+// cells the leftover is split equally between the two opposite edges.
+const GRID_MINOR_MM = 10;
+const GRID_MAJOR_EVERY = 5;   // every 5th minor line (= 50 mm) is a major line
+
+function clampGridDim(v) {
+  const n = Math.round(Number(v));
+  return isFinite(n) ? Math.min(2000, Math.max(20, n)) : 256;
+}
+
+function buildGridGroup(gx, gy) {
+  const hx = clampGridDim(gx) / 2;
+  const hy = clampGridDim(gy) / 2;
+  const EPS = 1e-6;
+  const minor = [];
+  const major = [];
+  for (let i = 0; i * GRID_MINOR_MM < hx - EPS; i++) {
+    const x = i * GRID_MINOR_MM;
+    const arr = (i % GRID_MAJOR_EVERY === 0) ? major : minor;
+    arr.push(x, -hy, 0, x, hy, 0);
+    if (i > 0) arr.push(-x, -hy, 0, -x, hy, 0);
+  }
+  for (let j = 0; j * GRID_MINOR_MM < hy - EPS; j++) {
+    const y = j * GRID_MINOR_MM;
+    const arr = (j % GRID_MAJOR_EVERY === 0) ? major : minor;
+    arr.push(-hx, y, 0, hx, y, 0);
+    if (j > 0) arr.push(-hx, -y, 0, hx, -y, 0);
+  }
+  const border = [
+    -hx, -hy, 0,  hx, -hy, 0,
+     hx, -hy, 0,  hx,  hy, 0,
+     hx,  hy, 0, -hx,  hy, 0,
+    -hx,  hy, 0, -hx, -hy, 0,
+  ];
+  const seg = (pts, color) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
+  };
+  const group = new THREE.Group();
+  group.add(seg(minor,  0xdedede));
+  group.add(seg(major,  0xa8a8a8));
+  group.add(seg(border, 0x707070));
+  return group;   // already in the XY plane; no rotation needed
+}
+
+// Clearance between the model's lowest point and the grid plane, so the
+// grid sits visibly below the keyguard (and below the screenshot canvas,
+// which keyguard.scad places just under the keyguard) rather than slicing
+// through it at z = 0.
+const GRID_GAP_MM = 3;
+
+function gridZForModel() {
+  if (!currentMesh) return 0;
+  const box = new THREE.Box3().setFromObject(currentMesh);
+  return box.isEmpty() ? 0 : box.min.z - GRID_GAP_MM;
+}
+function positionGrid() {
+  if (gridHelper) gridHelper.position.z = gridZForModel();
+}
+
 function ensureGrid() {
   if (gridHelper) return;
-  // 400 mm × 400 mm grid, 20 mm cells; rotate so it lies in the XY plane (Z-up).
-  gridHelper = new THREE.GridHelper(400, 20, 0xa0a0a0, 0xd0d0d0);
-  gridHelper.rotation.x = Math.PI / 2;
+  gridHelper = buildGridGroup(settings.gridX, settings.gridY);
+  gridHelper.position.z = gridZForModel();
   scene.add(gridHelper);
+}
+function disposeGrid() {
+  if (!gridHelper) return;
+  scene.remove(gridHelper);
+  gridHelper.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+  });
+  gridHelper = null;
+}
+function rebuildGridIfVisible() {
+  if (!gridHelper) return;
+  disposeGrid();
+  ensureGrid();
 }
 function toggleAxes() {
   if (axesHelper) { scene.remove(axesHelper); axesHelper.dispose && axesHelper.dispose(); axesHelper = null; }
   else ensureAxes();
 }
 function toggleGrid() {
-  if (gridHelper) { scene.remove(gridHelper); gridHelper.dispose && gridHelper.dispose(); gridHelper = null; }
+  if (gridHelper) disposeGrid();
   else ensureGrid();
 }
 
@@ -559,10 +855,82 @@ function setStatus(msg, kind = '') {
 // ===== Settings (app-wide, persisted in localStorage) =====
 const SETTINGS_KEY = 'keyguard:settings';
 const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
+// Integer release number shown on the About tab. Bump by one on every
+// release, in lock-step with sw.js CACHE_NAME (see RELEASING.md).
+const APP_RELEASE = 3;
+// Default teal / cornfield are the long-standing viewport colours; the
+// Customizer text sizes mirror the CSS :root defaults.
+const DEFAULT_ITEM_COLOR = '#40E0D0';   // Turquoise — the default teal
+const DEFAULT_BG_COLOR   = '#FFFFE5';   // OpenSCAD Cornfield-style cream
+const DEFAULT_SECTION_PT  = 14;
+const DEFAULT_PARAM_PT    = 12;
+
+// Eight saturated item colours; eight neutral backgrounds chosen to stay
+// distinct from the item set and keep good contrast for any pairing.
+const ITEM_COLORS = [
+  { name: 'Teal',   hex: '#40E0D0' },
+  { name: 'Blue',   hex: '#4682B4' },
+  { name: 'Green',  hex: '#3CB371' },
+  { name: 'Gold',   hex: '#DAA520' },
+  { name: 'Coral',  hex: '#FF7F50' },
+  { name: 'Purple', hex: '#9370DB' },
+  { name: 'Gray',   hex: '#708090' },
+  { name: 'Red',    hex: '#DC143C' },
+];
+const BG_COLORS = [
+  { name: 'Cornfield',  hex: '#FFFFE5' },
+  { name: 'White',      hex: '#FFFFFF' },
+  { name: 'Light gray', hex: '#E8E8E8' },
+  { name: 'Sky',        hex: '#DCEBF5' },
+  { name: 'Sand',       hex: '#EAE0CC' },
+  { name: 'Sage',       hex: '#DDE6DA' },
+  { name: 'Slate',      hex: '#33373B' },
+  { name: 'Charcoal',   hex: '#1E1E1E' },
+];
+
 const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
+  gridX: 256,                    // reference-grid extent in mm (build-plate X)
+  gridY: 256,                    // reference-grid extent in mm (build-plate Y)
+  sectionHeadingPt: DEFAULT_SECTION_PT,  // Customizer section-heading point size
+  paramTextPt: DEFAULT_PARAM_PT,         // Customizer parameter text point size
+  itemColor: DEFAULT_ITEM_COLOR,         // generated piece colour in the viewport
+  backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
+  orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
+  orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
+  orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.25 … 3.0
+  paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
 };
 let settings = loadSettings();
+
+// Adopt the persisted orbit scheme / sensitivity now that `settings`
+// exists, rebuilding the controls only if the scheme actually changed.
+function syncOrbitFromSettings() {
+  const v = Number(settings.orbitSensitivity);
+  orbitSens = Number.isFinite(v) ? Math.max(0.2, Math.min(2.0, v)) : ORBIT_SENS_DEFAULT;
+  const z = Number(settings.orbitZoom);
+  orbitZoom = Number.isFinite(z) ? Math.max(0.25, Math.min(3.0, z)) : ORBIT_ZOOM_DEFAULT;
+  const want = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
+                                                       : ORBIT_SCHEME_DEFAULT;
+  if (want !== orbitScheme) { orbitScheme = want; buildOrbitControls(); }
+  else { applyOrbitSensitivity(); applyOrbitZoom(); }
+}
+syncOrbitFromSettings();
+applyAppearance();   // honour persisted text sizes + viewport colours on load
+
+function clampPt(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(8, Math.min(36, n)) : DEFAULT_PARAM_PT;
+}
+
+// Pick a tick mark that stays legible on the swatch it sits on.
+function contrastInk(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const lum = 0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255);
+  return lum > 150 ? '#222' : '#fff';
+}
 
 function loadSettings() {
   try {
@@ -599,6 +967,51 @@ function onSettingsChanged(key) {
     project.presetNames = orderedPresetNames(project.rawPresetNames);
     rebuildPresetDropdown();
   }
+  if (key === 'gridX' || key === 'gridY') rebuildGridIfVisible();
+  if (key === 'sectionHeadingPt' || key === 'paramTextPt') applyTextSizes();
+  if (key === 'backgroundColor') applyBackgroundColor();
+  if (key === 'itemColor') applyItemColor();
+  if (key === 'paneTheme') applyPaneTheme();
+  if (key === 'orbitScheme' || key === 'orbitSensitivity' || key === 'orbitZoom') syncOrbitFromSettings();
+}
+
+// ----- Appearance application (text sizes + viewport colours) -----
+// These read straight from `settings` so a Reset that rewrites several
+// keys at once only needs one apply call.
+function applyTextSizes() {
+  const root = document.documentElement.style;
+  root.setProperty('--kg-section-heading-pt', clampPt(settings.sectionHeadingPt) + 'px');
+  root.setProperty('--kg-param-text-pt', clampPt(settings.paramTextPt) + 'px');
+}
+function applyBackgroundColor() {
+  scene.background = new THREE.Color(settings.backgroundColor || DEFAULT_BG_COLOR);
+}
+// Recolour the already-rendered keyguard body in place so a colour change
+// is instant — no OpenSCAD re-render. New renders read settings.itemColor
+// via keyguardColorName().
+function applyItemColor() {
+  if (!currentMesh) return;
+  currentMesh.traverse(o => {
+    if (o.isMesh && o.userData.kgBody && o.material) {
+      o.material.color.set(settings.itemColor || DEFAULT_ITEM_COLOR);
+    }
+  });
+}
+// Apply the Customizer + Console light/dark theme by toggling a body
+// attribute the CSS variable blocks key off. Default 'light' removes the
+// attribute entirely so the :root defaults apply.
+function applyPaneTheme() {
+  if (settings.paneTheme === 'dark') {
+    document.body.setAttribute('data-kg-theme', 'dark');
+  } else {
+    document.body.removeAttribute('data-kg-theme');
+  }
+}
+function applyAppearance() {
+  applyTextSizes();
+  applyBackgroundColor();
+  applyItemColor();
+  applyPaneTheme();
 }
 
 // Sort preset names according to the current setting. 'design default values'
@@ -677,12 +1090,29 @@ async function idbGetHandle() {
   let handle = await readFrom(HANDLE_DB);
   if (!handle) {
     // One-time migration: a returning clinician's remembered folder was
-    // stored under the old DB name. Pull it forward so they don't have to
-    // re-pick the folder and re-grant permission.
+    // stored under the old DB name. Pull it forward — and delete the legacy
+    // copy — so it's migrated exactly once. Leaving it in place meant a
+    // later idbClearHandle() (e.g. the remembered folder no longer exists)
+    // would be undone here on the very next click: an inescapable loop.
     const legacy = await readFrom(LEGACY_HANDLE_DB);
-    if (legacy) { await idbPutHandle(legacy); handle = legacy; }
+    if (legacy) {
+      await idbPutHandle(legacy);
+      await idbDeleteFrom(LEGACY_HANDLE_DB);
+      handle = legacy;
+    }
   }
   return handle;
+}
+async function idbDeleteFrom(name) {
+  try {
+    const db = await idbOpenNamed(name);
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
 }
 async function idbPutHandle(handle) {
   try {
@@ -696,15 +1126,11 @@ async function idbPutHandle(handle) {
   } catch (e) { console.warn('Could not persist directory handle:', e); }
 }
 async function idbClearHandle() {
-  try {
-    const db = await idbOpen();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(HANDLE_STORE, 'readwrite');
-      tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {}
+  // Clear BOTH the current and the legacy (pre-rename) DB. Clearing only the
+  // current one left the dead handle in the legacy DB, where idbGetHandle()'s
+  // migration would resurrect it on the next click.
+  await idbDeleteFrom(HANDLE_DB);
+  await idbDeleteFrom(LEGACY_HANDLE_DB);
 }
 
 // Return the app to its initial "no project" layout: clear the 3D viewport,
@@ -718,6 +1144,7 @@ async function resetToNoProject() {
   project = null;
   try { await idbClearHandle(); } catch {}
   if (currentMesh) { scene.remove(currentMesh); currentMesh = null; }
+  positionGrid();   // no model → grid returns to the z = 0 plane
   renderer.render(scene, camera);
   cameraFitOnce = false;
   consoleEl.textContent = '';
@@ -784,17 +1211,31 @@ async function openProject() {
   }
   if (!dirHandle) {
     try {
-      dirHandle = await window.showDirectoryPicker({ id: 'keyguard-project', mode: 'readwrite' });
+      // No `mode` on purpose: asking for readwrite *in the picker* raises
+      // its own edit-permission prompt, and the explicit requestPermission()
+      // below raises a second one — so a single "Don't allow" used to cost
+      // the user two prompts per attempt. Pick (read), then ask for
+      // readwrite exactly once.
+      dirHandle = await window.showDirectoryPicker({ id: 'keyguard-project' });
     } catch (e) {
       if (e.name === 'AbortError') return;       // user cancelled
       throw e;
     }
-    // Ensure read+write upfront. If the user denies access, abort cleanly
-    // back to the initial layout rather than continuing with a dead handle
-    // (which previously threw mid-load and left the picker re-prompting).
     let perm = 'denied';
-    try { perm = await dirHandle.requestPermission({ mode: 'readwrite' }); } catch {}
+    try {
+      perm = await dirHandle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await dirHandle.requestPermission({ mode: 'readwrite' });
+    } catch {}
     if (perm !== 'granted') {
+      // Denied. If a project is already open (this was a "Change Project"
+      // attempt) keep it intact and just abort the switch — the user isn't
+      // punished for declining, the button still reads "Change Project…",
+      // and they can retry immediately. Only fall back to the clean
+      // no-project layout when there was nothing open to keep.
+      if (project) {
+        logLine('Folder access was not granted — keeping the current project.');
+        return;
+      }
       await resetToNoProject();
       return;
     }
@@ -996,7 +1437,7 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
     rawPresetNames, presetNames, currentPreset,
     customizer, baselineParams: {},
     screenshotName: null, screenshotBytes: null, screenshotTexture: null,
-    dims: null, warnedNoScreenshot: false
+    dims: null, warnedNoScreenshot: false, isFixture: true
   };
 
   document.getElementById('project-folder-label').innerHTML =
@@ -1049,23 +1490,30 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
 // Translate OpenSCAD's vpt/vpr/vpd (the same numbers you'd pass to
 // `openscad --camera=tx,ty,tz,rx,ry,rz,dist`) into a Three.js camera frame.
 // OpenSCAD applies rotations in Z * X * Y order (extrinsic) to an initial
-// camera placed at (0, 0, vpd) above the target, looking down -Z, Z-up.
-// We're using the same Z-up convention in Three.js (camera.up = (0,0,1)),
-// so once we compute the rotated offset the rest is just position + lookAt.
+// camera placed at (0, 0, vpd) above the target, looking down -Z with
+// screen-up = world +Y. We rotate BOTH the camera offset (initial
+// (0,0,vpd)) AND the up vector (initial (0,1,0)) by the same composition,
+// then lookAt — that way the screen roll matches OpenSCAD's viewer for any
+// vpr, including the top-down case (rx=ry=rz=0) where leaving up=(0,0,1)
+// would be parallel to the view direction and three.js's lookAt would pick
+// an arbitrary perpendicular, rotating the model 90° on screen.
 function applyOpenscadCamera(vpt, vpr, vpd) {
   const [tx, ty, tz] = vpt;
   const [rx, ry, rz] = vpr.map(d => d * Math.PI / 180);
-  // Initial offset from target: camera above target by vpd.
-  let x = 0, y = 0, z = vpd;
-  // R_y(ry)
-  [x, z] = [x * Math.cos(ry) + z * Math.sin(ry), -x * Math.sin(ry) + z * Math.cos(ry)];
-  // R_x(rx)
-  [y, z] = [y * Math.cos(rx) - z * Math.sin(rx), y * Math.sin(rx) + z * Math.cos(rx)];
-  // R_z(rz)
-  [x, y] = [x * Math.cos(rz) - y * Math.sin(rz), x * Math.sin(rz) + y * Math.cos(rz)];
+  const rotateVprZXY = (vx, vy, vz) => {
+    // R_y(ry)
+    [vx, vz] = [vx * Math.cos(ry) + vz * Math.sin(ry), -vx * Math.sin(ry) + vz * Math.cos(ry)];
+    // R_x(rx)
+    [vy, vz] = [vy * Math.cos(rx) - vz * Math.sin(rx), vy * Math.sin(rx) + vz * Math.cos(rx)];
+    // R_z(rz)
+    [vx, vy] = [vx * Math.cos(rz) - vy * Math.sin(rz), vx * Math.sin(rz) + vy * Math.cos(rz)];
+    return [vx, vy, vz];
+  };
+  const [ox, oy, oz] = rotateVprZXY(0, 0, vpd);     // camera offset from target
+  const [ux, uy, uz] = rotateVprZXY(0, 1, 0);       // camera up in world frame
   controls.target.set(tx, ty, tz);
-  camera.position.set(tx + x, ty + y, tz + z);
-  camera.up.set(0, 0, 1);
+  camera.position.set(tx + ox, ty + oy, tz + oz);
+  camera.up.set(ux, uy, uz);
   camera.lookAt(controls.target);
   // Suppress the next auto-fit so doRender doesn't re-frame on the next
   // tick. cameraFitOnce being true means "already fit, don't touch".
@@ -1078,24 +1526,13 @@ function applyOpenscadCamera(vpt, vpr, vpd) {
 }
 
 // ===== Render pipeline =====
-// Mirrors keyguard.scad's top-level color() dispatch (the big generate
-// if/else chain). Every generate mode emits a single-colour piece, so one
-// material colour per render is exact — no per-part multi-render needed.
-// THREE.Color accepts these CSS/X11 names directly. Echo-only branches
-// (e.g. "laser-cut frame not supported") produce no geometry, so their
-// colour is irrelevant and the Turquoise fallback is harmless.
-function keyguardColorName(cur) {
-  const g        = cur.generate || 'keyguard';
-  const lc       = cur.type_of_keyguard === 'Laser-Cut';
-  const hasFrame = cur.have_a_keyguard_frame === 'yes';
-  if (g.indexOf('clip') !== -1) return 'lime';                 // all clip variants
-  if (g === 'cell insert' && !lc) return 'LawnGreen';
-  if (!lc && (g === 'keyguard frame' ||
-              g === 'first half of keyguard frame' ||
-              g === 'second half of keyguard frame')) return 'Turquoise';
-  if (lc && !hasFrame && g === 'first layer for SVG/DXF file') return 'DarkSeaGreen';
-  if (lc && !hasFrame && g === 'keyguard') return 'Khaki';
-  return 'Turquoise';   // 3D-printed keyguard / halves (the common default)
+// Every generate mode emits a single solid piece, and the keyguard-in-a-frame
+// case now shows the keyguard as a transparent pink highlight rather than a
+// second solid colour. So a clip, insert, frame, or laser-cut keyguard is
+// just "the generated item" — all rendered in the user's chosen item colour
+// (default teal). Returns a hex string THREE.Color accepts directly.
+function keyguardColorName() {
+  return settings.itemColor || DEFAULT_ITEM_COLOR;
 }
 
 // Build a flat, face-on plane showing an OpenSCAD-exported SVG (the
@@ -1228,6 +1665,21 @@ async function doRender() {
       if (m && m2 && m3 && m4) {
         project.dims = { swm: +m[1], shm: +m2[1], sat: +m3[1], kt: +m4[1] };
       }
+      // keyguard.scad also echoes the resolved viewport camera so the web
+      // app can match OpenSCAD's keyguard_display_angle (which moves only
+      // the camera — the exported solid is identical at every angle).
+      const num = '(-?\\d+(?:\\.\\d+)?)';
+      const vec = n => line.match(
+        new RegExp(`${n}\\s*=\\s*\\[\\s*${num}\\s*,\\s*${num}\\s*,\\s*${num}\\s*\\]`));
+      const vpt = vec('vpt'), vpr = vec('vpr');
+      const vpd = line.match(new RegExp(`vpd\\s*=\\s*${num}`));
+      if (vpt && vpr && vpd) {
+        project.osCam = {
+          vpt: [+vpt[1], +vpt[2], +vpt[3]],
+          vpr: [+vpr[1], +vpr[2], +vpr[3]],
+          vpd: +vpd[1],
+        };
+      }
     }
 
     // Lines we know are pure noise from openscad-wasm and don't want
@@ -1346,6 +1798,7 @@ async function doRender() {
       if (currentMesh) scene.remove(currentMesh);
       currentMesh = plane;
       scene.add(currentMesh);
+      positionGrid();
       fitCameraToObject(currentMesh);
       cameraFitOnce = true;
       setStatus(`Rendered 2D laser-cut layer in ${svg.elapsed.toFixed(1)} s`, 'ok');
@@ -1373,8 +1826,9 @@ async function doRender() {
     const toAB = u8 => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
     const kgGeom = loader.parse(toAB(kgBytes));
     kgGeom.computeVertexNormals();
-    const kgMat = new THREE.MeshPhongMaterial({ color: new THREE.Color(keyguardColorName(currentFormValues())), shininess: 30, flatShading: false });
+    const kgMat = new THREE.MeshPhongMaterial({ color: new THREE.Color(keyguardColorName()), shininess: 30, flatShading: false });
     const kgMesh = new THREE.Mesh(kgGeom, kgMat);
+    kgMesh.userData.kgBody = true;   // lets a live item-colour change recolour it
 
     const group = new THREE.Group();
     group.add(kgMesh);
@@ -1424,19 +1878,37 @@ async function doRender() {
     if (currentMesh) scene.remove(currentMesh);
     currentMesh = group;
     scene.add(currentMesh);
+    positionGrid();
 
-    // Preserve the user's framing across O&A edits, parameter changes, and
-    // preset switches. Re-fit only on the very first render of a project,
-    // or when the design itself is being viewed at an angle (the .scad has
-    // tilted the keyguard via keyguard_display_angle), since that materially
-    // changes the bounding box orientation in a way the previous framing
-    // won't accommodate.
-    const angleStr = cur.keyguard_display_angle;
-    const angleNonZero = angleStr !== undefined && Number(angleStr) !== 0;
-    if (!cameraFitOnce || angleNonZero) {
-      fitCameraToObject(currentMesh);
-      cameraFitOnce = true;
+    // Camera. keyguard_display_angle (and show_back_of_keyguard) move only
+    // OpenSCAD's viewport — the exported solid is identical at every angle —
+    // so to match what the clinician sees in OpenSCAD we drive the Three.js
+    // camera from the resolved $vpt/$vpr/$vpd that keyguard.scad echoes.
+    const dispAngle = Number(cur.keyguard_display_angle) || 0;
+    const showBack  = cur.show_back_of_keyguard;
+    const camKey    = `${dispAngle}|${showBack}`;
+    const camChanged = camKey !== lastCamKey;
+    if (project.isFixture) {
+      // Visual/geometry harness applies its own explicit camera AFTER this
+      // render (loadFixture); just frame once and never fight it.
+      if (!cameraFitOnce) { fitCameraToObject(currentMesh); cameraFitOnce = true; }
+    } else if (project.osCam && (dispAngle > 0 || showBack === 'yes')) {
+      // A display angle / back view is requested: snap to OpenSCAD's
+      // orientation on EVERY render (the user may orbit/pan between
+      // changes, but any parameter change resets to the chosen angle).
+      // Use OpenSCAD's view ANGLE ($vpr) but refit the distance to the
+      // viewport — $vpd would leave the keyguard tiny.
+      frameObject(currentMesh, vprToDir(project.osCam.vpr), new THREE.Vector3(0, 0, 1));
+    } else {
+      // Flat front view: pleasant auto-framing; re-fit on first render or
+      // when returning from an angled / back view, otherwise preserve the
+      // user's framing across parameter changes.
+      if (!cameraFitOnce || camChanged) {
+        fitCameraToObject(currentMesh);
+        cameraFitOnce = true;
+      }
     }
+    lastCamKey = camKey;
 
     const totalElapsed = tkElapsed + thElapsed;
     setStatus(`Rendered in ${totalElapsed.toFixed(1)} s`, 'ok');
@@ -1514,80 +1986,183 @@ async function exportPNG() {
   logLine(`Exported PNG (${blob.size.toLocaleString()} bytes)`);
 }
 
+
+// Render the current design to STL/SVG bytes. Default backend is Manifold
+// — ~100× faster than CGAL and what the user sees in the viewport. The
+// "Export STL (precision)" menu item passes backend='CGAL' as an escape
+// hatch when Manifold's convex_hull_3 UB produces a slicer-visible STL
+// (TC57 was the first reported case; see project memory). CGAL takes
+// several minutes per render but is verifiably manifold.
+// Both exportCurrent() (which writes/downloads) and the geometry-test hook
+// window.__exportSTLBytes call this, so a tested STL is byte-identical to
+// the file a clinician produces via Export → STL.
+// Build the OpenSCAD argv + output path for an export render. Kept separate
+// from the render so the (single source of truth) export-argument logic can
+// run on the main thread while the render itself happens in a worker.
+function buildExportArgs(fmt, backend) {
+  const spec = EXPORT_FORMATS[fmt];
+  if (!spec) throw new Error(`Unknown export format: ${fmt}`);
+  const outPath = '/keyguard.' + spec.ext;
+  // Order matters: -D values placed after -p/-P win against the preset.
+  // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
+  // clobber our Manifold-precision workaround and leave cell floors in
+  // the exported file.
+  const args = ['/' + project.scadName, '-o', outPath, `--backend=${backend}`];
+  if (project.jsonText && project.currentPreset !== 'design default values') {
+    args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
+  }
+  args.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+  // Exports should never bake in the screenshot overlay (it's a viewport-only
+  // alignment aid). Force the .scad's SVG import off regardless of preset/form.
+  args.push('-D', 'include_screenshot="no"');
+  if (project.customizer) {
+    const cur = currentFormValues();
+    const baseline = project.baselineParams || {};
+    const typeMap = {};
+    for (const sec of project.customizer)
+      for (const p of sec.params) typeMap[p.name] = p.valueType;
+    for (const [name, val] of Object.entries(cur)) {
+      if (baseline[name] === val) continue;
+      if (name === 'fudge' || name === 'ff') continue;
+      if (name === 'include_screenshot') continue;
+      const t = typeMap[name];
+      const expr = (t === 'string')
+        ? `"${String(val).replace(/"/g, '\\"')}"`
+        : String(val);
+      args.push('-D', `${name}=${expr}`);
+    }
+  }
+  // SVG/DXF are 2D laser-cut deliverables. keyguard.scad only emits the
+  // correct 2D outline when it runs its dedicated first-layer code path,
+  // which is gated to laser-cut (a 3D-printed keyguard in this mode just
+  // errors). Force both params here, appended last so they override any
+  // preset/form value, mirroring how the .scad designer is driven:
+  //   type_of_keyguard="Laser-Cut" + generate="first layer for SVG/DXF file"
+  if (fmt === 'SVG') {
+    args.push('-D', 'type_of_keyguard="Laser-Cut"');
+    args.push('-D', 'generate="first layer for SVG/DXF file"');
+  }
+  return { args, outPath };
+}
+
+// The export render runs in a Web Worker so a multi-minute CGAL render never
+// blocks the main thread (no "Page unresponsive" dialog) and can be cancelled
+// instantly by terminating the worker. Only one export runs at a time.
+let activeExportWorker = null;
+let cancelActiveExport = null;   // set while a worker render is in flight
+
+function runExportInWorker(job, { onLog } = {}) {
+  return new Promise((resolve, reject) => {
+    let worker;
+    try {
+      // .js (not .mjs) so static servers that map only .js to a JS MIME type
+      // (e.g. Python's http.server serves .mjs as text/plain) still let the
+      // module worker load. The app's other modules are .js for the same reason.
+      worker = new Worker(new URL('./export-worker.js', import.meta.url), { type: 'module' });
+    } catch (e) { reject(e); return; }
+    activeExportWorker = worker;
+    let settled = false;
+    const cleanup = () => {
+      settled = true;
+      try { worker.terminate(); } catch {}
+      if (activeExportWorker === worker) activeExportWorker = null;
+      cancelActiveExport = null;
+    };
+    cancelActiveExport = () => {
+      if (settled) return;
+      cleanup();
+      const err = new Error('Export cancelled');
+      err.cancelled = true;
+      reject(err);
+    };
+    worker.onmessage = (e) => {
+      const m = e.data || {};
+      if (m.type === 'log') { if (onLog) onLog(m.line); return; }
+      if (m.type === 'done') {
+        if (settled) return;
+        const { ok, bytes, error } = m;
+        cleanup();
+        if (ok) resolve(bytes);
+        else reject(new Error(error || 'export failed'));
+      }
+    };
+    worker.onerror = (e) => {
+      if (settled) return;
+      cleanup();
+      reject(new Error(e.message || 'export worker error'));
+    };
+    worker.postMessage(job);
+  });
+}
+
+// Render the current design to STL/SVG bytes (in a worker — see above).
+// Default backend is Manifold — ~100× faster than CGAL and what the user
+// sees in the viewport. The "Export STL (precision)" menu item passes
+// backend='CGAL' as an escape hatch when Manifold's convex_hull_3 UB
+// produces a slicer-visible STL (TC57 was the first reported case; see
+// project memory). CGAL takes several minutes per render but is verifiably
+// manifold. Both exportCurrent() (which writes/downloads) and the
+// geometry-test hook window.__exportSTLBytes call this, so a tested STL is
+// byte-identical to the file a clinician produces via Export → STL.
+async function renderExportBytes(fmt, backend = 'Manifold') {
+  const { args, outPath } = buildExportArgs(fmt, backend);
+  const job = {
+    scadName: project.scadName, scadText: project.scadText,
+    oaText:   project.oaText,
+    jsonName: project.jsonName, jsonText: project.jsonText,
+    files:    project.files,
+    args, outPath,
+  };
+  const t0 = performance.now();
+  // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
+  // screenshot-plane sizing hint). It's never user-relevant; filter it out
+  // of the export console exactly as the viewport render path does.
+  const bytes = await runExportInWorker(job, {
+    onLog: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
+  });
+  const elapsed = (performance.now() - t0) / 1000;
+  // Console is clinician-visible: say "precision" rather than the backend's
+  // internal name (CGAL / Manifold), which means nothing to a clinician.
+  logLine(`Export render (${fmt}${backend === 'CGAL' ? ', precision' : ''}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
+  return bytes;
+}
+
+// Test-only hooks: return the exact bytes a clinician's Export → STL
+// produces (no folder write, no download). Used by tests/geometry.spec.mjs
+// (fast Manifold path) and tests/precision-export.spec.mjs (CGAL path).
+// Array (not Uint8Array) so it survives Playwright's structured clone.
+window.__exportSTLBytes          = async () => Array.from(await renderExportBytes('STL'));
+window.__exportSTLBytesPrecision = async () => Array.from(await renderExportBytes('STL', 'CGAL'));
+
 async function exportCurrent(fmt) {
   if (fmt === 'PNG') return exportPNG();
   if (!project) { alert('Open a project first.'); return; }
+  // "STL-CGAL" is a synthetic format key from the "Export STL (precision)"
+  // menu item — it means "render STL using the CGAL backend instead of
+  // Manifold." Slow (minutes), but produces a verifiably manifold STL for
+  // designs where Manifold's convex_hull_3 UB leaves slicer-visible
+  // artifacts (TC57 was the first reported instance). Resolve to a real
+  // fmt + backend pair before any spec / status / log code runs so the rest
+  // of this function doesn't have to know about the synthetic key.
+  const backend = fmt === 'STL-CGAL' ? 'CGAL' : 'Manifold';
+  if (fmt === 'STL-CGAL') fmt = 'STL';
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
   const prevStatusText = statusEl.innerHTML;
   const prevStatusKind = statusEl.className;
-  setStatus(`Exporting as ${fmt}...`, 'rendering');
+  // The slow CGAL precision render gets a modal with an elapsed timer and a
+  // Cancel button. The fast Manifold export (~1 s) just uses the status line —
+  // a modal would only flash. Both run in the worker either way.
+  const showModal = backend === 'CGAL';
+  setStatus(
+    backend === 'CGAL'
+      ? `Exporting as ${fmt} (precision) — this may take several minutes...`
+      : `Exporting as ${fmt}...`,
+    'rendering'
+  );
+  if (showModal) openExportProgress(fmt);
   try {
-    // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
-    // screenshot-plane sizing hint). It's never user-relevant and is already
-    // filtered out of normal renders by isNoise(); apply the same filter on
-    // the export path so it doesn't leak into the console during Export.
-    const oscad = await createOpenSCAD({
-      print:    t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
-      printErr: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); }
-    });
-    addFonts(oscad.getInstance());
-    const fs = oscad.getInstance().FS;
-    fs.writeFile('/' + project.scadName, project.scadText);
-    fs.writeFile('/openings_and_additions.txt', project.oaText);
-    if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
-    for (const [name, bytes] of Object.entries(project.files)) {
-      if (name === project.scadName) continue;
-      if (name === project.jsonName) continue;
-      if (name === 'openings_and_additions.txt') continue;
-      fs.writeFile('/' + name, bytes);
-    }
-    const outPath = '/keyguard.' + spec.ext;
-    // Order matters: -D values placed after -p/-P win against the preset.
-    // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
-    // clobber our Manifold-precision workaround and leave cell floors in
-    // the exported file.
-    const args = ['/' + project.scadName, '-o', outPath, '--backend=Manifold'];
-    if (project.jsonText && project.currentPreset !== 'design default values') {
-      args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
-    }
-    args.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
-    // Exports should never bake in the screenshot overlay (it's a viewport-only
-    // alignment aid). Force the .scad's SVG import off regardless of preset/form.
-    args.push('-D', 'include_screenshot="no"');
-    if (project.customizer) {
-      const cur = currentFormValues();
-      const baseline = project.baselineParams || {};
-      const typeMap = {};
-      for (const sec of project.customizer)
-        for (const p of sec.params) typeMap[p.name] = p.valueType;
-      for (const [name, val] of Object.entries(cur)) {
-        if (baseline[name] === val) continue;
-        if (name === 'fudge' || name === 'ff') continue;
-        if (name === 'include_screenshot') continue;
-        const t = typeMap[name];
-        const expr = (t === 'string')
-          ? `"${String(val).replace(/"/g, '\\"')}"`
-          : String(val);
-        args.push('-D', `${name}=${expr}`);
-      }
-    }
-    // SVG/DXF are 2D laser-cut deliverables. keyguard.scad only emits the
-    // correct 2D outline when it runs its dedicated first-layer code path,
-    // which is gated to laser-cut (a 3D-printed keyguard in this mode just
-    // errors). Force both params here, appended last so they override any
-    // preset/form value, mirroring how the .scad designer is driven:
-    //   type_of_keyguard="Laser-Cut" + generate="first layer for SVG/DXF file"
-    if (fmt === 'SVG') {
-      args.push('-D', 'type_of_keyguard="Laser-Cut"');
-      args.push('-D', 'generate="first layer for SVG/DXF file"');
-    }
-    const t0 = performance.now();
-    const rc = oscad.getInstance().callMain(args);
-    const elapsed = (performance.now() - t0) / 1000;
-    if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
-    const bytes = fs.readFile(outPath);
-    logLine(`Export render (${fmt}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
+    const bytes = await renderExportBytes(fmt, backend);
     const fname = exportBaseName() + '.' + spec.ext;
     // Prefer writing STL/SVG straight into the project folder so the
     // deliverable lands next to the .scad it came from. Falls back to a
@@ -1612,10 +2187,58 @@ async function exportCurrent(fmt) {
     }
     setStatus(prevStatusText, prevStatusKind);
   } catch (e) {
-    logLine('Export failed: ' + e.message);
-    setStatus('Export failed: ' + e.message, 'error');
-    console.error(e);
+    if (e && e.cancelled) {
+      logLine('Export cancelled.');
+      setStatus('Export cancelled', '');
+    } else {
+      logLine('Export failed: ' + e.message);
+      setStatus('Export failed: ' + e.message, 'error');
+      console.error(e);
+    }
+  } finally {
+    if (showModal) closeExportProgress();
   }
+}
+
+// ---- Export progress modal (indeterminate bar + elapsed timer + Cancel) ----
+// OpenSCAD's granular 0/1000 progress is not available from this headless
+// wasm build, so the bar is indeterminate; the elapsed timer gives the user a
+// real signal that work is happening. Cancel terminates the worker instantly.
+let _exportTimerId = null;
+function openExportProgress(fmt) {
+  const overlay  = document.getElementById('export-overlay');
+  const titleEl  = document.getElementById('export-title');
+  const elapsedEl = document.getElementById('export-elapsed');
+  if (!overlay) return;
+  titleEl.textContent = `Exporting ${fmt} (precision)…`;
+  elapsedEl.textContent = '0:00';
+  overlay.style.display = 'flex';
+  const t0 = performance.now();
+  clearInterval(_exportTimerId);
+  _exportTimerId = setInterval(() => {
+    const s = Math.floor((performance.now() - t0) / 1000);
+    const mm = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    elapsedEl.textContent = `${mm}:${ss}`;
+  }, 250);
+}
+function closeExportProgress() {
+  clearInterval(_exportTimerId);
+  _exportTimerId = null;
+  const overlay = document.getElementById('export-overlay');
+  if (overlay) overlay.style.display = 'none';
+  const btn = document.getElementById('export-cancel');
+  if (btn) { btn.disabled = false; btn.textContent = 'Cancel export'; }
+}
+{
+  const cancelBtn = document.getElementById('export-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
+    if (typeof cancelActiveExport === 'function') {
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      cancelActiveExport();
+    }
+  });
 }
 
 // ===== The rest of the original mockup logic follows =====
@@ -1868,8 +2491,14 @@ function stopWatcher() {
 function startWatcher() {
   if (!project || !project.dirHandle) return;
   stopWatcher();
-  setWatchStatus('👁 watching openings_and_additions.txt');
-  watchTimer = setInterval(checkOAFile, WATCH_INTERVAL_MS);
+  setWatchStatus('👁 watching project folder (O&A + screenshot image)');
+  watchTimer = setInterval(watchTick, WATCH_INTERVAL_MS);
+}
+
+async function watchTick() {
+  // Independent: an error in one check must not stop the other.
+  try { await checkOAFile(); }         catch (e) { /* checkOAFile self-reports */ }
+  try { await checkScreenshotFile(); } catch (e) { /* logged below */ }
 }
 
 async function checkOAFile() {
@@ -1910,12 +2539,37 @@ async function checkOAFile() {
 }
 
 // ===== Screenshot-under-keyguard plane =====
-// Scans the project folder for the FIRST .jpg/.jpeg/.png and caches the bytes
-// + a Three.js texture. Called on Open Project, on preset change, and when
-// include_screenshot flips to "yes" — so swapping the image file on disk and
-// switching presets are both reflected on the next render. SVG files are
-// intentionally ignored (Three.js can't texture them without a rasterisation
-// step we've deferred).
+// SVG files are intentionally ignored (Three.js can't texture them without
+// a rasterisation step we've deferred).
+const IMAGE_EXT = /\.(jpe?g|png)$/i;
+
+// The FIRST .jpg/.jpeg/.png in the project folder (deterministic iteration
+// order), as { name, handle }, or null. Deliberately does NOT call
+// getFile(): a freshly added file (especially under OneDrive) can make
+// getFile() throw transiently, and presence detection must not hinge on
+// reading the file's bytes/metadata — that's what made an added image go
+// unnoticed after a removal. The actual read happens in rescanScreenshot,
+// which logs + retries on failure.
+async function firstImageEntry() {
+  if (!project || !project.dirHandle) return null;
+  for await (const [name, handle] of project.dirHandle.entries()) {
+    if (handle.kind !== 'file') continue;
+    if (!IMAGE_EXT.test(name)) continue;
+    return { name, handle };
+  }
+  return null;
+}
+
+// Cheap identity of an image file — name + mtime + size. Lets the watcher
+// detect add / remove / replace without reading the bytes every poll.
+function imageSig(name, file) {
+  return `${name}|${file.lastModified}|${file.size}`;
+}
+
+// Scans the project folder for the FIRST image and caches the bytes + a
+// Three.js texture. Called on Open Project, on preset change, when
+// include_screenshot flips to "yes", and by the folder watcher when the
+// image changes on disk.
 async function rescanScreenshot() {
   if (!project || !project.dirHandle) return;
   const old = project.screenshotTexture;
@@ -1924,31 +2578,93 @@ async function rescanScreenshot() {
   project.screenshotTexture = null;
   if (old) old.dispose();
 
-  const imageExt = /\.(jpe?g|png)$/i;
+  let entry;
   try {
-    for await (const [name, handle] of project.dirHandle.entries()) {
-      if (handle.kind !== 'file') continue;
-      if (!imageExt.test(name)) continue;
-      const file = await handle.getFile();
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
-      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
-      const tex = await new Promise((resolve, reject) => {
-        new THREE.TextureLoader().load(url, t => { URL.revokeObjectURL(url); resolve(t); },
-          undefined, err => { URL.revokeObjectURL(url); reject(err); });
-      });
-      tex.colorSpace = THREE.SRGBColorSpace;
-      project.screenshotName = name;
-      project.screenshotBytes = bytes;
-      project.screenshotTexture = tex;
-      project.warnedNoScreenshot = false;
-      logLine(`Screenshot: using "${name}"`);
-      return;
-    }
+    entry = await firstImageEntry();
   } catch (e) {
     logLine(`Screenshot scan failed: ${e.message}`);
+    return;
   }
-  logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+  if (!entry) {
+    project.imgSig = null;
+    // reportedImg is the filename we last told the user we're using, or
+    // 'none' once we've reported the no-image state. Report each transition
+    // exactly once.
+    if (project.reportedImg && project.reportedImg !== 'none') {
+      logLine(`Screenshot: no longer using "${project.reportedImg}"`);
+    } else if (project.reportedImg !== 'none') {
+      logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+    }
+    project.reportedImg = 'none';
+    return;
+  }
+  try {
+    const { name, handle } = entry;
+    const file = await handle.getFile();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    const tex = await new Promise((resolve, reject) => {
+      new THREE.TextureLoader().load(url, t => { URL.revokeObjectURL(url); resolve(t); },
+        undefined, err => { URL.revokeObjectURL(url); reject(err); });
+    });
+    tex.colorSpace = THREE.SRGBColorSpace;
+    project.screenshotName = name;
+    project.screenshotBytes = bytes;
+    project.screenshotTexture = tex;
+    project.imgSig = imageSig(name, file);
+    project.warnedNoScreenshot = false;
+    // Report only when the in-use file changes (deduped by filename), so a
+    // re-scan that resolves to the same image stays silent.
+    if (project.reportedImg !== name) {
+      logLine(`Screenshot: using "${name}"`);
+      project.reportedImg = name;
+    }
+  } catch (e) {
+    project.imgSig = null;
+    // Deduped: a placeholder that won't hydrate would otherwise log this
+    // every poll. Report once per (file, error); a later successful read
+    // clears it via the normal "using" path.
+    const key = `err:${entry.name}:${e.message}`;
+    if (project.reportedImg !== key) {
+      logLine(`Screenshot scan failed for "${entry.name}": ${e.message}`);
+      project.reportedImg = key;
+    }
+  }
+}
+
+// Watcher hook: detect a screenshot image being placed in, removed from, or
+// replaced in the project folder and reflect it in the Console pane. Only
+// re-renders when the screenshot is actually shown (include_screenshot=yes);
+// otherwise the texture is just refreshed for when it's switched on.
+async function checkScreenshotFile() {
+  if (!project || !project.dirHandle) return;
+  let entry;
+  try {
+    entry = await firstImageEntry();   // {name, handle} | null — no getFile, robust
+  } catch (e) {
+    return;   // entries() itself failed; try again next poll
+  }
+  const oldSig = project.imgSig ?? null;
+  let newSig = null;
+  if (entry) {
+    // Prefer a content signature (name|mtime|size); if the file can't be
+    // read yet (e.g. a OneDrive placeholder just dropped in), still treat
+    // it as present-and-changed so rescanScreenshot runs, logs, and the
+    // next poll retries — rather than silently doing nothing.
+    try {
+      newSig = imageSig(entry.name, await entry.handle.getFile());
+    } catch (e) {
+      newSig = `${entry.name}|?`;
+    }
+  }
+  if (newSig === oldSig) return;   // unchanged on disk
+
+  // rescanScreenshot() is the single console reporter (deduped by
+  // filename: "using X" / "no longer using X"), so the watcher just
+  // refreshes state and re-renders when the screenshot is shown.
+  await rescanScreenshot();
+  if (currentFormValues().include_screenshot === 'yes') triggerWatchRerender();
 }
 
 function triggerWatchRerender() {
@@ -2184,12 +2900,24 @@ exportArrow.addEventListener('click', e => {
   exportMenu.classList.toggle('open');
 });
 document.addEventListener('click', () => exportMenu.classList.remove('open'));
+// Label / tooltip differ for "STL-CGAL" (the precision escape hatch) — that
+// synthetic key isn't user-readable, and clinicians shouldn't see it in the
+// main-button label. Map known formats to clean display strings; everything
+// else falls back to "Export as <fmt>".
+const EXPORT_LABELS = {
+  'STL':      { label: 'Export as STL',             title: 'Export current design as STL' },
+  'STL-CGAL': { label: 'Export as STL (precision)', title: 'Export current design as STL — slower, cleaner output' },
+  'SVG':      { label: 'Export as SVG',             title: 'Export current design as SVG' },
+  'PNG':      { label: 'Export as PNG',             title: 'Export current design as PNG' },
+};
 exportMenu.addEventListener('click', e => {
   const item = e.target.closest('.split-item');
   if (!item) return;
   currentExportFormat = item.dataset.fmt;
-  document.getElementById('export-label').textContent = `Export as ${currentExportFormat}`;
-  exportMain.title = `Export current design as ${currentExportFormat}`;
+  const meta = EXPORT_LABELS[currentExportFormat]
+    || { label: `Export as ${currentExportFormat}`, title: `Export current design as ${currentExportFormat}` };
+  document.getElementById('export-label').textContent = meta.label;
+  exportMain.title = meta.title;
   exportMenu.classList.remove('open');
   exportCurrent(currentExportFormat);
 });
@@ -2349,7 +3077,11 @@ document.getElementById('add-preset-btn').addEventListener('click', async () => 
     logLine('Add preset: write permission was not granted.');
     return;
   }
-  let name = (prompt('Name for the new preset:') || '').trim();
+  // Prefill with the current preset name so the clinician can tweak it
+  // rather than retype from scratch (blank for the reserved default).
+  const seed = project.currentPreset === 'design default values'
+    ? '' : (project.currentPreset || '');
+  let name = (prompt('Name for the new preset:', seed) || '').trim();
   if (!name) return;
   if (name === 'design default values') {
     alert('That name is reserved.');
@@ -2379,6 +3111,22 @@ const settingsPanel = document.getElementById('settings-panel');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 
+// Name shown above each swatch grid for the currently-selected colour.
+function colorLabel(list, hex) {
+  const h = (hex || '').toUpperCase();
+  const m = list.find(c => c.hex.toUpperCase() === h);
+  return m ? m.name : 'Custom';
+}
+// A 4-column grid of clickable colour swatches; the active one is ticked.
+function swatchGridHTML(list, selectedHex, group) {
+  const sel = (selectedHex || '').toUpperCase();
+  return `<div class="swatch-grid">` + list.map(c =>
+    `<button type="button" class="swatch${c.hex.toUpperCase() === sel ? ' sel' : ''}"
+       data-group="${group}" data-hex="${c.hex}" title="${c.name}"
+       style="background:${c.hex}; --kg-check:${contrastInk(c.hex)};"></button>`
+  ).join('') + `</div>`;
+}
+
 const SETTINGS_PANELS = {
   general: () => `
     <div class="setting">
@@ -2389,12 +3137,189 @@ const SETTINGS_PANELS = {
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
   `,
+  viewport: () => {
+    const sch = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
+                                                         : ORBIT_SCHEME_DEFAULT;
+    const sens = Number.isFinite(Number(settings.orbitSensitivity))
+      ? Math.max(0.2, Math.min(2.0, Number(settings.orbitSensitivity)))
+      : ORBIT_SENS_DEFAULT;
+    const zoom = Number.isFinite(Number(settings.orbitZoom))
+      ? Math.max(0.25, Math.min(3.0, Number(settings.orbitZoom)))
+      : ORBIT_ZOOM_DEFAULT;
+    const opt = (v, name, desc) => `
+      <label class="opt"><input type="radio" name="orbitScheme" value="${v}"
+        ${sch === v ? 'checked' : ''}> <b>${name}</b>
+        <div style="color:#666; margin:1px 0 6px 20px;">${desc}</div></label>`;
+    return `
+    <div class="setting">
+      <label>Rotation style</label>
+      <div style="color:#666; margin-bottom:8px;">
+        How dragging in the viewport rotates the model.
+      </div>
+      ${opt('tumble', 'Free tumble',
+        'Grab the keyguard and roll it any direction — no vertical stop, no limits. Recommended.')}
+      ${opt('guided', 'Guided tumble',
+        'Free rotation with an on-screen ring guide; double-click a point to centre on it.')}
+      ${opt('turntable', 'Turntable',
+        'Spins around an upright axis. Steady, but tilt stops when level overhead and side-drag spins the view in place. (Original behaviour.)')}
+    </div>
+    <div class="setting">
+      <label>Rotation sensitivity</label>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="color:#666;">Slow</span>
+        <input type="range" id="set-orbitSensitivity" min="0.2" max="2.0"
+          step="0.05" value="${sens}" style="flex:1;">
+        <span style="color:#666;">Fast</span>
+      </div>
+    </div>
+    <div class="setting">
+      <label>Mouse-wheel zoom amount</label>
+      <div style="color:#666; margin-bottom:8px;">
+        How far each wheel notch zooms the view in or out.
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="color:#666;">Small</span>
+        <input type="range" id="set-orbitZoom" min="0.25" max="3.0"
+          step="0.05" value="${zoom}" style="flex:1;">
+        <span style="color:#666;">Large</span>
+      </div>
+    </div>
+  `;
+  },
+  grid: () => `
+    <div class="setting">
+      <label>Reference grid size</label>
+      <div style="color:#666; margin-bottom:8px;">
+        Set this to match your printer's build plate. The grid shows minor
+        lines every 10&nbsp;mm and major lines every 50&nbsp;mm; any leftover
+        is split equally around the edges. Toggle the grid with the grid
+        button on the viewport toolbar.
+      </div>
+      <label class="opt">Width X (mm)
+        <input type="number" id="set-gridX" min="20" max="2000" step="1"
+          value="${clampGridDim(settings.gridX)}" style="width:70px;"></label>
+      <label class="opt">Depth Y (mm)
+        <input type="number" id="set-gridY" min="20" max="2000" step="1"
+          value="${clampGridDim(settings.gridY)}" style="width:70px;"></label>
+    </div>
+  `,
+  text: () => `
+    <div class="setting">
+      <label>Customizer text size</label>
+      <div style="color:#666; margin-bottom:8px;">
+        Point size for the Customizer pane on the right. Larger values help
+        when the panel is read at a distance or on a high-resolution display.
+      </div>
+      <label class="opt">Section headings (pt)
+        <input type="number" id="set-sectionHeadingPt" min="8" max="36" step="1"
+          value="${clampPt(settings.sectionHeadingPt)}"></label>
+      <label class="opt">Parameter text (pt)
+        <input type="number" id="set-paramTextPt" min="8" max="36" step="1"
+          value="${clampPt(settings.paramTextPt)}"></label>
+      <button class="set-reset" id="reset-text">Reset to defaults</button>
+    </div>
+  `,
+  colors: () => `
+    <div class="setting">
+      <label>Panel theme</label>
+      <div style="color:#666; margin-bottom:8px;">
+        Light or dark colours for the Customizer (right) and Console (bottom)
+        panes. The viewport keeps its own background colour, set below.
+      </div>
+      <label class="opt"><input type="radio" name="paneTheme" value="light"
+        ${settings.paneTheme !== 'dark' ? 'checked' : ''}> Light</label>
+      <label class="opt"><input type="radio" name="paneTheme" value="dark"
+        ${settings.paneTheme === 'dark' ? 'checked' : ''}> Dark</label>
+    </div>
+    <div class="setting">
+      <label>Generated item color</label>
+      <div class="swatch-name">${colorLabel(ITEM_COLORS, settings.itemColor)}</div>
+      ${swatchGridHTML(ITEM_COLORS, settings.itemColor, 'item')}
+    </div>
+    <div class="setting">
+      <label>Viewport background</label>
+      <div class="swatch-name">${colorLabel(BG_COLORS, settings.backgroundColor)}</div>
+      ${swatchGridHTML(BG_COLORS, settings.backgroundColor, 'bg')}
+    </div>
+    <button class="set-reset" id="reset-colors">Reset to defaults</button>
+  `,
+  about: () => `
+    <div class="setting">
+      <label>Keyguard Designer (web)</label>
+      <div style="margin-bottom:10px;">Release ${APP_RELEASE}</div>
+      <label>License</label>
+      <div style="margin-bottom:10px;">
+        CC0 1.0 Universal — dedicated to the public domain. You are free to
+        use, modify, and share this tool for any purpose, with no restrictions
+        and no attribution required.
+      </div>
+      <label>Created by</label>
+      <div>
+        Volksswitch —
+        <a href="https://www.volksswitch.org" target="_blank"
+           rel="noopener">www.volksswitch.org</a>
+      </div>
+    </div>
+  `,
 };
 
 function renderSettingsPanel(cat) {
   settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
   settingsPanel.querySelectorAll('input[type=radio][name=presetOrder]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('presetOrder', r.value); });
+  });
+  settingsPanel.querySelectorAll('input[type=radio][name=orbitScheme]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('orbitScheme', r.value); });
+  });
+  const sens = settingsPanel.querySelector('#set-orbitSensitivity');
+  if (sens) sens.addEventListener('input', () => {
+    setSetting('orbitSensitivity', Number(sens.value));
+  });
+  const zoom = settingsPanel.querySelector('#set-orbitZoom');
+  if (zoom) zoom.addEventListener('input', () => {
+    setSetting('orbitZoom', Number(zoom.value));
+  });
+  for (const dim of ['gridX', 'gridY']) {
+    const inp = settingsPanel.querySelector('#set-' + dim);
+    if (!inp) continue;
+    const commit = () => {
+      const v = clampGridDim(inp.value);
+      inp.value = v;
+      if (v !== settings[dim]) setSetting(dim, v);
+    };
+    inp.addEventListener('change', commit);
+  }
+  for (const k of ['sectionHeadingPt', 'paramTextPt']) {
+    const inp = settingsPanel.querySelector('#set-' + k);
+    if (!inp) continue;
+    inp.addEventListener('change', () => {
+      const v = clampPt(inp.value);
+      inp.value = v;
+      if (v !== settings[k]) setSetting(k, v);
+    });
+  }
+  const resetText = settingsPanel.querySelector('#reset-text');
+  if (resetText) resetText.addEventListener('click', () => {
+    setSetting('sectionHeadingPt', DEFAULT_SECTION_PT);
+    setSetting('paramTextPt', DEFAULT_PARAM_PT);
+    renderSettingsPanel('text');
+  });
+  settingsPanel.querySelectorAll('input[type=radio][name=paneTheme]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('paneTheme', r.value); });
+  });
+  settingsPanel.querySelectorAll('.swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      const key = sw.dataset.group === 'bg' ? 'backgroundColor' : 'itemColor';
+      if (settings[key] !== sw.dataset.hex) setSetting(key, sw.dataset.hex);
+      renderSettingsPanel('colors');
+    });
+  });
+  const resetColors = settingsPanel.querySelector('#reset-colors');
+  if (resetColors) resetColors.addEventListener('click', () => {
+    setSetting('itemColor', DEFAULT_ITEM_COLOR);
+    setSetting('backgroundColor', DEFAULT_BG_COLOR);
+    setSetting('paneTheme', 'light');
+    renderSettingsPanel('colors');
   });
 }
 

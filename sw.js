@@ -1,18 +1,21 @@
 // Service worker for Keyguard Designer PWA.
 // Bump CACHE_NAME when deploying changes to any file in SHELL — the activate
 // handler purges old caches so clients get the new version on next load.
-const CACHE_NAME = 'keyguard-v2';
+const CACHE_NAME = 'keyguard-v3';
 
 const SHELL = [
   './app.html',
   './manifest.json',
   './icons/icon.svg',
+  './export-worker.js',
   './openscad-wasm/openscad.js',
   './openscad-wasm/openscad.fonts.js',
   './vendor/three/build/three.module.min.js',
   './vendor/three/examples/jsm/libs/fflate.module.js',
   './vendor/three/examples/jsm/loaders/3MFLoader.js',
   './vendor/three/examples/jsm/controls/OrbitControls.js',
+  './vendor/three/examples/jsm/controls/TrackballControls.js',
+  './vendor/three/examples/jsm/controls/ArcballControls.js',
   './vendor/three/examples/jsm/loaders/STLLoader.js',
 ];
 
