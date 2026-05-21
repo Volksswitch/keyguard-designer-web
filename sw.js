@@ -7,6 +7,7 @@ const SHELL = [
   './app.html',
   './manifest.json',
   './icons/icon.svg',
+  './export-worker.js',
   './openscad-wasm/openscad.js',
   './openscad-wasm/openscad.fonts.js',
   './vendor/three/build/three.module.min.js',

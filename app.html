@@ -222,6 +222,32 @@
                     background: #f0f0f0; }
   #confirm-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; margin-left: 8px; }
   #confirm-ok { font-weight: bold; color: #a33; }
+
+  /* ---------- export progress modal ---------- */
+  #export-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+                    display: none; align-items: center; justify-content: center; z-index: 1200; }
+  #export-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                  width: 420px; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  #export-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
+                     background: #e8e8e8; font-size: 14px; }
+  #export-sub { padding: 4px 14px 14px; font-size: 12px; line-height: 1.5; color: #555; }
+  #export-sub #export-elapsed { font-variant-numeric: tabular-nums; font-weight: bold; color: #222; }
+  #export-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
+  #export-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+  /* Indeterminate bar: a fixed-width sliver sweeps across the track because
+     OpenSCAD's wasm build exposes no granular progress to drive a real %. */
+  .export-bar { margin: 16px 14px 6px; height: 10px; border-radius: 5px; overflow: hidden;
+                background: #e0e0e0; position: relative; }
+  .export-bar-fill { position: absolute; top: 0; left: 0; height: 100%; width: 35%;
+                     border-radius: 5px; background: #4682B4;
+                     animation: export-indeterminate 1.3s ease-in-out infinite; }
+  @keyframes export-indeterminate {
+    0%   { left: -35%; }
+    100% { left: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .export-bar-fill { animation-duration: 2.6s; }
+  }
 </style>
 </head>
 <body>
@@ -412,6 +438,21 @@
     <div id="confirm-footer">
       <button id="confirm-cancel">Cancel</button>
       <button id="confirm-ok">Discard changes</button>
+    </div>
+  </div>
+</div>
+
+<div id="export-overlay">
+  <div id="export-modal">
+    <h3 id="export-title">Exporting…</h3>
+    <div class="export-bar"><div class="export-bar-fill"></div></div>
+    <div id="export-sub">
+      Elapsed <span id="export-elapsed">0:00</span> — precision (CGAL) renders
+      can take several minutes. The app stays responsive; you can keep working
+      or cancel.
+    </div>
+    <div id="export-footer">
+      <button id="export-cancel">Cancel export</button>
     </div>
   </div>
 </div>
@@ -1951,28 +1992,12 @@ async function exportPNG() {
 // Both exportCurrent() (which writes/downloads) and the geometry-test hook
 // window.__exportSTLBytes call this, so a tested STL is byte-identical to
 // the file a clinician produces via Export → STL.
-async function renderExportBytes(fmt, backend = 'Manifold') {
+// Build the OpenSCAD argv + output path for an export render. Kept separate
+// from the render so the (single source of truth) export-argument logic can
+// run on the main thread while the render itself happens in a worker.
+function buildExportArgs(fmt, backend) {
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) throw new Error(`Unknown export format: ${fmt}`);
-  // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
-  // screenshot-plane sizing hint). It's never user-relevant and is already
-  // filtered out of normal renders by isNoise(); apply the same filter on
-  // the export path so it doesn't leak into the console during Export.
-  const oscad = await createOpenSCAD({
-    print:    t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
-    printErr: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); }
-  });
-  addFonts(oscad.getInstance());
-  const fs = oscad.getInstance().FS;
-  fs.writeFile('/' + project.scadName, project.scadText);
-  fs.writeFile('/openings_and_additions.txt', project.oaText);
-  if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
-  for (const [name, bytes] of Object.entries(project.files)) {
-    if (name === project.scadName) continue;
-    if (name === project.jsonName) continue;
-    if (name === 'openings_and_additions.txt') continue;
-    fs.writeFile('/' + name, bytes);
-  }
   const outPath = '/keyguard.' + spec.ext;
   // Order matters: -D values placed after -p/-P win against the preset.
   // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
@@ -2013,11 +2038,85 @@ async function renderExportBytes(fmt, backend = 'Manifold') {
     args.push('-D', 'type_of_keyguard="Laser-Cut"');
     args.push('-D', 'generate="first layer for SVG/DXF file"');
   }
+  return { args, outPath };
+}
+
+// The export render runs in a Web Worker so a multi-minute CGAL render never
+// blocks the main thread (no "Page unresponsive" dialog) and can be cancelled
+// instantly by terminating the worker. Only one export runs at a time.
+let activeExportWorker = null;
+let cancelActiveExport = null;   // set while a worker render is in flight
+
+function runExportInWorker(job, { onLog } = {}) {
+  return new Promise((resolve, reject) => {
+    let worker;
+    try {
+      // .js (not .mjs) so static servers that map only .js to a JS MIME type
+      // (e.g. Python's http.server serves .mjs as text/plain) still let the
+      // module worker load. The app's other modules are .js for the same reason.
+      worker = new Worker(new URL('./export-worker.js', import.meta.url), { type: 'module' });
+    } catch (e) { reject(e); return; }
+    activeExportWorker = worker;
+    let settled = false;
+    const cleanup = () => {
+      settled = true;
+      try { worker.terminate(); } catch {}
+      if (activeExportWorker === worker) activeExportWorker = null;
+      cancelActiveExport = null;
+    };
+    cancelActiveExport = () => {
+      if (settled) return;
+      cleanup();
+      const err = new Error('Export cancelled');
+      err.cancelled = true;
+      reject(err);
+    };
+    worker.onmessage = (e) => {
+      const m = e.data || {};
+      if (m.type === 'log') { if (onLog) onLog(m.line); return; }
+      if (m.type === 'done') {
+        if (settled) return;
+        const { ok, bytes, error } = m;
+        cleanup();
+        if (ok) resolve(bytes);
+        else reject(new Error(error || 'export failed'));
+      }
+    };
+    worker.onerror = (e) => {
+      if (settled) return;
+      cleanup();
+      reject(new Error(e.message || 'export worker error'));
+    };
+    worker.postMessage(job);
+  });
+}
+
+// Render the current design to STL/SVG bytes (in a worker — see above).
+// Default backend is Manifold — ~100× faster than CGAL and what the user
+// sees in the viewport. The "Export STL (precision)" menu item passes
+// backend='CGAL' as an escape hatch when Manifold's convex_hull_3 UB
+// produces a slicer-visible STL (TC57 was the first reported case; see
+// project memory). CGAL takes several minutes per render but is verifiably
+// manifold. Both exportCurrent() (which writes/downloads) and the
+// geometry-test hook window.__exportSTLBytes call this, so a tested STL is
+// byte-identical to the file a clinician produces via Export → STL.
+async function renderExportBytes(fmt, backend = 'Manifold') {
+  const { args, outPath } = buildExportArgs(fmt, backend);
+  const job = {
+    scadName: project.scadName, scadText: project.scadText,
+    oaText:   project.oaText,
+    jsonName: project.jsonName, jsonText: project.jsonText,
+    files:    project.files,
+    args, outPath,
+  };
   const t0 = performance.now();
-  const rc = oscad.getInstance().callMain(args);
+  // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
+  // screenshot-plane sizing hint). It's never user-relevant; filter it out
+  // of the export console exactly as the viewport render path does.
+  const bytes = await runExportInWorker(job, {
+    onLog: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
+  });
   const elapsed = (performance.now() - t0) / 1000;
-  if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
-  const bytes = fs.readFile(outPath);
   logLine(`Export render (${fmt}, ${backend}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
   return bytes;
 }
@@ -2045,12 +2144,17 @@ async function exportCurrent(fmt) {
   if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
   const prevStatusText = statusEl.innerHTML;
   const prevStatusKind = statusEl.className;
+  // The slow CGAL precision render gets a modal with an elapsed timer and a
+  // Cancel button. The fast Manifold export (~1 s) just uses the status line —
+  // a modal would only flash. Both run in the worker either way.
+  const showModal = backend === 'CGAL';
   setStatus(
     backend === 'CGAL'
       ? `Exporting as ${fmt} (precision) — this may take several minutes...`
       : `Exporting as ${fmt}...`,
     'rendering'
   );
+  if (showModal) openExportProgress(fmt);
   try {
     const bytes = await renderExportBytes(fmt, backend);
     const fname = exportBaseName() + '.' + spec.ext;
@@ -2077,10 +2181,58 @@ async function exportCurrent(fmt) {
     }
     setStatus(prevStatusText, prevStatusKind);
   } catch (e) {
-    logLine('Export failed: ' + e.message);
-    setStatus('Export failed: ' + e.message, 'error');
-    console.error(e);
+    if (e && e.cancelled) {
+      logLine('Export cancelled.');
+      setStatus('Export cancelled', '');
+    } else {
+      logLine('Export failed: ' + e.message);
+      setStatus('Export failed: ' + e.message, 'error');
+      console.error(e);
+    }
+  } finally {
+    if (showModal) closeExportProgress();
   }
+}
+
+// ---- Export progress modal (indeterminate bar + elapsed timer + Cancel) ----
+// OpenSCAD's granular 0/1000 progress is not available from this headless
+// wasm build, so the bar is indeterminate; the elapsed timer gives the user a
+// real signal that work is happening. Cancel terminates the worker instantly.
+let _exportTimerId = null;
+function openExportProgress(fmt) {
+  const overlay  = document.getElementById('export-overlay');
+  const titleEl  = document.getElementById('export-title');
+  const elapsedEl = document.getElementById('export-elapsed');
+  if (!overlay) return;
+  titleEl.textContent = `Exporting ${fmt} (precision)…`;
+  elapsedEl.textContent = '0:00';
+  overlay.style.display = 'flex';
+  const t0 = performance.now();
+  clearInterval(_exportTimerId);
+  _exportTimerId = setInterval(() => {
+    const s = Math.floor((performance.now() - t0) / 1000);
+    const mm = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    elapsedEl.textContent = `${mm}:${ss}`;
+  }, 250);
+}
+function closeExportProgress() {
+  clearInterval(_exportTimerId);
+  _exportTimerId = null;
+  const overlay = document.getElementById('export-overlay');
+  if (overlay) overlay.style.display = 'none';
+  const btn = document.getElementById('export-cancel');
+  if (btn) { btn.disabled = false; btn.textContent = 'Cancel export'; }
+}
+{
+  const cancelBtn = document.getElementById('export-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
+    if (typeof cancelActiveExport === 'function') {
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      cancelActiveExport();
+    }
+  });
 }
 
 // ===== The rest of the original mockup logic follows =====
