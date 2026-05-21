@@ -19,6 +19,44 @@
   /* Customizer text sizes are driven by these so the Settings → Text panel
      can retune them live. Defaults match the historical hard-coded values. */
   :root { --kg-section-heading-pt: 14px; --kg-param-text-pt: 12px; }
+
+  /* Light/dark theming for the Customizer (#right) and Console (#console-wrap)
+     panes. The viewport and menubar are intentionally NOT themed here — the
+     viewport has its own background-colour setting. Light values below are the
+     historical hard-coded colours; the dark overrides live in the
+     body[data-kg-theme="dark"] block. `color-scheme` lets native form
+     controls (selects, inputs, scrollbars) follow the theme automatically. */
+  :root {
+    --kg-pane-scheme:        light;
+    --kg-pane-bg:            #fafafa;  /* customizer column body            */
+    --kg-pane-header-bg:     #f4f4f4;  /* cust header + section headers     */
+    --kg-pane-section-bg:    #fafafa;  /* collapsed section header          */
+    --kg-pane-body-bg:       #fff;     /* open section body                 */
+    --kg-pane-text:          #222;
+    --kg-pane-text-dim:      #777;     /* param help / caret                */
+    --kg-pane-border:        #bbb;
+    --kg-pane-border-soft:   #e0e0e0;
+    --kg-pane-hover:         #eef2f7;
+    --kg-console-bg:         #fff;
+    --kg-console-toolbar-bg: #ececec;
+    --kg-console-text:       #222;
+  }
+  body[data-kg-theme="dark"] {
+    --kg-pane-scheme:        dark;
+    --kg-pane-bg:            #25282c;
+    --kg-pane-header-bg:     #2d3136;
+    --kg-pane-section-bg:    #2a2e33;
+    --kg-pane-body-bg:       #1f2226;
+    --kg-pane-text:          #e6e6e6;
+    --kg-pane-text-dim:      #9aa0a6;
+    --kg-pane-border:        #44494f;
+    --kg-pane-border-soft:   #3a3f45;
+    --kg-pane-hover:         #343a41;
+    --kg-console-bg:         #1b1d20;
+    --kg-console-toolbar-bg: #2a2e33;
+    --kg-console-text:       #d6d6d6;
+  }
+
   html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", -apple-system, sans-serif;
                font-size: 13px; background: #f0f0f0; color: #222; }
 
@@ -33,8 +71,9 @@
   #app { display: flex; flex-direction: column; height: 100vh; }
   #main { display: flex; flex: 1; min-height: 0; }
   #left { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-  #right { width: 280px; flex-shrink: 0; background: #fafafa; border-left: 1px solid #bbb;
-           display: flex; flex-direction: column; min-width: 180px; }
+  #right { width: 280px; flex-shrink: 0; background: var(--kg-pane-bg); border-left: 1px solid var(--kg-pane-border);
+           display: flex; flex-direction: column; min-width: 180px;
+           color: var(--kg-pane-text); color-scheme: var(--kg-pane-scheme); }
 
   /* the left column is itself (viewport on top + horizontal splitter + console at bottom) */
   #viewport-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -63,15 +102,18 @@
   .vp-sep { width: 1px; background: #bbb; height: 18px; margin: 0 4px; }
 
   /* ---------- console pane ---------- */
-  #console-wrap { background: #fff; border-top: 1px solid #bbb; display: flex; flex-direction: column;
+  #console-wrap { background: var(--kg-console-bg); border-top: 1px solid var(--kg-pane-border);
+                  display: flex; flex-direction: column; color: var(--kg-console-text);
+                  color-scheme: var(--kg-pane-scheme);
                   height: 180px; min-height: 60px; flex-shrink: 0; }
   #console-toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px;
-                     background: #ececec; border-bottom: 1px solid #ccc; flex-shrink: 0; font-size: 12px; }
+                     background: var(--kg-console-toolbar-bg); border-bottom: 1px solid var(--kg-pane-border);
+                     flex-shrink: 0; font-size: 12px; color: var(--kg-pane-text); }
   #console-toolbar .label { font-weight: bold; margin-right: auto; }
   #console-toolbar button { font-size: 11px; padding: 2px 8px; cursor: pointer; }
   #console-toolbar label { font-size: 11px; user-select: none; }
   #console { flex: 1; overflow-y: auto; padding: 6px 10px; font-family: Consolas, Menlo, monospace;
-             font-size: 11.5px; color: #222; white-space: pre; }
+             font-size: 11.5px; color: var(--kg-console-text); white-space: pre; }
   #console.wrap { white-space: pre-wrap; }
 
   /* ---------- splitters ---------- */
@@ -83,7 +125,8 @@
   .vsplit:hover { background: #b0c0e0; }
 
   /* ---------- Customizer ---------- */
-  #cust-header { padding: 8px 10px; border-bottom: 1px solid #ddd; background: #f4f4f4; flex-shrink: 0; }
+  #cust-header { padding: 8px 10px; border-bottom: 1px solid var(--kg-pane-border-soft);
+                 background: var(--kg-pane-header-bg); flex-shrink: 0; }
   #cust-header h2 { margin: 0 0 6px 0; font-size: 13px; font-weight: bold; }
   #cust-header .preset-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
   #cust-header select, #cust-header input { flex: 1; min-width: 0; font-size: 12px; padding: 2px 4px; }
@@ -91,21 +134,21 @@
   #cust-header .preset-btns { display: flex; gap: 4px; }
   #cust-header .preset-btns button { flex: 1; }
   #cust-sections { flex: 1; overflow-y: auto; }
-  .section { border-bottom: 1px solid #e0e0e0; }
+  .section { border-bottom: 1px solid var(--kg-pane-border-soft); }
   .section-header { padding: 7px 10px; cursor: pointer; user-select: none;
                     display: flex; align-items: center; gap: 4px; font-weight: bold;
                     font-size: var(--kg-section-heading-pt);
-                    background: #fafafa; }
-  .section-header:hover { background: #eef2f7; }
-  .section-header .caret { display: inline-block; width: 10px; transition: transform 0.1s; color: #555; }
+                    background: var(--kg-pane-section-bg); }
+  .section-header:hover { background: var(--kg-pane-hover); }
+  .section-header .caret { display: inline-block; width: 10px; transition: transform 0.1s; color: var(--kg-pane-text-dim); }
   .section.open .section-header .caret { transform: rotate(90deg); }
-  .section-body { display: none; padding: 8px 10px 10px 10px; background: #fff;
+  .section-body { display: none; padding: 8px 10px 10px 10px; background: var(--kg-pane-body-bg);
                   font-size: var(--kg-param-text-pt); }
   .section.open .section-body { display: block; }
   .param { margin-bottom: 8px; }
   .param-label { display: block; font-weight: bold; margin-bottom: 2px;
                  font-size: var(--kg-param-text-pt); }
-  .param-help { color: #777; font-size: 11px; margin-bottom: 3px; }
+  .param-help { color: var(--kg-pane-text-dim); font-size: 11px; margin-bottom: 3px; }
   .param select, .param input[type=text], .param input[type=number] {
     width: 100%; padding: 2px 4px; font-size: 12px; }
 
@@ -179,6 +222,32 @@
                     background: #f0f0f0; }
   #confirm-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; margin-left: 8px; }
   #confirm-ok { font-weight: bold; color: #a33; }
+
+  /* ---------- export progress modal ---------- */
+  #export-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+                    display: none; align-items: center; justify-content: center; z-index: 1200; }
+  #export-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                  width: 420px; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  #export-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
+                     background: #e8e8e8; font-size: 14px; }
+  #export-sub { padding: 4px 14px 14px; font-size: 12px; line-height: 1.5; color: #555; }
+  #export-sub #export-elapsed { font-variant-numeric: tabular-nums; font-weight: bold; color: #222; }
+  #export-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
+  #export-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+  /* Indeterminate bar: a fixed-width sliver sweeps across the track because
+     OpenSCAD's wasm build exposes no granular progress to drive a real %. */
+  .export-bar { margin: 16px 14px 6px; height: 10px; border-radius: 5px; overflow: hidden;
+                background: #e0e0e0; position: relative; }
+  .export-bar-fill { position: absolute; top: 0; left: 0; height: 100%; width: 35%;
+                     border-radius: 5px; background: #4682B4;
+                     animation: export-indeterminate 1.3s ease-in-out infinite; }
+  @keyframes export-indeterminate {
+    0%   { left: -35%; }
+    100% { left: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .export-bar-fill { animation-duration: 2.6s; }
+  }
 </style>
 </head>
 <body>
@@ -373,6 +442,21 @@
   </div>
 </div>
 
+<div id="export-overlay">
+  <div id="export-modal">
+    <h3 id="export-title">Exporting…</h3>
+    <div class="export-bar"><div class="export-bar-fill"></div></div>
+    <div id="export-sub">
+      Elapsed <span id="export-elapsed">0:00</span> — precision (CGAL) renders
+      can take several minutes. The app stays responsive; you can keep working
+      or cancel.
+    </div>
+    <div id="export-footer">
+      <button id="export-cancel">Cancel export</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 // ===== Three.js viewport setup =====
 import * as THREE from 'three';
@@ -457,14 +541,35 @@ const ORBIT_BASE_ROTATE   = { turntable: 1.0, tumble: 4.0, guided: 1.0 };
 const ORBIT_SCHEME_DEFAULT = 'tumble';
 const ORBIT_SENS_DEFAULT   = 0.6;       // 0.2 (slow) … 2.0 (fast)
 
+// Mouse-wheel zoom amount. turntable/tumble drive `zoomSpeed` (a linear
+// multiplier; three's defaults are 1.0 and 1.2). guided (ArcballControls)
+// has no zoomSpeed — its wheel zoom is governed by `scaleFactor`, the base
+// of a power function (1.1 ≈ 10 % per notch). For guided we therefore
+// scale the *step above 1*, so the slider stays intuitive ("higher = more
+// zoom per notch") across all three schemes.
+const ORBIT_BASE_ZOOM     = { turntable: 1.0, tumble: 1.2, guided: 1.0 };
+const ARCBALL_BASE_STEP   = 0.1;        // guided scaleFactor = 1 + step·mult
+const ORBIT_ZOOM_DEFAULT  = 1.0;        // 0.25 (slow) … 3.0 (fast)
+
 // Mirror the persisted settings so the early controls build (which runs
 // before `settings` is initialised) never has to touch it.
 let orbitScheme = ORBIT_SCHEME_DEFAULT;
 let orbitSens   = ORBIT_SENS_DEFAULT;
+let orbitZoom   = ORBIT_ZOOM_DEFAULT;
 let controls    = null;
 
 function applyOrbitSensitivity() {
   if (controls) controls.rotateSpeed = ORBIT_BASE_ROTATE[orbitScheme] * orbitSens;
+}
+
+// Apply the wheel-zoom amount to whichever property the active scheme uses.
+function applyOrbitZoom() {
+  if (!controls) return;
+  if (orbitScheme === 'guided') {
+    controls.scaleFactor = 1 + ARCBALL_BASE_STEP * orbitZoom;
+  } else {
+    controls.zoomSpeed = ORBIT_BASE_ZOOM[orbitScheme] * orbitZoom;
+  }
 }
 
 // (Re)create the controls for the active scheme, preserving the current
@@ -478,7 +583,7 @@ function buildOrbitControls() {
     controls.staticMoving = false;
     controls.dynamicDampingFactor = 0.15;
     controls.panSpeed = 0.6;
-    controls.zoomSpeed = 1.2;
+    // zoomSpeed is set by applyOrbitZoom() below (honours the user setting).
     controls.mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN
     };
@@ -498,6 +603,7 @@ function buildOrbitControls() {
   }
   if (savedTarget) controls.target.copy(savedTarget);
   applyOrbitSensitivity();
+  applyOrbitZoom();
   controls.update();
 }
 
@@ -788,6 +894,8 @@ const SETTINGS_DEFAULTS = {
   backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
   orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
   orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
+  orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.25 … 3.0
+  paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
 };
 let settings = loadSettings();
 
@@ -796,10 +904,12 @@ let settings = loadSettings();
 function syncOrbitFromSettings() {
   const v = Number(settings.orbitSensitivity);
   orbitSens = Number.isFinite(v) ? Math.max(0.2, Math.min(2.0, v)) : ORBIT_SENS_DEFAULT;
+  const z = Number(settings.orbitZoom);
+  orbitZoom = Number.isFinite(z) ? Math.max(0.25, Math.min(3.0, z)) : ORBIT_ZOOM_DEFAULT;
   const want = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
                                                        : ORBIT_SCHEME_DEFAULT;
   if (want !== orbitScheme) { orbitScheme = want; buildOrbitControls(); }
-  else applyOrbitSensitivity();
+  else { applyOrbitSensitivity(); applyOrbitZoom(); }
 }
 syncOrbitFromSettings();
 applyAppearance();   // honour persisted text sizes + viewport colours on load
@@ -857,7 +967,8 @@ function onSettingsChanged(key) {
   if (key === 'sectionHeadingPt' || key === 'paramTextPt') applyTextSizes();
   if (key === 'backgroundColor') applyBackgroundColor();
   if (key === 'itemColor') applyItemColor();
-  if (key === 'orbitScheme' || key === 'orbitSensitivity') syncOrbitFromSettings();
+  if (key === 'paneTheme') applyPaneTheme();
+  if (key === 'orbitScheme' || key === 'orbitSensitivity' || key === 'orbitZoom') syncOrbitFromSettings();
 }
 
 // ----- Appearance application (text sizes + viewport colours) -----
@@ -882,10 +993,21 @@ function applyItemColor() {
     }
   });
 }
+// Apply the Customizer + Console light/dark theme by toggling a body
+// attribute the CSS variable blocks key off. Default 'light' removes the
+// attribute entirely so the :root defaults apply.
+function applyPaneTheme() {
+  if (settings.paneTheme === 'dark') {
+    document.body.setAttribute('data-kg-theme', 'dark');
+  } else {
+    document.body.removeAttribute('data-kg-theme');
+  }
+}
 function applyAppearance() {
   applyTextSizes();
   applyBackgroundColor();
   applyItemColor();
+  applyPaneTheme();
 }
 
 // Sort preset names according to the current setting. 'design default values'
@@ -1870,28 +1992,12 @@ async function exportPNG() {
 // Both exportCurrent() (which writes/downloads) and the geometry-test hook
 // window.__exportSTLBytes call this, so a tested STL is byte-identical to
 // the file a clinician produces via Export → STL.
-async function renderExportBytes(fmt, backend = 'Manifold') {
+// Build the OpenSCAD argv + output path for an export render. Kept separate
+// from the render so the (single source of truth) export-argument logic can
+// run on the main thread while the render itself happens in a worker.
+function buildExportArgs(fmt, backend) {
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) throw new Error(`Unknown export format: ${fmt}`);
-  // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
-  // screenshot-plane sizing hint). It's never user-relevant and is already
-  // filtered out of normal renders by isNoise(); apply the same filter on
-  // the export path so it doesn't leak into the console during Export.
-  const oscad = await createOpenSCAD({
-    print:    t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
-    printErr: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); }
-  });
-  addFonts(oscad.getInstance());
-  const fs = oscad.getInstance().FS;
-  fs.writeFile('/' + project.scadName, project.scadText);
-  fs.writeFile('/openings_and_additions.txt', project.oaText);
-  if (project.jsonText) fs.writeFile('/' + project.jsonName, project.jsonText);
-  for (const [name, bytes] of Object.entries(project.files)) {
-    if (name === project.scadName) continue;
-    if (name === project.jsonName) continue;
-    if (name === 'openings_and_additions.txt') continue;
-    fs.writeFile('/' + name, bytes);
-  }
   const outPath = '/keyguard.' + spec.ext;
   // Order matters: -D values placed after -p/-P win against the preset.
   // A preset that pins fudge=0.01 (e.g. "highlight test") would otherwise
@@ -1932,11 +2038,85 @@ async function renderExportBytes(fmt, backend = 'Manifold') {
     args.push('-D', 'type_of_keyguard="Laser-Cut"');
     args.push('-D', 'generate="first layer for SVG/DXF file"');
   }
+  return { args, outPath };
+}
+
+// The export render runs in a Web Worker so a multi-minute CGAL render never
+// blocks the main thread (no "Page unresponsive" dialog) and can be cancelled
+// instantly by terminating the worker. Only one export runs at a time.
+let activeExportWorker = null;
+let cancelActiveExport = null;   // set while a worker render is in flight
+
+function runExportInWorker(job, { onLog } = {}) {
+  return new Promise((resolve, reject) => {
+    let worker;
+    try {
+      // .js (not .mjs) so static servers that map only .js to a JS MIME type
+      // (e.g. Python's http.server serves .mjs as text/plain) still let the
+      // module worker load. The app's other modules are .js for the same reason.
+      worker = new Worker(new URL('./export-worker.js', import.meta.url), { type: 'module' });
+    } catch (e) { reject(e); return; }
+    activeExportWorker = worker;
+    let settled = false;
+    const cleanup = () => {
+      settled = true;
+      try { worker.terminate(); } catch {}
+      if (activeExportWorker === worker) activeExportWorker = null;
+      cancelActiveExport = null;
+    };
+    cancelActiveExport = () => {
+      if (settled) return;
+      cleanup();
+      const err = new Error('Export cancelled');
+      err.cancelled = true;
+      reject(err);
+    };
+    worker.onmessage = (e) => {
+      const m = e.data || {};
+      if (m.type === 'log') { if (onLog) onLog(m.line); return; }
+      if (m.type === 'done') {
+        if (settled) return;
+        const { ok, bytes, error } = m;
+        cleanup();
+        if (ok) resolve(bytes);
+        else reject(new Error(error || 'export failed'));
+      }
+    };
+    worker.onerror = (e) => {
+      if (settled) return;
+      cleanup();
+      reject(new Error(e.message || 'export worker error'));
+    };
+    worker.postMessage(job);
+  });
+}
+
+// Render the current design to STL/SVG bytes (in a worker — see above).
+// Default backend is Manifold — ~100× faster than CGAL and what the user
+// sees in the viewport. The "Export STL (precision)" menu item passes
+// backend='CGAL' as an escape hatch when Manifold's convex_hull_3 UB
+// produces a slicer-visible STL (TC57 was the first reported case; see
+// project memory). CGAL takes several minutes per render but is verifiably
+// manifold. Both exportCurrent() (which writes/downloads) and the
+// geometry-test hook window.__exportSTLBytes call this, so a tested STL is
+// byte-identical to the file a clinician produces via Export → STL.
+async function renderExportBytes(fmt, backend = 'Manifold') {
+  const { args, outPath } = buildExportArgs(fmt, backend);
+  const job = {
+    scadName: project.scadName, scadText: project.scadText,
+    oaText:   project.oaText,
+    jsonName: project.jsonName, jsonText: project.jsonText,
+    files:    project.files,
+    args, outPath,
+  };
   const t0 = performance.now();
-  const rc = oscad.getInstance().callMain(args);
+  // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
+  // screenshot-plane sizing hint). It's never user-relevant; filter it out
+  // of the export console exactly as the viewport render path does.
+  const bytes = await runExportInWorker(job, {
+    onLog: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
+  });
   const elapsed = (performance.now() - t0) / 1000;
-  if (rc !== 0) throw new Error(`OpenSCAD exited with code ${rc}`);
-  const bytes = fs.readFile(outPath);
   logLine(`Export render (${fmt}, ${backend}) complete in ${elapsed.toFixed(1)}s. ${bytes.length.toLocaleString()} bytes`);
   return bytes;
 }
@@ -1964,12 +2144,17 @@ async function exportCurrent(fmt) {
   if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
   const prevStatusText = statusEl.innerHTML;
   const prevStatusKind = statusEl.className;
+  // The slow CGAL precision render gets a modal with an elapsed timer and a
+  // Cancel button. The fast Manifold export (~1 s) just uses the status line —
+  // a modal would only flash. Both run in the worker either way.
+  const showModal = backend === 'CGAL';
   setStatus(
     backend === 'CGAL'
       ? `Exporting as ${fmt} (precision) — this may take several minutes...`
       : `Exporting as ${fmt}...`,
     'rendering'
   );
+  if (showModal) openExportProgress(fmt);
   try {
     const bytes = await renderExportBytes(fmt, backend);
     const fname = exportBaseName() + '.' + spec.ext;
@@ -1996,10 +2181,58 @@ async function exportCurrent(fmt) {
     }
     setStatus(prevStatusText, prevStatusKind);
   } catch (e) {
-    logLine('Export failed: ' + e.message);
-    setStatus('Export failed: ' + e.message, 'error');
-    console.error(e);
+    if (e && e.cancelled) {
+      logLine('Export cancelled.');
+      setStatus('Export cancelled', '');
+    } else {
+      logLine('Export failed: ' + e.message);
+      setStatus('Export failed: ' + e.message, 'error');
+      console.error(e);
+    }
+  } finally {
+    if (showModal) closeExportProgress();
   }
+}
+
+// ---- Export progress modal (indeterminate bar + elapsed timer + Cancel) ----
+// OpenSCAD's granular 0/1000 progress is not available from this headless
+// wasm build, so the bar is indeterminate; the elapsed timer gives the user a
+// real signal that work is happening. Cancel terminates the worker instantly.
+let _exportTimerId = null;
+function openExportProgress(fmt) {
+  const overlay  = document.getElementById('export-overlay');
+  const titleEl  = document.getElementById('export-title');
+  const elapsedEl = document.getElementById('export-elapsed');
+  if (!overlay) return;
+  titleEl.textContent = `Exporting ${fmt} (precision)…`;
+  elapsedEl.textContent = '0:00';
+  overlay.style.display = 'flex';
+  const t0 = performance.now();
+  clearInterval(_exportTimerId);
+  _exportTimerId = setInterval(() => {
+    const s = Math.floor((performance.now() - t0) / 1000);
+    const mm = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    elapsedEl.textContent = `${mm}:${ss}`;
+  }, 250);
+}
+function closeExportProgress() {
+  clearInterval(_exportTimerId);
+  _exportTimerId = null;
+  const overlay = document.getElementById('export-overlay');
+  if (overlay) overlay.style.display = 'none';
+  const btn = document.getElementById('export-cancel');
+  if (btn) { btn.disabled = false; btn.textContent = 'Cancel export'; }
+}
+{
+  const cancelBtn = document.getElementById('export-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
+    if (typeof cancelActiveExport === 'function') {
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      cancelActiveExport();
+    }
+  });
 }
 
 // ===== The rest of the original mockup logic follows =====
@@ -2904,6 +3137,9 @@ const SETTINGS_PANELS = {
     const sens = Number.isFinite(Number(settings.orbitSensitivity))
       ? Math.max(0.2, Math.min(2.0, Number(settings.orbitSensitivity)))
       : ORBIT_SENS_DEFAULT;
+    const zoom = Number.isFinite(Number(settings.orbitZoom))
+      ? Math.max(0.25, Math.min(3.0, Number(settings.orbitZoom)))
+      : ORBIT_ZOOM_DEFAULT;
     const opt = (v, name, desc) => `
       <label class="opt"><input type="radio" name="orbitScheme" value="${v}"
         ${sch === v ? 'checked' : ''}> <b>${name}</b>
@@ -2928,6 +3164,18 @@ const SETTINGS_PANELS = {
         <input type="range" id="set-orbitSensitivity" min="0.2" max="2.0"
           step="0.05" value="${sens}" style="flex:1;">
         <span style="color:#666;">Fast</span>
+      </div>
+    </div>
+    <div class="setting">
+      <label>Mouse-wheel zoom amount</label>
+      <div style="color:#666; margin-bottom:8px;">
+        How far each wheel notch zooms the view in or out.
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="color:#666;">Small</span>
+        <input type="range" id="set-orbitZoom" min="0.25" max="3.0"
+          step="0.05" value="${zoom}" style="flex:1;">
+        <span style="color:#666;">Large</span>
       </div>
     </div>
   `;
@@ -2966,6 +3214,17 @@ const SETTINGS_PANELS = {
     </div>
   `,
   colors: () => `
+    <div class="setting">
+      <label>Panel theme</label>
+      <div style="color:#666; margin-bottom:8px;">
+        Light or dark colours for the Customizer (right) and Console (bottom)
+        panes. The viewport keeps its own background colour, set below.
+      </div>
+      <label class="opt"><input type="radio" name="paneTheme" value="light"
+        ${settings.paneTheme !== 'dark' ? 'checked' : ''}> Light</label>
+      <label class="opt"><input type="radio" name="paneTheme" value="dark"
+        ${settings.paneTheme === 'dark' ? 'checked' : ''}> Dark</label>
+    </div>
     <div class="setting">
       <label>Generated item color</label>
       <div class="swatch-name">${colorLabel(ITEM_COLORS, settings.itemColor)}</div>
@@ -3010,6 +3269,10 @@ function renderSettingsPanel(cat) {
   if (sens) sens.addEventListener('input', () => {
     setSetting('orbitSensitivity', Number(sens.value));
   });
+  const zoom = settingsPanel.querySelector('#set-orbitZoom');
+  if (zoom) zoom.addEventListener('input', () => {
+    setSetting('orbitZoom', Number(zoom.value));
+  });
   for (const dim of ['gridX', 'gridY']) {
     const inp = settingsPanel.querySelector('#set-' + dim);
     if (!inp) continue;
@@ -3035,6 +3298,9 @@ function renderSettingsPanel(cat) {
     setSetting('paramTextPt', DEFAULT_PARAM_PT);
     renderSettingsPanel('text');
   });
+  settingsPanel.querySelectorAll('input[type=radio][name=paneTheme]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('paneTheme', r.value); });
+  });
   settingsPanel.querySelectorAll('.swatch').forEach(sw => {
     sw.addEventListener('click', () => {
       const key = sw.dataset.group === 'bg' ? 'backgroundColor' : 'itemColor';
@@ -3046,6 +3312,7 @@ function renderSettingsPanel(cat) {
   if (resetColors) resetColors.addEventListener('click', () => {
     setSetting('itemColor', DEFAULT_ITEM_COLOR);
     setSetting('backgroundColor', DEFAULT_BG_COLOR);
+    setSetting('paneTheme', 'light');
     renderSettingsPanel('colors');
   });
 }
