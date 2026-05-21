@@ -457,14 +457,35 @@ const ORBIT_BASE_ROTATE   = { turntable: 1.0, tumble: 4.0, guided: 1.0 };
 const ORBIT_SCHEME_DEFAULT = 'tumble';
 const ORBIT_SENS_DEFAULT   = 0.6;       // 0.2 (slow) … 2.0 (fast)
 
+// Mouse-wheel zoom amount. turntable/tumble drive `zoomSpeed` (a linear
+// multiplier; three's defaults are 1.0 and 1.2). guided (ArcballControls)
+// has no zoomSpeed — its wheel zoom is governed by `scaleFactor`, the base
+// of a power function (1.1 ≈ 10 % per notch). For guided we therefore
+// scale the *step above 1*, so the slider stays intuitive ("higher = more
+// zoom per notch") across all three schemes.
+const ORBIT_BASE_ZOOM     = { turntable: 1.0, tumble: 1.2, guided: 1.0 };
+const ARCBALL_BASE_STEP   = 0.1;        // guided scaleFactor = 1 + step·mult
+const ORBIT_ZOOM_DEFAULT  = 1.0;        // 0.25 (slow) … 3.0 (fast)
+
 // Mirror the persisted settings so the early controls build (which runs
 // before `settings` is initialised) never has to touch it.
 let orbitScheme = ORBIT_SCHEME_DEFAULT;
 let orbitSens   = ORBIT_SENS_DEFAULT;
+let orbitZoom   = ORBIT_ZOOM_DEFAULT;
 let controls    = null;
 
 function applyOrbitSensitivity() {
   if (controls) controls.rotateSpeed = ORBIT_BASE_ROTATE[orbitScheme] * orbitSens;
+}
+
+// Apply the wheel-zoom amount to whichever property the active scheme uses.
+function applyOrbitZoom() {
+  if (!controls) return;
+  if (orbitScheme === 'guided') {
+    controls.scaleFactor = 1 + ARCBALL_BASE_STEP * orbitZoom;
+  } else {
+    controls.zoomSpeed = ORBIT_BASE_ZOOM[orbitScheme] * orbitZoom;
+  }
 }
 
 // (Re)create the controls for the active scheme, preserving the current
@@ -478,7 +499,7 @@ function buildOrbitControls() {
     controls.staticMoving = false;
     controls.dynamicDampingFactor = 0.15;
     controls.panSpeed = 0.6;
-    controls.zoomSpeed = 1.2;
+    // zoomSpeed is set by applyOrbitZoom() below (honours the user setting).
     controls.mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN
     };
@@ -498,6 +519,7 @@ function buildOrbitControls() {
   }
   if (savedTarget) controls.target.copy(savedTarget);
   applyOrbitSensitivity();
+  applyOrbitZoom();
   controls.update();
 }
 
@@ -788,6 +810,7 @@ const SETTINGS_DEFAULTS = {
   backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
   orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
   orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
+  orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.25 … 3.0
 };
 let settings = loadSettings();
 
@@ -796,10 +819,12 @@ let settings = loadSettings();
 function syncOrbitFromSettings() {
   const v = Number(settings.orbitSensitivity);
   orbitSens = Number.isFinite(v) ? Math.max(0.2, Math.min(2.0, v)) : ORBIT_SENS_DEFAULT;
+  const z = Number(settings.orbitZoom);
+  orbitZoom = Number.isFinite(z) ? Math.max(0.25, Math.min(3.0, z)) : ORBIT_ZOOM_DEFAULT;
   const want = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
                                                        : ORBIT_SCHEME_DEFAULT;
   if (want !== orbitScheme) { orbitScheme = want; buildOrbitControls(); }
-  else applyOrbitSensitivity();
+  else { applyOrbitSensitivity(); applyOrbitZoom(); }
 }
 syncOrbitFromSettings();
 applyAppearance();   // honour persisted text sizes + viewport colours on load
@@ -857,7 +882,7 @@ function onSettingsChanged(key) {
   if (key === 'sectionHeadingPt' || key === 'paramTextPt') applyTextSizes();
   if (key === 'backgroundColor') applyBackgroundColor();
   if (key === 'itemColor') applyItemColor();
-  if (key === 'orbitScheme' || key === 'orbitSensitivity') syncOrbitFromSettings();
+  if (key === 'orbitScheme' || key === 'orbitSensitivity' || key === 'orbitZoom') syncOrbitFromSettings();
 }
 
 // ----- Appearance application (text sizes + viewport colours) -----
@@ -2904,6 +2929,9 @@ const SETTINGS_PANELS = {
     const sens = Number.isFinite(Number(settings.orbitSensitivity))
       ? Math.max(0.2, Math.min(2.0, Number(settings.orbitSensitivity)))
       : ORBIT_SENS_DEFAULT;
+    const zoom = Number.isFinite(Number(settings.orbitZoom))
+      ? Math.max(0.25, Math.min(3.0, Number(settings.orbitZoom)))
+      : ORBIT_ZOOM_DEFAULT;
     const opt = (v, name, desc) => `
       <label class="opt"><input type="radio" name="orbitScheme" value="${v}"
         ${sch === v ? 'checked' : ''}> <b>${name}</b>
@@ -2928,6 +2956,18 @@ const SETTINGS_PANELS = {
         <input type="range" id="set-orbitSensitivity" min="0.2" max="2.0"
           step="0.05" value="${sens}" style="flex:1;">
         <span style="color:#666;">Fast</span>
+      </div>
+    </div>
+    <div class="setting">
+      <label>Mouse-wheel zoom amount</label>
+      <div style="color:#666; margin-bottom:8px;">
+        How far each wheel notch zooms the view in or out.
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="color:#666;">Small</span>
+        <input type="range" id="set-orbitZoom" min="0.25" max="3.0"
+          step="0.05" value="${zoom}" style="flex:1;">
+        <span style="color:#666;">Large</span>
       </div>
     </div>
   `;
@@ -3009,6 +3049,10 @@ function renderSettingsPanel(cat) {
   const sens = settingsPanel.querySelector('#set-orbitSensitivity');
   if (sens) sens.addEventListener('input', () => {
     setSetting('orbitSensitivity', Number(sens.value));
+  });
+  const zoom = settingsPanel.querySelector('#set-orbitZoom');
+  if (zoom) zoom.addEventListener('input', () => {
+    setSetting('orbitZoom', Number(zoom.value));
   });
   for (const dim of ['gridX', 'gridY']) {
     const inp = settingsPanel.querySelector('#set-' + dim);
