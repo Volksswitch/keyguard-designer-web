@@ -1630,6 +1630,11 @@ async function doRender() {
       baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
     baseArgs.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+    // Manifold renders the near-coincident cut-floor sliver as a membrane (TC57);
+    // keyguard.scad's extend_through_cuts pushes every cell/opening cleanly
+    // through to avoid it. Off by default there (native CGAL doesn't need it and
+    // it's 2-3x slower), so opt in here — the render path is always Manifold.
+    baseArgs.push('-D', 'extend_through_cuts="yes"');
     // include_screenshot is honoured by the web app's Three.js plane overlay,
     // not by keyguard.scad's own SVG import — the .scad version renders a flat
     // slab inside the screen recess which fills every cell with a "floor".
@@ -1989,8 +1994,53 @@ async function captureViewportPNG() {
 // export, not a parallel Playwright-internal screenshot mechanism.
 window.__captureViewportPNG = captureViewportPNG;
 
-// Exports the current viewport as a downloadable PNG. Matches the STL/SVG
-// download pattern (keyguard.png in the Downloads folder).
+// Save As target remembered for the length of the session (a FileSystemHandle
+// whose containing folder the next Save As dialog reopens in). Unset at start
+// so the first save defaults to the open project folder; each successful save
+// updates it. Shared by every export (STL/SVG/PNG) and the console log so they
+// follow the user from folder to folder.
+let lastSaveLocation = null;
+
+// Shared "Save As…" used by all exports and the console log. Shows the native
+// Save As dialog (File System Access API), defaulting to the last folder used
+// this session, or the project folder on the first save. Choosing a file in
+// the dialog grants write to that file, so there is no separate permission
+// prompt. Where showSaveFilePicker is unavailable, falls back to a plain
+// browser download (the browser chooses the destination). Returns the saved
+// file's name, or null if the user cancelled.
+async function saveAs(data, { suggestedName, description, mime, exts }) {
+  if (window.showSaveFilePicker) {
+    const opts = {
+      suggestedName,
+      types: [{ description, accept: { [mime]: exts } }],
+    };
+    const startIn = lastSaveLocation || (project && project.dirHandle);
+    if (startIn) opts.startIn = startIn;
+    let handle;
+    try {
+      handle = await window.showSaveFilePicker(opts);
+    } catch (e) {
+      if (e && e.name === 'AbortError') return null;   // user cancelled
+      throw e;
+    }
+    const w = await handle.createWritable();
+    await w.write(data);
+    await w.close();
+    lastSaveLocation = handle;   // reopen this folder next time this session
+    return handle.name;
+  }
+  const blob = (data instanceof Blob) ? data : new Blob([data], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = suggestedName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return suggestedName;
+}
+
+// Exports the current viewport as a downloadable PNG via the shared Save As
+// dialog (defaults to the session/project folder).
 async function exportPNG() {
   if (!project) { alert('Open a project first.'); return; }
   const blob = await captureViewportPNG();
@@ -1999,13 +2049,15 @@ async function exportPNG() {
     setStatus('PNG export failed', 'error');
     return;
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = exportBaseName() + '.png';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-  logLine(`Exported PNG (${blob.size.toLocaleString()} bytes)`);
+  try {
+    const saved = await saveAs(blob, {
+      suggestedName: exportBaseName() + '.png',
+      description: 'PNG image', mime: 'image/png', exts: ['.png'],
+    });
+    if (saved) logLine(`Saved PNG to "${saved}" (${blob.size.toLocaleString()} bytes)`);
+  } catch (e) {
+    logLine('PNG export failed: ' + e.message);
+  }
 }
 
 
@@ -2034,6 +2086,10 @@ function buildExportArgs(fmt, backend) {
     args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
   }
   args.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+  // Manifold needs extend_through_cuts to avoid the membrane sliver (TC57); the
+  // CGAL precision escape hatch does not and is faster without it, so the .scad
+  // defaults it off and we opt in only for Manifold.
+  if (backend === 'Manifold') args.push('-D', 'extend_through_cuts="yes"');
   // Exports should never bake in the screenshot overlay (it's a viewport-only
   // alignment aid). Force the .scad's SVG import off regardless of preset/form.
   args.push('-D', 'include_screenshot="no"');
@@ -2186,27 +2242,14 @@ async function exportCurrent(fmt) {
   try {
     const bytes = await renderExportBytes(fmt, backend);
     const fname = exportBaseName() + '.' + spec.ext;
-    // Prefer writing STL/SVG straight into the project folder so the
-    // deliverable lands next to the .scad it came from. Falls back to a
-    // browser download if there's no writable folder handle (fixture mode
-    // or denied permission). PNG never reaches here — exportPNG() always
-    // downloads it, deliberately, so it can't clobber the project's
-    // screenshot .png.
-    if (project.dirHandle && await ensureWritePermission()) {
-      const fh = await project.dirHandle.getFileHandle(fname, { create: true });
-      const w = await fh.createWritable();
-      await w.write(bytes);
-      await w.close();
-      logLine(`Saved ${fmt} to project folder as "${fname}"`);
-    } else {
-      const url = URL.createObjectURL(new Blob([bytes], { type: spec.mime }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fname;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-      logLine(`Downloaded "${fname}" (no writable project folder)`);
-    }
+    // Save As dialog, defaulting to the session/project folder. Choosing a file
+    // grants write to it, so no separate folder-permission prompt is needed.
+    const saved = await saveAs(bytes, {
+      suggestedName: fname,
+      description: `${fmt} file`, mime: spec.mime, exts: ['.' + spec.ext],
+    });
+    if (saved) logLine(`Saved ${fmt} as "${saved}"`);
+    else logLine(`${fmt} export cancelled.`);
     setStatus(prevStatusText, prevStatusKind);
   } catch (e) {
     if (e && e.cancelled) {
@@ -2869,29 +2912,11 @@ document.getElementById('copy-btn').addEventListener('click', () => {
 document.getElementById('save-btn').addEventListener('click', async () => {
   const text = consoleEl.textContent;
   try {
-    if (window.showSaveFilePicker) {
-      // True Save As dialog with an empty filename box; .txt extension.
-      // Default the dialog to the open project folder when there is one.
-      const opts = {
-        suggestedName: '',
-        types: [{ description: 'Text file', accept: { 'text/plain': ['.txt'] } }],
-      };
-      if (project && project.dirHandle) opts.startIn = project.dirHandle;
-      const handle = await window.showSaveFilePicker(opts);
-      const w = await handle.createWritable();
-      await w.write(text);
-      await w.close();
-      logLine(`Saved console to "${handle.name}"`);
-    } else {
-      // Fallback for browsers without the File System Access API: a plain
-      // blob download (the browser, not us, decides whether to prompt).
-      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'console.txt';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-    }
+    const saved = await saveAs(text, {
+      suggestedName: 'console.txt',
+      description: 'Text file', mime: 'text/plain', exts: ['.txt'],
+    });
+    if (saved) logLine(`Saved console to "${saved}"`);
   } catch (e) {
     if (e && e.name === 'AbortError') return;   // user cancelled the dialog
     logLine('Save console failed: ' + e.message);

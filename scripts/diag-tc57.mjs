@@ -36,6 +36,7 @@ const VIEWPORT_ARGS = [
   '--backend=Manifold',
   '-p', '/keyguard.json', '-P', 'Test Case 57',
   '-D', 'fudge=0.05', '-D', 'ff=0.05',
+  '-D', 'extend_through_cuts="yes"',
   '-D', 'include_screenshot="no"',
   '-D', 'echo_dims="yes"',
   '-D', 'show_oa_highlights="no"',
@@ -46,6 +47,7 @@ const EXPORT_ARGS = [
   '--backend=Manifold',
   '-p', '/keyguard.json', '-P', 'Test Case 57',
   '-D', 'fudge=0.05', '-D', 'ff=0.05',
+  '-D', 'extend_through_cuts="yes"',
   '-D', 'include_screenshot="no"',
 ];
 
