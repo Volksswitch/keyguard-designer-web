@@ -30,6 +30,10 @@ RTP = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].star
 KEEP = "--keep-stls" in sys.argv
 FILT = ""
 if "--filter" in sys.argv: FILT = sys.argv[sys.argv.index("--filter")+1]
+PRESETS = None
+if "--presets-file" in sys.argv:
+    pf = sys.argv[sys.argv.index("--presets-file")+1]
+    PRESETS = set(l.strip() for l in open(pf, encoding="utf-8") if l.strip())
 TIMEOUT = int(os.environ.get("KEYGUARD_RTP_TIMEOUT", "1800"))
 
 if not RTP or not os.path.isdir(RTP):
@@ -70,8 +74,10 @@ OPENSCAD = find_openscad()
 
 designs = []
 for r in csv.DictReader(open(MAP, encoding="utf-8")):
-    if r.get("preset") and (not FILT or FILT in r["preset"]):
-        designs.append((r["preset"], r["resolved_OA"]))
+    if not r.get("preset"): continue
+    if FILT and FILT not in r["preset"]: continue
+    if PRESETS is not None and r["preset"] not in PRESETS: continue
+    designs.append((r["preset"], r["resolved_OA"]))
 
 if KEEP: os.makedirs(KEEP_DIR, exist_ok=True)
 os.makedirs(GDIR, exist_ok=True)
