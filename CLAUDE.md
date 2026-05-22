@@ -211,3 +211,22 @@ keyguard-designer-web/
   follow it exactly; it is the source of truth for the release process.
 - Run `scripts/test.sh` (all layers) after any change. Scope visual tests to affected cases
   during iteration; run the full suite before declaring a feature complete.
+
+## Trigger phrases — RTP CGAL golden regen (2-machine split)
+
+When Ken says **"run chunk N"** (or "kick off chunk N", "start chunk N"), run the wrapper in
+the **background** and report when it finishes — it is a multi-hour CGAL render:
+
+```
+powershell -File scripts\rtp-chunk.ps1 N
+```
+
+`N` is 1 (laptop) or 2 (desktop); the wrapper hardcodes the 2-machine split, derives the
+RTP/designer paths from `$env:OneDrive`, and writes
+`Web-App-Test\golden-stl\cgal-chunks\chunk-N-of-2.json` (resumable — rerunning continues).
+Both machines share one OneDrive; the harness renders each design in a private temp dir and
+writes distinct per-chunk files, so the two chunks never collide.
+
+When Ken says **"merge the RTP golden"**, run `powershell -File scripts\rtp-chunk.ps1 merge`
+→ combines the chunk files into `golden-stl\golden-rtp-cgal-stats.json` (the membrane-detection
+reference). Do this only after both chunks have finished.
