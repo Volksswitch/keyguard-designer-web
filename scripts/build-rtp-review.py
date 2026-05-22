@@ -80,10 +80,16 @@ with open(cmp_path, "w", newline="", encoding="utf-8") as f:
         gd = r.get("goldenDelta"); am = r.get("admesh") or {}
         if not gd:
             w.writerow([r["preset"], "(none)", "", "", r.get("stats",{}).get("parts"), am.get("disconnected"), "NO GOLDEN"]); continue
+        # The website goldens were generated from a keyguard.scad that is 6+
+        # months / several releases old, so moderate vol/area deltas are
+        # EXPECTED version drift, not defects. Only flag signals that survive
+        # that drift: a part-count change (topology), a non-manifold mesh, or a
+        # gross (>50%) size divergence that points at a wrong assembly rather
+        # than incremental .scad evolution.
         wp, gp = (gd.get("parts","/").split("/") + ["",""])[:2]
         flag = []
-        if abs(gd.get("volPct") or 0) > 5: flag.append("vol")
-        if abs(gd.get("areaPct") or 0) > 5: flag.append("area")
+        if abs(gd.get("volPct") or 0) > 50: flag.append("vol>50%")
+        if abs(gd.get("areaPct") or 0) > 50: flag.append("area>50%")
         if wp != gp: flag.append("parts")
         if am.get("disconnected"): flag.append("nonmanifold")
         if flag: flagged += 1
