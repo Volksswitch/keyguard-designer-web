@@ -87,12 +87,20 @@ saved_oa = OA_LIVE + ".rtpsave"
 if os.path.isfile(OA_LIVE): shutil.copy2(OA_LIVE, saved_oa)
 open(PROG, "w").close()
 
+# Resume: keep already-computed refs so a re-sample/restart doesn't redo them.
 results = {}
-total = len(designs); ok = fail = nonman = 0
+if os.path.isfile(STATS_OUT) and "--force" not in sys.argv:
+    try: results = json.load(open(STATS_OUT, encoding="utf-8")).get("configs", {})
+    except Exception: results = {}
+total = len(designs); ok = fail = nonman = 0; skipped = 0
 t0 = time.time()
 print(f"OpenSCAD: {OPENSCAD}\nDesigns: {total}  timeout: {TIMEOUT}s  keep-stls: {KEEP}")
 try:
     for i, (preset, oa_rel) in enumerate(designs, 1):
+        if preset in results and "error" not in results[preset] and "volume_mm3" in results[preset]:
+            skipped += 1
+            print(f"[{i:3}/{total}] {preset:55} SKIP (already done)")
+            continue
         oa_src = os.path.join(CASES, oa_rel.replace("\\", os.sep))
         if not os.path.isfile(oa_src):
             line = f"[{i:3}/{total}] {preset:55} OA MISSING: {oa_rel}"
@@ -138,5 +146,5 @@ finally:
     if os.path.isfile(saved_oa): shutil.move(saved_oa, OA_LIVE)
 
 el = time.time() - t0
-print(f"\nDONE: {ok} ok ({nonman} non-manifold), {fail} failed, of {total} in {el/60:.1f} min")
+print(f"\nDONE: {ok} ok ({nonman} non-manifold), {fail} failed, {skipped} skipped, of {total} in {el/60:.1f} min")
 print("->", STATS_OUT)
