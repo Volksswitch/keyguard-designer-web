@@ -242,6 +242,9 @@ When Ken says **"run the membrane comparison"**, run
 or rely on its OneDrive fallback). It diffs the app's Manifold export stats
 (`output\ready-to-print\results\*.json`) against the CGAL golden and flags membrane suspects
 (surface area well above the golden, and/or a part-count split) plus designs that crashed the
-export. Writes `output\ready-to-print\membrane-comparison.csv`. NOTE: the results files come
-from the `ready-to-print.spec.mjs` Playwright run — if they're stale, re-run that spec first so
-the comparison reflects the current app/.scad.
+export. Writes `output\ready-to-print\membrane-comparison.csv`. Then run
+`python scripts\generate-membrane-review.py` for the human worklist
+(`output\ready-to-print\MEMBRANE-REVIEW.md`): export crashes + membrane suspects tiered by
+severity with STL paths, a pattern breakdown, and a few passed designs to spot-check.
+NOTE: the results files come from the `ready-to-print.spec.mjs` Playwright run — if they're
+stale, re-run that spec first so the comparison reflects the current app/.scad.
