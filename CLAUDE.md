@@ -212,6 +212,22 @@ keyguard-designer-web/
 - Run `scripts/test.sh` (all layers) after any change. Scope visual tests to affected cases
   during iteration; run the full suite before declaring a feature complete.
 
+## Working by trigger phrase (no manual shell commands)
+
+Ken does not run PowerShell/Bash/Python commands by hand. For ANY repeatable
+operation:
+1. Create or reuse a script under `scripts/`.
+2. Give it a trigger phrase of the form **"run &lt;name&gt;"** and document that
+   phrase (and exactly what it runs) HERE in CLAUDE.md, in the same change.
+3. When Ken says the phrase, Claude runs the script for him — in the background if
+   it is long-running — and reports the result. Never hand Ken raw commands to type.
+
+Scripts must run unchanged on either machine: derive paths from `$env:OneDrive`
+(never hardcode `C:\Users\<name>`), and let Claude pick the interpreter so the
+phrase is all Ken needs. Because CLAUDE.md is the only thing that syncs and is
+auto-loaded on both machines, a new phrase only works after OneDrive syncs this
+file AND the other machine's Claude session is restarted.
+
 ## Trigger phrases — RTP CGAL golden regen (2-machine split)
 
 DISAMBIGUATION: "chunk N" alone is ambiguous — the .scad project's
