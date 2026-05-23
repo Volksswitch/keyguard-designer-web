@@ -236,3 +236,12 @@ writes distinct per-chunk files, so the two chunks never collide.
 When Ken says **"merge the RTP golden"**, run `powershell -File scripts\rtp-chunk.ps1 merge`
 → combines the chunk files into `golden-stl\golden-rtp-cgal-stats.json` (the membrane-detection
 reference). Do this only after both chunks have finished.
+
+When Ken says **"run the membrane comparison"**, run
+`python scripts\compare-rtp-membranes.py` (set `KEYGUARD_RTP_ROOT` to the Web-App-Test folder,
+or rely on its OneDrive fallback). It diffs the app's Manifold export stats
+(`output\ready-to-print\results\*.json`) against the CGAL golden and flags membrane suspects
+(surface area well above the golden, and/or a part-count split) plus designs that crashed the
+export. Writes `output\ready-to-print\membrane-comparison.csv`. NOTE: the results files come
+from the `ready-to-print.spec.mjs` Playwright run — if they're stale, re-run that spec first so
+the comparison reflects the current app/.scad.
