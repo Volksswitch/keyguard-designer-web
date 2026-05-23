@@ -214,7 +214,13 @@ keyguard-designer-web/
 
 ## Trigger phrases — RTP CGAL golden regen (2-machine split)
 
-When Ken says **"run chunk N"** (or "kick off chunk N", "start chunk N"), run the wrapper in
+DISAMBIGUATION: "chunk N" alone is ambiguous — the .scad project's
+`geometry-chunk.sh` (test-case `--geometry` validation, 9 chunks) also takes a
+chunk number. The RTP golden job here has ONLY 2 chunks. If Ken says a bare
+"chunk N" with N>2, he means the geometry validation, not this. For THIS job he
+should say **"run RTP chunk N"**.
+
+When Ken says **"run RTP chunk N"** (or "ready-to-print chunk N"), run the wrapper in
 the **background** and report when it finishes — it is a multi-hour CGAL render:
 
 ```
