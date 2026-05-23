@@ -2,6 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Defense-in-depth CSP. Only directives that are safe to set via <meta> and
+     that don't break the app's inline module script / WASM are included here:
+     object-src 'none' blocks plugin-based injection; base-uri 'self' blocks
+     <base>-tag hijacking of relative URLs. A stricter script-src/connect-src
+     policy (with hashed inline scripts) is recommended at the HTTP-header level
+     by whoever hosts the app — see SECURITY.md. -->
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'">
 <title>Keyguard Designer</title>
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#7dd9c8">
@@ -1344,9 +1351,19 @@ async function openProject() {
   await rescanScreenshot();
 
   // UI updates
-  document.getElementById('project-folder-label').innerHTML =
-    `📁 <b>${dirHandle.name}</b> — ${scadName}<br>` +
-    `<span style="color:#888;">click <b>Change Project…</b> above to switch folders</span>`;
+  {
+    // textContent (via append) so a folder/file name can't inject markup.
+    const lbl = document.getElementById('project-folder-label');
+    lbl.textContent = '';
+    const nameB = document.createElement('b'); nameB.textContent = dirHandle.name;
+    lbl.append('📁 ', nameB, ' — ' + scadName);
+    lbl.appendChild(document.createElement('br'));
+    const hint = document.createElement('span');
+    hint.style.color = '#888';
+    const cpB = document.createElement('b'); cpB.textContent = 'Change Project…';
+    hint.append('click ', cpB, ' above to switch folders');
+    lbl.appendChild(hint);
+  }
   const opBtn = document.getElementById('open-project-btn');
   if (opBtn) {
     opBtn.textContent = 'Change Project…';
@@ -1455,8 +1472,17 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
     dims: null, warnedNoScreenshot: false, isFixture: true
   };
 
-  document.getElementById('project-folder-label').innerHTML =
-    `📁 <b>${fixturePath}</b> — ${scadName} <span style="color:#888;">(fixture mode)</span>`;
+  {
+    // textContent so the URL-supplied fixturePath can't inject markup.
+    const lbl = document.getElementById('project-folder-label');
+    lbl.textContent = '';
+    const pB = document.createElement('b'); pB.textContent = fixturePath;
+    lbl.append('📁 ', pB, ' — ' + scadName + ' ');
+    const fm = document.createElement('span');
+    fm.style.color = '#888';
+    fm.textContent = '(fixture mode)';
+    lbl.appendChild(fm);
+  }
   const sel = document.getElementById('preset-select');
   sel.innerHTML = '';
   for (const n of presetNames) {
@@ -2414,9 +2440,19 @@ function buildCustomizerForm(sections) {
     const div = document.createElement('div');
     div.className = 'section';
     div.dataset.section = sec.name;
-    div.innerHTML = `<div class="section-header"><span class="caret">▶</span>${sec.name}</div>
-                     <div class="section-body"></div>`;
-    const body = div.querySelector('.section-body');
+    // Build with textContent (not innerHTML) so a section name from an untrusted
+    // .scad's /* [Section] */ comment can't inject markup/script.
+    const header = document.createElement('div');
+    header.className = 'section-header';
+    const caret = document.createElement('span');
+    caret.className = 'caret';
+    caret.textContent = '▶';
+    header.appendChild(caret);
+    header.appendChild(document.createTextNode(sec.name));
+    const body = document.createElement('div');
+    body.className = 'section-body';
+    div.appendChild(header);
+    div.appendChild(body);
     for (const p of sec.params) {
       body.appendChild(buildParamControl(p));
     }
@@ -2938,7 +2974,21 @@ document.getElementById('open-project-btn').addEventListener('click', () => {
 const __fixtureParams = new URLSearchParams(location.search);
 const __fixturePath = __fixtureParams.get('fixture');
 const __fixtureScad = __fixtureParams.get('scad');
-if (__fixturePath && __fixtureScad) {
+// SECURITY: the fixture loader fetches the .scad/.json/OA from URL params and
+// renders them. Only allow SAME-ORIGIN (relative) paths, so a crafted link
+// can't make the app pull and run an attacker-hosted project from a foreign
+// server. Playwright fixtures are served same-origin, so this doesn't affect
+// them. See SECURITY.md.
+const __sameOrigin = (p) => {
+  if (!p) return true;            // an absent oa override is fine
+  try { return new URL(p, location.href).origin === location.origin; }
+  catch { return false; }
+};
+if (__fixturePath && __fixtureScad &&
+    (!__sameOrigin(__fixturePath) || !__sameOrigin(__fixtureParams.get('oa')))) {
+  logLine('Fixture load blocked: cross-origin fixture/oa is not allowed.');
+  setStatus('Fixture load blocked (cross-origin not allowed)', 'error');
+} else if (__fixturePath && __fixtureScad) {
   const __parseTriple = (s) => {
     if (!s) return null;
     const parts = s.split(',').map(p => parseFloat(p));
@@ -2976,7 +3026,13 @@ if (__fixturePath && __fixtureScad) {
     if (!stored) return;
     const label = document.getElementById('project-folder-label');
     const btn = document.getElementById('open-project-btn');
-    if (label) label.innerHTML = `last folder: <b>${stored.name}</b> — click <b>Open Project…</b> to reopen`;
+    if (label) {
+      label.textContent = 'last folder: ';
+      const nB = document.createElement('b'); nB.textContent = stored.name;
+      label.append(nB, ' — click ');
+      const oB = document.createElement('b'); oB.textContent = 'Open Project…';
+      label.append(oB, ' to reopen');
+    }
     if (btn) btn.title = `Reopen "${stored.name}" or pick a different folder`;
   })();
 }
