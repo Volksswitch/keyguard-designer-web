@@ -6,7 +6,7 @@
 #
 # Paths are derived from $env:OneDrive so the same script works on both machines
 # no matter the Windows username. Each chunk writes its own
-# Web-App-Test\golden-stl\cgal-chunks\chunk-k-of-2.json (resumable: just rerun).
+# <designer>\tests\rtp\golden-stl\cgal-chunks\chunk-k-of-2.json (resumable: just rerun).
 # When both are done, merge with:  powershell -File scripts\rtp-chunk.ps1 merge
 param(
   [Parameter(Mandatory = $true)][string]$Chunk,
@@ -14,8 +14,8 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$rtp      = Join-Path $env:OneDrive "Desktop\web app\Web-App-Test"
 $designer = Join-Path $env:OneDrive "4 T-Z\Volksswitch\Keyguard\My SCAD files\keyguard designer"
+$rtp      = Join-Path $designer "tests\rtp"
 if (-not (Test-Path $rtp))      { throw "RTP folder not found: $rtp" }
 if (-not (Test-Path $designer)) { throw "Designer project not found: $designer" }
 $env:KEYGUARD_RTP_ROOT      = $rtp

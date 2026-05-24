@@ -244,18 +244,18 @@ powershell -File scripts\rtp-chunk.ps1 N
 ```
 
 `N` is 1 (laptop) or 2 (desktop); the wrapper hardcodes the 2-machine split, derives the
-RTP/designer paths from `$env:OneDrive`, and writes
-`Web-App-Test\golden-stl\cgal-chunks\chunk-N-of-2.json` (resumable — rerunning continues).
+designer path from `$env:OneDrive` (RTP root = `<designer>\tests\rtp`), and writes
+`<designer>\tests\rtp\golden-stl\cgal-chunks\chunk-N-of-2.json` (resumable — rerunning continues).
 Both machines share one OneDrive; the harness renders each design in a private temp dir and
 writes distinct per-chunk files, so the two chunks never collide.
 
 When Ken says **"merge the RTP golden"**, run `powershell -File scripts\rtp-chunk.ps1 merge`
-→ combines the chunk files into `golden-stl\golden-rtp-cgal-stats.json` (the membrane-detection
+→ combines the chunk files into `tests\rtp\golden-stl\golden-rtp-cgal-stats.json` (the membrane-detection
 reference). Do this only after both chunks have finished.
 
 When Ken says **"run the membrane comparison"**, run
-`python scripts\compare-rtp-membranes.py` (set `KEYGUARD_RTP_ROOT` to the Web-App-Test folder,
-or rely on its OneDrive fallback). It diffs the app's Manifold export stats
+`python scripts\compare-rtp-membranes.py` (defaults to `<designer>\tests\rtp`; override with
+`KEYGUARD_RTP_ROOT`). It diffs the app's Manifold export stats
 (`output\ready-to-print\results\*.json`) against the CGAL golden and flags membrane suspects
 (surface area well above the golden, and/or a part-count split) plus designs that crashed the
 export. Writes `output\ready-to-print\membrane-comparison.csv`. Then run

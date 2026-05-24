@@ -28,9 +28,8 @@ OUT_CSV = os.path.join(REPO, "output", "ready-to-print", "membrane-comparison.cs
 
 RTP = os.environ.get("KEYGUARD_RTP_ROOT", "")
 if not RTP:
-    # fall back to the documented OneDrive location
-    cand = os.path.join(os.path.expanduser("~"), "OneDrive", "Desktop", "web app", "Web-App-Test")
-    RTP = cand
+    # fall back to the .scad project's tests/rtp (sibling of this repo)
+    RTP = os.path.normpath(os.path.join(REPO, "..", "My SCAD files", "keyguard designer", "tests", "rtp"))
 GOLDEN = os.path.join(RTP, "golden-stl", "golden-rtp-cgal-stats.json")
 
 AREA_THRESH = 2.0
@@ -38,7 +37,7 @@ if "--area-threshold" in sys.argv:
     AREA_THRESH = float(sys.argv[sys.argv.index("--area-threshold") + 1])
 
 if not os.path.isfile(GOLDEN):
-    sys.exit(f"CGAL golden not found: {GOLDEN}\nSet KEYGUARD_RTP_ROOT to the Web-App-Test folder.")
+    sys.exit(f"CGAL golden not found: {GOLDEN}\nSet KEYGUARD_RTP_ROOT to the .scad project's tests/rtp folder.")
 if not os.path.isdir(RESULTS):
     sys.exit(f"App Manifold results not found: {RESULTS}\nRun tests/ready-to-print.spec.mjs first.")
 

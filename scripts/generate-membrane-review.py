@@ -14,8 +14,8 @@ from collections import Counter
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(REPO, "output", "ready-to-print", "results")
 OUT = os.path.join(REPO, "output", "ready-to-print", "MEMBRANE-REVIEW.md")
-RTP = os.environ.get("KEYGUARD_RTP_ROOT") or os.path.join(
-    os.path.expanduser("~"), "OneDrive", "Desktop", "web app", "Web-App-Test")
+RTP = os.environ.get("KEYGUARD_RTP_ROOT") or os.path.normpath(
+    os.path.join(REPO, "..", "My SCAD files", "keyguard designer", "tests", "rtp"))
 GOLDEN = os.path.join(RTP, "golden-stl", "golden-rtp-cgal-stats.json")
 
 AREA_THRESH = 2.0

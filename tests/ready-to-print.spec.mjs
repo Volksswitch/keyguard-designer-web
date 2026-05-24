@@ -13,8 +13,11 @@
 // plausibility are recorded for review, not asserted, while the golden corpus
 // is still being curated.
 //
-// Assets (the Web-App-Test folder: keyguard.scad/json + OA tree + golden-stl):
-//   KEYGUARD_RTP_ROOT  (default: ../../OneDrive/Desktop/web app/Web-App-Test)
+// Assets live in the .scad project's tests/rtp/ (RTP keyguard.json + OA tree +
+// golden-stl). keyguard.scad is NOT duplicated there — it is sourced from the
+// .scad project root so it always tracks the upstream model.
+//   KEYGUARD_RTP_ROOT       (default: <designer>/tests/rtp)
+//   KEYGUARD_DESIGNER_ROOT  (default: ../My SCAD files/keyguard designer)
 // Filter:  KEYGUARD_RTP_FILTER="iPad 7,8,9 - Fintie" (substring match on preset)
 
 import { test, expect } from '@playwright/test';
@@ -28,9 +31,13 @@ import { computeStlStats } from './lib/stl-stats.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
+const DESIGNER_ROOT = process.env.KEYGUARD_DESIGNER_ROOT
+  ? path.resolve(process.env.KEYGUARD_DESIGNER_ROOT)
+  : path.resolve(PROJECT_ROOT, '../My SCAD files/keyguard designer');
+
 const RTP_ROOT = process.env.KEYGUARD_RTP_ROOT
   ? path.resolve(process.env.KEYGUARD_RTP_ROOT)
-  : path.resolve(PROJECT_ROOT, '../../OneDrive/Desktop/web app/Web-App-Test');
+  : path.join(DESIGNER_ROOT, 'tests', 'rtp');
 
 const CASES_DIR = path.join(RTP_ROOT, 'Cases and App Specifics');
 const MAPPING_CSV = path.join(RTP_ROOT, 'preset-to-golden-mapping.csv');
@@ -72,8 +79,8 @@ function parseCsv(text) {
 function discover() {
   if (!fs.existsSync(MAPPING_CSV))
     return { error: `Mapping CSV not found: ${MAPPING_CSV}\nSet KEYGUARD_RTP_ROOT.`, designs: [] };
-  if (!fs.existsSync(path.join(RTP_ROOT, 'keyguard.scad')))
-    return { error: `keyguard.scad not found under ${RTP_ROOT}`, designs: [] };
+  if (!fs.existsSync(path.join(DESIGNER_ROOT, 'keyguard.scad')))
+    return { error: `keyguard.scad not found under ${DESIGNER_ROOT}`, designs: [] };
   const rows = parseCsv(fs.readFileSync(MAPPING_CSV, 'utf8'));
   let designs = rows.map(r => ({
     preset: r.preset,
@@ -109,10 +116,12 @@ if (error || designs.length === 0) {
     test(`${d.preset} [rtp]`, async ({ page }, testInfo) => {
       testInfo.setTimeout(360_000);   // heavy real keyguards; generous for parallel contention
 
-      // Route the app's fixture fetches to the Web-App-Test assets.
+      // Route the app's fixture fetches to the RTP assets (<designer>/tests/rtp).
       await page.route('**/scad-source/**', async route => {
         const rel = decodeURIComponent(new URL(route.request().url()).pathname.replace(/^.*\/scad-source\//, ''));
-        const abs = path.join(RTP_ROOT, rel);
+        // keyguard.scad is sourced from the .scad project root (shared, not
+        // duplicated into the RTP fixtures); keyguard.json + rest from RTP_ROOT.
+        const abs = path.join(rel === 'keyguard.scad' ? DESIGNER_ROOT : RTP_ROOT, rel);
         if (fs.existsSync(abs)) await route.fulfill({ status: 200, body: fs.readFileSync(abs),
           contentType: abs.endsWith('.json') ? 'application/json' : 'text/plain; charset=utf-8' });
         else await route.fulfill({ status: 404 });
