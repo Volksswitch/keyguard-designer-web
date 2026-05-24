@@ -857,6 +857,39 @@ function logRaw(text) {
   consoleEl.scrollTop = consoleEl.scrollHeight;
 }
 
+// Shared console-noise filter for OpenSCAD's raw stdout/stderr. Both the
+// viewport render (runOnce → isNoise) and the export render (renderExportBytes
+// → onLog) pipe every OpenSCAD line through this so the same cosmetic chatter is
+// hidden in both places. It covers: the wasm localization / viewall warnings,
+// the __KG_DIMS__ screenshot-sizing magic line, the pre-existing (benign) CGAL
+// applyHull convex_hull_3 assertion block (a hull() on coplanar sloped-cut
+// input that OpenSCAD recovers from — the STL still renders), and the per-render
+// cache / "Top level object" geometry-info dump. Genuine ERROR/WARNING/ECHO
+// lines do NOT match and stay visible. The viewport's isNoise() wraps this with
+// one extra closure-stateful case ("top level object is empty").
+function isNoiseLine(t) {
+  if (/Viewall and autocenter disabled/i.test(t)) return true;
+  if (/Could not initialize localization/i.test(t)) return true;
+  if (/__KG_DIMS__/.test(t)) return true;
+  if (/CGAL (error|ERROR): assertion violation/.test(t) ||
+      /in applyHull\(\)/.test(t) ||
+      /convex_hull_3\.h/.test(t) ||
+      /it != border\.end\(\)/.test(t) ||
+      /cgal\.org\/bug_report/.test(t) ||
+      /^\s*(Expression|Expr|Explanation|File|Line)\s*:/.test(t)
+     ) return true;
+  // Per-render render-info dump (Manifold + CGAL backends):
+  if (/^Geometries in cache:/.test(t)) return true;
+  if (/^Geometry cache size in bytes:/.test(t)) return true;
+  if (/^CGAL Polyhedrons in cache:/.test(t)) return true;
+  if (/^CGAL cache size in bytes:/.test(t)) return true;
+  if (/^Total rendering time:/.test(t)) return true;
+  if (/^\s*Top level object is a [23]D object/.test(t)) return true;
+  if (/^\s*Status:\s+NoError/.test(t)) return true;
+  if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple|Convex|Area):/.test(t)) return true;
+  return false;
+}
+
 function setStatus(msg, kind = '') {
   // 'ok' and 'error' toasts are intentionally suppressed — the rendered
   // viewport and the console already tell the user the render succeeded
@@ -876,9 +909,14 @@ function setStatus(msg, kind = '') {
 // ===== Settings (app-wide, persisted in localStorage) =====
 const SETTINGS_KEY = 'keyguard:settings';
 const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
-// Integer release number shown on the About tab. Bump by one on every
-// release, in lock-step with sw.js CACHE_NAME (see RELEASING.md).
-const APP_RELEASE = 2;
+// Integer app version, shown on the About tab and in the project-open console
+// banner. Convention (mirrors keyguard.scad's keyguard_designer_version): `dev`
+// always carries the NEXT version = last public release + 1, pre-incremented
+// here as the first step when starting a new development cycle — so a dev build
+// reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
+// deployment cache key: it is NOT pre-bumped on dev, only at release, to match
+// this number. See RELEASING.md.
+const APP_RELEASE = 4;
 // Default teal / cornfield are the long-standing viewport colours; the
 // Customizer text sizes mirror the CSS :root defaults.
 const DEFAULT_ITEM_COLOR = '#40E0D0';   // Turquoise — the default teal
@@ -1265,7 +1303,10 @@ async function openProject() {
   stopWatcher();
   // Re-frame the scene on the first render of the newly opened project.
   cameraFitOnce = false;
-  logLine(`Opening project folder "${dirHandle.name}"...`);
+  // Start each project-open with a clean console so the version banner (logged
+  // below, once keyguard.scad has been read) is the first thing in the log —
+  // a clinician can copy/paste both numbers straight into a support email.
+  consoleEl.textContent = '';
   setStatus('Loading project...', 'rendering');
 
   // Enumerate root-level files
@@ -1317,6 +1358,17 @@ async function openProject() {
   const dec = new TextDecoder();
   const scadText = dec.decode(files[scadName]);
   const jsonText = jsonName ? dec.decode(files[jsonName]) : null;
+
+  // Version banner — the first two lines a clinician sees on every project
+  // open, so they can copy/paste both numbers into a support email. The app
+  // release is the running build's APP_RELEASE constant (accurate on the public
+  // build); the designer version is read straight from the loaded keyguard.scad
+  // (its `keyguard_designer_version = NN;` declaration).
+  const scadVerMatch = scadText.match(/keyguard_designer_version\s*=\s*(\d+)/);
+  logLine(`Keyguard Designer web app — release ${APP_RELEASE}`);
+  logLine(`Designer file "${scadName}" — version ${scadVerMatch ? scadVerMatch[1] : 'unknown'}`);
+  logLine(`Opening project folder "${dirHandle.name}"...`);
+
   if (files['openings_and_additions.txt']) {
     oaText = dec.decode(files['openings_and_additions.txt']);
   } else {
@@ -1757,25 +1809,7 @@ async function doRender() {
     // than dumping a scary CGAL stack into the console on a normal render.
     let suppressedEmpty = false;
     function isNoise(t) {
-      if (/Viewall and autocenter disabled/i.test(t)) return true;
-      if (/Could not initialize localization/i.test(t)) return true;
-      if (/__KG_DIMS__/.test(t)) return true;
-      if (/CGAL (error|ERROR): assertion violation/.test(t) ||
-          /in applyHull\(\)/.test(t) ||
-          /convex_hull_3\.h/.test(t) ||
-          /it != border\.end\(\)/.test(t) ||
-          /cgal\.org\/bug_report/.test(t) ||
-          /^\s*(Expression|Expr|Explanation|File|Line)\s*:/.test(t)
-         ) return true;
-      // Per-render render-info dump (Manifold backend):
-      if (/^Geometries in cache:/.test(t)) return true;
-      if (/^Geometry cache size in bytes:/.test(t)) return true;
-      if (/^CGAL Polyhedrons in cache:/.test(t)) return true;
-      if (/^CGAL cache size in bytes:/.test(t)) return true;
-      if (/^Total rendering time:/.test(t)) return true;
-      if (/^\s*Top level object is a [23]D object/.test(t)) return true;
-      if (/^\s*Status:\s+NoError/.test(t)) return true;
-      if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple|Convex|Area):/.test(t)) return true;
+      if (isNoiseLine(t)) return true;
       if (/Current top level object is empty/i.test(t)) {
         suppressedEmpty = true;
         return true;
@@ -2035,35 +2069,58 @@ let lastSaveLocation = null;
 // prompt. Where showSaveFilePicker is unavailable, falls back to a plain
 // browser download (the browser chooses the destination). Returns the saved
 // file's name, or null if the user cancelled.
-async function saveAs(data, { suggestedName, description, mime, exts }) {
-  if (window.showSaveFilePicker) {
-    const opts = {
-      suggestedName,
-      types: [{ description, accept: { [mime]: exts } }],
-    };
-    const startIn = lastSaveLocation || (project && project.dirHandle);
-    if (startIn) opts.startIn = startIn;
-    let handle;
-    try {
-      handle = await window.showSaveFilePicker(opts);
-    } catch (e) {
-      if (e && e.name === 'AbortError') return null;   // user cancelled
-      throw e;
-    }
-    const w = await handle.createWritable();
-    await w.write(data);
-    await w.close();
-    lastSaveLocation = handle;   // reopen this folder next time this session
-    return handle.name;
+//
+// Split into pickSaveLocation (needs a live user gesture) + writeSaveLocation
+// (no gesture) because showSaveFilePicker requires transient activation
+// (~5 s in Chromium) that a multi-minute precision render outlives — see
+// exportCurrent(), which picks the destination up front and writes after the
+// render. This combined wrapper is fine for fast saves (PNG, console log) where
+// the gesture is still live by the time the write happens.
+async function saveAs(data, opts) {
+  const target = await pickSaveLocation(opts);
+  if (target === null) return null;          // user cancelled the dialog
+  return writeSaveLocation(target, data, opts);
+}
+
+// Step 1 — choose the destination. This is the ONLY part that needs a live user
+// gesture. Returns a FileSystemFileHandle, the sentinel 'DOWNLOAD' when the FSA
+// API is unavailable (the write falls back to a browser download), or null if
+// the user cancelled.
+async function pickSaveLocation({ suggestedName, description, mime, exts }) {
+  if (!window.showSaveFilePicker) return 'DOWNLOAD';
+  const opts = {
+    suggestedName,
+    types: [{ description, accept: { [mime]: exts } }],
+  };
+  const startIn = lastSaveLocation || (project && project.dirHandle);
+  if (startIn) opts.startIn = startIn;
+  try {
+    return await window.showSaveFilePicker(opts);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return null;   // user cancelled
+    throw e;
   }
-  const blob = (data instanceof Blob) ? data : new Blob([data], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = suggestedName;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-  return suggestedName;
+}
+
+// Step 2 — write bytes to a destination chosen earlier by pickSaveLocation().
+// No user gesture required, so this is safe to call after a long render.
+// Returns the saved file's name.
+async function writeSaveLocation(target, data, { suggestedName, mime }) {
+  if (target === 'DOWNLOAD') {
+    const blob = (data instanceof Blob) ? data : new Blob([data], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = suggestedName;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return suggestedName;
+  }
+  const w = await target.createWritable();
+  await w.write(data);
+  await w.close();
+  lastSaveLocation = target;   // reopen this folder next time this session
+  return target.name;
 }
 
 // Exports the current viewport as a downloadable PNG via the shared Save As
@@ -2219,11 +2276,14 @@ async function renderExportBytes(fmt, backend = 'Manifold') {
     args, outPath,
   };
   const t0 = performance.now();
-  // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
-  // screenshot-plane sizing hint). It's never user-relevant; filter it out
-  // of the export console exactly as the viewport render path does.
+  // The export render runs in a worker that forwards OpenSCAD's raw stdout AND
+  // stderr verbatim. Pipe it through the same isNoiseLine() filter the viewport
+  // render uses so the wasm localization/viewall warnings, the __KG_DIMS__
+  // sizing line, the benign CGAL applyHull assertion block, and the per-render
+  // cache / "Top level object" dump don't leak into the clinician-visible
+  // console. Real ERROR/WARNING/ECHO lines still come through.
   const bytes = await runExportInWorker(job, {
-    onLog: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
+    onLog: t => { if (!isNoiseLine(t)) logRaw(t); },
   });
   const elapsed = (performance.now() - t0) / 1000;
   // Console is clinician-visible: say "precision" rather than the backend's
@@ -2253,6 +2313,30 @@ async function exportCurrent(fmt) {
   if (fmt === 'STL-CGAL') fmt = 'STL';
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
+
+  // Pick the destination NOW, while this click's user gesture is still live.
+  // showSaveFilePicker requires transient activation (~5 s in Chromium); a
+  // precision (CGAL) render takes minutes, so picking AFTER the render threw
+  // "Must be handling a user gesture to show a file picker" and silently
+  // discarded the rendered STL. Pick first, render, then write to the handle
+  // (writeSaveLocation needs no gesture). The chosen file is created empty at
+  // pick time, so cancelling a precision render mid-way can leave a 0-byte file
+  // behind — an acceptable trade for never losing a multi-minute render.
+  const fname = exportBaseName() + '.' + spec.ext;
+  let target;
+  try {
+    target = await pickSaveLocation({
+      suggestedName: fname,
+      description: `${fmt} file`, mime: spec.mime, exts: ['.' + spec.ext],
+    });
+  } catch (e) {
+    logLine('Export failed: ' + e.message);
+    setStatus('Export failed: ' + e.message, 'error');
+    console.error(e);
+    return;
+  }
+  if (target === null) { logLine(`${fmt} export cancelled.`); return; }
+
   const prevStatusText = statusEl.innerHTML;
   const prevStatusKind = statusEl.className;
   // The slow CGAL precision render gets a modal with an elapsed timer and a
@@ -2268,15 +2352,8 @@ async function exportCurrent(fmt) {
   if (showModal) openExportProgress(fmt);
   try {
     const bytes = await renderExportBytes(fmt, backend);
-    const fname = exportBaseName() + '.' + spec.ext;
-    // Save As dialog, defaulting to the session/project folder. Choosing a file
-    // grants write to it, so no separate folder-permission prompt is needed.
-    const saved = await saveAs(bytes, {
-      suggestedName: fname,
-      description: `${fmt} file`, mime: spec.mime, exts: ['.' + spec.ext],
-    });
+    const saved = await writeSaveLocation(target, bytes, { suggestedName: fname, mime: spec.mime });
     if (saved) logLine(`Saved ${fmt} as "${saved}"`);
-    else logLine(`${fmt} export cancelled.`);
     setStatus(prevStatusText, prevStatusKind);
   } catch (e) {
     if (e && e.cancelled) {
