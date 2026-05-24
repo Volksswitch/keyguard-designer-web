@@ -206,6 +206,15 @@ keyguard-designer-web/
   release ritual (merge `dev → main` + bump `CACHE_NAME` in the same merge commit). Never
   commit app changes directly to `main`. Never bump `CACHE_NAME` on `dev`. Pushing to `dev`
   must never reach clinicians — that invariant is the whole point of the split.
+- **Version numbering — `dev` is always one ahead of public.** `APP_RELEASE` (in `app.html`)
+  is the app's integer version — the analog of `keyguard_designer_version` in `keyguard.scad`.
+  The moment you start a new development cycle, **pre-increment `APP_RELEASE` on `dev` to (last
+  public release + 1)**, exactly as you bump `keyguard_designer_version` at the start of new
+  `.scad` work. So a dev build always reads one ahead of what's deployed, and the project-open
+  console banner makes that visible. This is the ONE release constant that moves on `dev`:
+  `APP_RELEASE` is a display label and is pre-bumped; `CACHE_NAME` is the service-worker cache
+  key and is NOT — it still moves only during the release ritual, to match `APP_RELEASE`. See
+  `RELEASING.md`.
 - **Releasing is a deliberate, infrequent act, not an automatic consequence of a push.** Do
   not merge `dev → main` after every change. See `RELEASING.md` for the full when/how —
   follow it exactly; it is the source of truth for the release process.
