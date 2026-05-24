@@ -46,3 +46,10 @@ run summary are appended to `test-timings.ndjson` in the project root,
 using the same schema as `tests/timings-reporter.mjs` — so a compare run
 sits alongside the smoke/visual layers and can be tailed together. The
 file is truncated fresh at the start of each run.
+
+## Retention note
+
+`output/cross-compare/` is gitignored, regenerable scratch. As of the
+2026-05-23 workspace cleanup it is kept, but flagged as a candidate for
+deletion in a future cleanup once the cross-renderer comparison is no
+longer in active use.
