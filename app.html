@@ -3806,7 +3806,21 @@ document.querySelectorAll('#settings-cats .cat').forEach(c => {
 });
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js');
+  // The service worker is cache-first (see sw.js) and CACHE_NAME is only bumped
+  // at release — so on a dev box a normal reload keeps serving the cached app
+  // instead of your latest edit (hence the Ctrl+Shift+R dance). localhost is
+  // only ever the dev server, so skip the SW there and unregister any that a
+  // previous run installed; production still registers it for the offline PWA.
+  const isLocalDev = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
+  if (isLocalDev) {
+    navigator.serviceWorker.getRegistrations()
+      .then(rs => rs.forEach(r => r.unregister()))
+      .catch(() => {});
+    // Also drop any cache a prior SW left behind, so nothing stale lingers.
+    if (window.caches) caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
+  } else {
+    navigator.serviceWorker.register('./sw.js');
+  }
 }
 </script>
 </body>
