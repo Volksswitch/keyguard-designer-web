@@ -89,9 +89,10 @@ removal as its own change with its own geometry-gate run.
   TC10 steps 3–4 (SVG generation), TC13 step 3 (`geometry: false`), TC46 step 4 (SVG).
   These need the visual harness to learn about non-STL output kinds.
 
-### WASM OOM on heavy / sat≥kt designs ("memory access out of bounds") — intermittent
+### WASM OOM on heavy / no-recess (sat==kt) designs ("memory access out of bounds") — intermittent
 Heavy designs (dense grids — e.g. "…Grid Super Core 30 max rails" renders at ≈2× the geometry
-of the plain variant) and `sat ≥ kt` configs (no recess) can crash a *live* render with
+of the plain variant) and no-recess configs (`sat == kt` — note `sat = min(kt, sata)` clamps it
+to ≤ kt, so a user reaches this by setting `screen_area_thickness ≥ kt`) can crash a *live* render with
 `Render failed: memory access out of bounds` — an openscad-wasm OOM trap. The build has
 `ALLOW_MEMORY_GROWTH`, so the trap is a memory-*growth failure*, not a fixed ceiling: wasm32
 linear memory is a single contiguous ArrayBuffer, and because the app spins up a fresh wasm
