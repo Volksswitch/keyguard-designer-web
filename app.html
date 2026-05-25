@@ -2,7 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Defense-in-depth CSP. Only directives that are safe to set via <meta> and
+     that don't break the app's inline module script / WASM are included here:
+     object-src 'none' blocks plugin-based injection; base-uri 'self' blocks
+     <base>-tag hijacking of relative URLs. A stricter script-src/connect-src
+     policy (with hashed inline scripts) is recommended at the HTTP-header level
+     by whoever hosts the app — see SECURITY.md. -->
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'">
 <title>Keyguard Designer</title>
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#7dd9c8">
 <script type="importmap">
@@ -88,6 +96,13 @@
      the cream default but an obvious artifact on a dark viewport background.
      Collapse it whenever there's no text. */
   #viewport-status:empty { display: none; }
+  /* Screenshot picker (top-right of the viewport): only shown when
+     include_screenshot="yes" and the folder has more than one image. */
+  #screenshot-picker-wrap { position: absolute; top: 10px; right: 10px; display: none;
+                            align-items: center; gap: 6px; pointer-events: auto;
+                            background: rgba(255,255,255,0.85); padding: 4px 8px;
+                            border-radius: 3px; font-size: 12px; color: #333; }
+  #screenshot-picker { font-size: 12px; max-width: 240px; }
   #viewport-status.rendering { color: #aa6; background: rgba(255,250,200,0.9); }
   #viewport-status.error { color: #c00; background: rgba(255,220,220,0.9); }
   #viewport-status.ok { color: #060; background: rgba(220,250,220,0.9); }
@@ -176,10 +191,23 @@
   .split-item:hover { background: #e8f0fc; }
   .split-item .hint { color: #888; font-size: 11px; font-weight: normal; }
 
-  /* ---------- dirty indicator ---------- */
-  .preset-row select.dirty { font-style: italic; color: #a33; }
+  /* ---------- dirty indicator: OpenSCAD-style "*" to the right (no text styling) ---------- */
   #dirty-marker { color: #a33; font-weight: bold; margin-left: 4px; display: none; }
   #dirty-marker.visible { display: inline; }
+
+  /* ---------- editable preset combobox (mirrors OpenSCAD's Qt combobox) ---------- */
+  .preset-combo { position: relative; flex: 1; display: flex; min-width: 0; }
+  #preset-input { flex: 1 1 auto; min-width: 0; }
+  #preset-dropdown-btn { flex: 0 0 auto; margin-left: 2px; padding: 0 6px; cursor: pointer; }
+  #preset-list { position: absolute; top: 100%; left: 0; right: 0; z-index: 60; margin: 2px 0 0;
+                 padding: 0; list-style: none; max-height: 240px; overflow-y: auto; background: #fff;
+                 border: 1px solid #888; box-shadow: 0 2px 6px rgba(0,0,0,.2); display: none; }
+  #preset-list.open { display: block; }
+  #preset-list li { padding: 3px 8px; cursor: pointer; white-space: nowrap;
+                    overflow: hidden; text-overflow: ellipsis; }
+  #preset-list li:hover { background: #e8f0fc; }
+  #preset-list li.active { background: #d6e6fb; font-weight: bold; }
+
   button:disabled { opacity: 0.45; cursor: not-allowed; }
 
   /* ---------- Settings modal ---------- */
@@ -268,6 +296,12 @@
           <canvas id="three-canvas"></canvas>
           <div id="viewport-overlay">
             <div id="viewport-status">Click <b>Open Project…</b> to begin.</div>
+          </div>
+          <!-- Shown only when include_screenshot="yes" AND the folder has 2+
+               images, so the clinician can choose which one underlays. -->
+          <div id="screenshot-picker-wrap">
+            <label for="screenshot-picker">Screenshot</label>
+            <select id="screenshot-picker"></select>
           </div>
         </div>
         <div id="viewport-toolbar">
@@ -388,11 +422,13 @@
         </div>
         <div style="font-size:11px; color:#888; margin-bottom:6px;" id="watch-status"></div>
         <div class="preset-row">
-          <select id="preset-select">
-            <option value="design default values">design default values</option>
-            <option value="Smith iPad AAC grid">Smith iPad AAC grid</option>
-            <option value="Jones Surface 6-cell">Jones Surface 6-cell</option>
-          </select>
+          <div id="preset-combo" class="preset-combo">
+            <input type="text" id="preset-input" autocomplete="off" spellcheck="false"
+                   title="Preset — Up/Down to switch; edit the name and press Enter to rename">
+            <button type="button" id="preset-dropdown-btn" tabindex="-1"
+                    aria-label="Show preset list" title="Show preset list">&#9662;</button>
+            <ul id="preset-list" role="listbox"></ul>
+          </div>
           <span id="dirty-marker" title="unsaved changes">*</span>
         </div>
         <div class="preset-btns">
@@ -811,7 +847,12 @@ const Y_UP = new THREE.Vector3(0, 1, 0);
 // leftmost Preview button: handy for "clear the console, then render again"
 // so only the latest render's messages are shown.
 document.getElementById('view-render').addEventListener('click', () => {
-  if (project) doRender();
+  if (!project) return;
+  // On an on-demand render, append the version banner + screenshot status to
+  // the console (no clear), then let doRender() append this render's output.
+  logVersionBanner(project.scadName, project.scadText);
+  logScreenshotStatus();
+  doRender();
 });
 document.getElementById('view-fit').addEventListener('click', () => {
   if (currentMesh) fitCameraToObject(currentMesh);
@@ -836,6 +877,39 @@ function logRaw(text) {
   consoleEl.scrollTop = consoleEl.scrollHeight;
 }
 
+// Shared console-noise filter for OpenSCAD's raw stdout/stderr. Both the
+// viewport render (runOnce → isNoise) and the export render (renderExportBytes
+// → onLog) pipe every OpenSCAD line through this so the same cosmetic chatter is
+// hidden in both places. It covers: the wasm localization / viewall warnings,
+// the __KG_DIMS__ screenshot-sizing magic line, the pre-existing (benign) CGAL
+// applyHull convex_hull_3 assertion block (a hull() on coplanar sloped-cut
+// input that OpenSCAD recovers from — the STL still renders), and the per-render
+// cache / "Top level object" geometry-info dump. Genuine ERROR/WARNING/ECHO
+// lines do NOT match and stay visible. The viewport's isNoise() wraps this with
+// one extra closure-stateful case ("top level object is empty").
+function isNoiseLine(t) {
+  if (/Viewall and autocenter disabled/i.test(t)) return true;
+  if (/Could not initialize localization/i.test(t)) return true;
+  if (/__KG_DIMS__/.test(t)) return true;
+  if (/CGAL (error|ERROR): assertion violation/.test(t) ||
+      /in applyHull\(\)/.test(t) ||
+      /convex_hull_3\.h/.test(t) ||
+      /it != border\.end\(\)/.test(t) ||
+      /cgal\.org\/bug_report/.test(t) ||
+      /^\s*(Expression|Expr|Explanation|File|Line)\s*:/.test(t)
+     ) return true;
+  // Per-render render-info dump (Manifold + CGAL backends):
+  if (/^Geometries in cache:/.test(t)) return true;
+  if (/^Geometry cache size in bytes:/.test(t)) return true;
+  if (/^CGAL Polyhedrons in cache:/.test(t)) return true;
+  if (/^CGAL cache size in bytes:/.test(t)) return true;
+  if (/^Total rendering time:/.test(t)) return true;
+  if (/^\s*Top level object is a [23]D object/.test(t)) return true;
+  if (/^\s*Status:\s+NoError/.test(t)) return true;
+  if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple|Convex|Area):/.test(t)) return true;
+  return false;
+}
+
 function setStatus(msg, kind = '') {
   // 'ok' and 'error' toasts are intentionally suppressed — the rendered
   // viewport and the console already tell the user the render succeeded
@@ -855,9 +929,33 @@ function setStatus(msg, kind = '') {
 // ===== Settings (app-wide, persisted in localStorage) =====
 const SETTINGS_KEY = 'keyguard:settings';
 const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
-// Integer release number shown on the About tab. Bump by one on every
-// release, in lock-step with sw.js CACHE_NAME (see RELEASING.md).
-const APP_RELEASE = 3;
+// Integer app version, shown on the About tab and in the project-open console
+// banner. Convention (mirrors keyguard.scad's keyguard_designer_version): `dev`
+// always carries the NEXT version = last public release + 1, pre-incremented
+// here as the first step when starting a new development cycle — so a dev build
+// reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
+// deployment cache key: it is NOT pre-bumped on dev, only at release, to match
+// this number. See RELEASING.md.
+const APP_RELEASE = 4;
+
+// Two-line version banner: the running app release plus the loaded designer
+// file's version (read from its `keyguard_designer_version = NN;` line). Shown
+// on project open, on project change, and on each on-demand render (the
+// view-render button) so a clinician always has both numbers near the top of
+// the console to copy into a support email.
+function logVersionBanner(scadName, scadText) {
+  const m = (scadText || '').match(/keyguard_designer_version\s*=\s*(\d+)/);
+  logLine(`Keyguard Designer web app — release ${APP_RELEASE}`);
+  logLine(`Designer file "${scadName}" — version ${m ? m[1] : 'unknown'}`);
+}
+
+// Reports the currently loaded screenshot image, matching rescanScreenshot's
+// existing wording. Logged with the version banner on an on-demand render.
+function logScreenshotStatus() {
+  const name = project && project.screenshotName;
+  if (name) logLine(`Screenshot: using "${name}"`);
+  else      logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+}
 // Default teal / cornfield are the long-standing viewport colours; the
 // Customizer text sizes mirror the CSS :root defaults.
 const DEFAULT_ITEM_COLOR = '#40E0D0';   // Turquoise — the default teal
@@ -1028,17 +1126,28 @@ function orderedPresetNames(rawNames) {
   )];
 }
 
+// Rebuild the editable preset combobox: set the input to the current preset
+// and rebuild the dropdown list, marking the active item. The list items use
+// mousedown (not click) so selection runs before the input's blur-revert.
 function rebuildPresetDropdown() {
-  const sel = document.getElementById('preset-select');
-  if (!sel || !project) return;
-  const current = project.currentPreset;
-  sel.innerHTML = '';
+  const input = document.getElementById('preset-input');
+  const list  = document.getElementById('preset-list');
+  if (!input || !list || !project) return;
+  input.value = project.currentPreset;
+  list.innerHTML = '';
   for (const n of project.presetNames) {
-    const opt = document.createElement('option');
-    opt.value = n; opt.textContent = n;
-    sel.appendChild(opt);
+    const li = document.createElement('li');
+    li.textContent = n;
+    li.dataset.name = n;
+    if (n === project.currentPreset) li.classList.add('active');
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      closePresetList();
+      if (n !== project.currentPreset) selectPreset(n);
+      else input.value = project.currentPreset;
+    });
+    list.appendChild(li);
   }
-  sel.value = current;
 }
 
 // ===== Project model =====
@@ -1149,8 +1258,8 @@ async function resetToNoProject() {
   cameraFitOnce = false;
   consoleEl.textContent = '';
   container.innerHTML = '';
-  document.getElementById('preset-select').innerHTML = '';
-  document.getElementById('preset-select').classList.remove('dirty');
+  document.getElementById('preset-input').value = '';
+  document.getElementById('preset-list').innerHTML = '';
   document.getElementById('dirty-marker').classList.remove('visible');
   for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn']) {
     const b = document.getElementById(id);
@@ -1244,7 +1353,10 @@ async function openProject() {
   stopWatcher();
   // Re-frame the scene on the first render of the newly opened project.
   cameraFitOnce = false;
-  logLine(`Opening project folder "${dirHandle.name}"...`);
+  // Start each project-open with a clean console so the version banner (logged
+  // below, once keyguard.scad has been read) is the first thing in the log —
+  // a clinician can copy/paste both numbers straight into a support email.
+  consoleEl.textContent = '';
   setStatus('Loading project...', 'rendering');
 
   // Enumerate root-level files
@@ -1296,6 +1408,15 @@ async function openProject() {
   const dec = new TextDecoder();
   const scadText = dec.decode(files[scadName]);
   const jsonText = jsonName ? dec.decode(files[jsonName]) : null;
+
+  // Version banner — the first two lines a clinician sees on every project
+  // open, so they can copy/paste both numbers into a support email. The app
+  // release is the running build's APP_RELEASE constant (accurate on the public
+  // build); the designer version is read straight from the loaded keyguard.scad
+  // (its `keyguard_designer_version = NN;` declaration).
+  logVersionBanner(scadName, scadText);
+  logLine(`Opening project folder "${dirHandle.name}"...`);
+
   if (files['openings_and_additions.txt']) {
     oaText = dec.decode(files['openings_and_additions.txt']);
   } else {
@@ -1326,26 +1447,30 @@ async function openProject() {
   project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, oaMtime, files,
               rawPresetNames, presetNames, currentPreset: presetNames[0], customizer, baselineParams: {},
               screenshotName: null, screenshotBytes: null, screenshotTexture: null,
+              imageNames: [], selectedScreenshot: null, imgListSig: null,
               dims: null, warnedNoScreenshot: false };
   await rescanScreenshot();
 
   // UI updates
-  document.getElementById('project-folder-label').innerHTML =
-    `📁 <b>${dirHandle.name}</b> — ${scadName}<br>` +
-    `<span style="color:#888;">click <b>Change Project…</b> above to switch folders</span>`;
+  {
+    // textContent (via append) so a folder/file name can't inject markup.
+    const lbl = document.getElementById('project-folder-label');
+    lbl.textContent = '';
+    const nameB = document.createElement('b'); nameB.textContent = dirHandle.name;
+    lbl.append('📁 ', nameB, ' — ' + scadName);
+    lbl.appendChild(document.createElement('br'));
+    const hint = document.createElement('span');
+    hint.style.color = '#888';
+    const cpB = document.createElement('b'); cpB.textContent = 'Change Project…';
+    hint.append('click ', cpB, ' above to switch folders');
+    lbl.appendChild(hint);
+  }
   const opBtn = document.getElementById('open-project-btn');
   if (opBtn) {
     opBtn.textContent = 'Change Project…';
     opBtn.title = `Currently "${dirHandle.name}". Click to switch to a different folder.`;
   }
-  const sel = document.getElementById('preset-select');
-  sel.innerHTML = '';
-  for (const n of presetNames) {
-    const opt = document.createElement('option');
-    opt.value = n; opt.textContent = n;
-    sel.appendChild(opt);
-  }
-  sel.value = project.currentPreset;
+  rebuildPresetDropdown();
 
   // Build form and populate with values from the selected preset
   buildCustomizerForm(customizer);
@@ -1437,19 +1562,23 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
     rawPresetNames, presetNames, currentPreset,
     customizer, baselineParams: {},
     screenshotName: null, screenshotBytes: null, screenshotTexture: null,
+    imageNames: [], selectedScreenshot: null, imgListSig: null,
     dims: null, warnedNoScreenshot: false, isFixture: true
   };
 
-  document.getElementById('project-folder-label').innerHTML =
-    `📁 <b>${fixturePath}</b> — ${scadName} <span style="color:#888;">(fixture mode)</span>`;
-  const sel = document.getElementById('preset-select');
-  sel.innerHTML = '';
-  for (const n of presetNames) {
-    const opt = document.createElement('option');
-    opt.value = n; opt.textContent = n;
-    sel.appendChild(opt);
+  {
+    // textContent so the URL-supplied fixturePath can't inject markup.
+    const lbl = document.getElementById('project-folder-label');
+    lbl.textContent = '';
+    const pB = document.createElement('b'); pB.textContent = fixturePath;
+    lbl.append('📁 ', pB, ' — ' + scadName + ' ');
+    const fm = document.createElement('span');
+    fm.style.color = '#888';
+    fm.textContent = '(fixture mode)';
+    lbl.appendChild(fm);
   }
-  sel.value = currentPreset;
+  project.currentPreset = currentPreset;
+  rebuildPresetDropdown();
 
   buildCustomizerForm(customizer);
   populateFormFromPreset(currentPreset);
@@ -1615,6 +1744,11 @@ async function doRender() {
       baseArgs.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
     }
     baseArgs.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+    // Manifold renders the near-coincident cut-floor sliver as a membrane (TC57);
+    // keyguard.scad's extend_through_cuts pushes every cell/opening cleanly
+    // through to avoid it. Off by default there (native CGAL doesn't need it and
+    // it's 2-3x slower), so opt in here — the render path is always Manifold.
+    baseArgs.push('-D', 'extend_through_cuts="yes"');
     // include_screenshot is honoured by the web app's Three.js plane overlay,
     // not by keyguard.scad's own SVG import — the .scad version renders a flat
     // slab inside the screen recess which fills every cell with a "floor".
@@ -1710,25 +1844,7 @@ async function doRender() {
     // than dumping a scary CGAL stack into the console on a normal render.
     let suppressedEmpty = false;
     function isNoise(t) {
-      if (/Viewall and autocenter disabled/i.test(t)) return true;
-      if (/Could not initialize localization/i.test(t)) return true;
-      if (/__KG_DIMS__/.test(t)) return true;
-      if (/CGAL (error|ERROR): assertion violation/.test(t) ||
-          /in applyHull\(\)/.test(t) ||
-          /convex_hull_3\.h/.test(t) ||
-          /it != border\.end\(\)/.test(t) ||
-          /cgal\.org\/bug_report/.test(t) ||
-          /^\s*(Expression|Expr|Explanation|File|Line)\s*:/.test(t)
-         ) return true;
-      // Per-render render-info dump (Manifold backend):
-      if (/^Geometries in cache:/.test(t)) return true;
-      if (/^Geometry cache size in bytes:/.test(t)) return true;
-      if (/^CGAL Polyhedrons in cache:/.test(t)) return true;
-      if (/^CGAL cache size in bytes:/.test(t)) return true;
-      if (/^Total rendering time:/.test(t)) return true;
-      if (/^\s*Top level object is a [23]D object/.test(t)) return true;
-      if (/^\s*Status:\s+NoError/.test(t)) return true;
-      if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple|Convex|Area):/.test(t)) return true;
+      if (isNoiseLine(t)) return true;
       if (/Current top level object is empty/i.test(t)) {
         suppressedEmpty = true;
         return true;
@@ -1859,7 +1975,11 @@ async function doRender() {
     const cur = currentFormValues();
     const wantScreenshot = cur.include_screenshot === 'yes';
     if (wantScreenshot) {
-      if (!project.screenshotName) {
+      // Only warn when there are genuinely zero image files — not when an
+      // image exists but its texture hasn't loaded yet (e.g. a OneDrive
+      // placeholder mid-hydration), which would otherwise pop a false alarm.
+      const noImages = !project.imageNames || project.imageNames.length === 0;
+      if (noImages) {
         if (!project.warnedNoScreenshot) {
           project.warnedNoScreenshot = true;
           alert('include_screenshot is "yes" but no .jpg, .jpeg, or .png file was found in the project folder.');
@@ -1874,6 +1994,9 @@ async function doRender() {
         group.add(plane);
       }
     }
+    // Keep the picker in sync after every render — covers the open-project
+    // case where the first rescan ran before the customizer form existed.
+    updateScreenshotPicker();
 
     if (currentMesh) scene.remove(currentMesh);
     currentMesh = group;
@@ -1967,8 +2090,76 @@ async function captureViewportPNG() {
 // export, not a parallel Playwright-internal screenshot mechanism.
 window.__captureViewportPNG = captureViewportPNG;
 
-// Exports the current viewport as a downloadable PNG. Matches the STL/SVG
-// download pattern (keyguard.png in the Downloads folder).
+// Save As target remembered for the length of the session (a FileSystemHandle
+// whose containing folder the next Save As dialog reopens in). Unset at start
+// so the first save defaults to the open project folder; each successful save
+// updates it. Shared by every export (STL/SVG/PNG) and the console log so they
+// follow the user from folder to folder.
+let lastSaveLocation = null;
+
+// Shared "Save As…" used by all exports and the console log. Shows the native
+// Save As dialog (File System Access API), defaulting to the last folder used
+// this session, or the project folder on the first save. Choosing a file in
+// the dialog grants write to that file, so there is no separate permission
+// prompt. Where showSaveFilePicker is unavailable, falls back to a plain
+// browser download (the browser chooses the destination). Returns the saved
+// file's name, or null if the user cancelled.
+//
+// Split into pickSaveLocation (needs a live user gesture) + writeSaveLocation
+// (no gesture) because showSaveFilePicker requires transient activation
+// (~5 s in Chromium) that a multi-minute precision render outlives — see
+// exportCurrent(), which picks the destination up front and writes after the
+// render. This combined wrapper is fine for fast saves (PNG, console log) where
+// the gesture is still live by the time the write happens.
+async function saveAs(data, opts) {
+  const target = await pickSaveLocation(opts);
+  if (target === null) return null;          // user cancelled the dialog
+  return writeSaveLocation(target, data, opts);
+}
+
+// Step 1 — choose the destination. This is the ONLY part that needs a live user
+// gesture. Returns a FileSystemFileHandle, the sentinel 'DOWNLOAD' when the FSA
+// API is unavailable (the write falls back to a browser download), or null if
+// the user cancelled.
+async function pickSaveLocation({ suggestedName, description, mime, exts }) {
+  if (!window.showSaveFilePicker) return 'DOWNLOAD';
+  const opts = {
+    suggestedName,
+    types: [{ description, accept: { [mime]: exts } }],
+  };
+  const startIn = lastSaveLocation || (project && project.dirHandle);
+  if (startIn) opts.startIn = startIn;
+  try {
+    return await window.showSaveFilePicker(opts);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return null;   // user cancelled
+    throw e;
+  }
+}
+
+// Step 2 — write bytes to a destination chosen earlier by pickSaveLocation().
+// No user gesture required, so this is safe to call after a long render.
+// Returns the saved file's name.
+async function writeSaveLocation(target, data, { suggestedName, mime }) {
+  if (target === 'DOWNLOAD') {
+    const blob = (data instanceof Blob) ? data : new Blob([data], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = suggestedName;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return suggestedName;
+  }
+  const w = await target.createWritable();
+  await w.write(data);
+  await w.close();
+  lastSaveLocation = target;   // reopen this folder next time this session
+  return target.name;
+}
+
+// Exports the current viewport as a downloadable PNG via the shared Save As
+// dialog (defaults to the session/project folder).
 async function exportPNG() {
   if (!project) { alert('Open a project first.'); return; }
   const blob = await captureViewportPNG();
@@ -1977,13 +2168,15 @@ async function exportPNG() {
     setStatus('PNG export failed', 'error');
     return;
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = exportBaseName() + '.png';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-  logLine(`Exported PNG (${blob.size.toLocaleString()} bytes)`);
+  try {
+    const saved = await saveAs(blob, {
+      suggestedName: exportBaseName() + '.png',
+      description: 'PNG image', mime: 'image/png', exts: ['.png'],
+    });
+    if (saved) logLine(`Saved PNG to "${saved}" (${blob.size.toLocaleString()} bytes)`);
+  } catch (e) {
+    logLine('PNG export failed: ' + e.message);
+  }
 }
 
 
@@ -2012,6 +2205,10 @@ function buildExportArgs(fmt, backend) {
     args.push('-p', '/' + project.jsonName, '-P', project.currentPreset);
   }
   args.push('-D', 'fudge=0.05', '-D', 'ff=0.05');
+  // Manifold needs extend_through_cuts to avoid the membrane sliver (TC57); the
+  // CGAL precision escape hatch does not and is faster without it, so the .scad
+  // defaults it off and we opt in only for Manifold.
+  if (backend === 'Manifold') args.push('-D', 'extend_through_cuts="yes"');
   // Exports should never bake in the screenshot overlay (it's a viewport-only
   // alignment aid). Force the .scad's SVG import off regardless of preset/form.
   args.push('-D', 'include_screenshot="no"');
@@ -2114,11 +2311,14 @@ async function renderExportBytes(fmt, backend = 'Manifold') {
     args, outPath,
   };
   const t0 = performance.now();
-  // keyguard.scad unconditionally echoes the "__KG_DIMS__" line (the
-  // screenshot-plane sizing hint). It's never user-relevant; filter it out
-  // of the export console exactly as the viewport render path does.
+  // The export render runs in a worker that forwards OpenSCAD's raw stdout AND
+  // stderr verbatim. Pipe it through the same isNoiseLine() filter the viewport
+  // render uses so the wasm localization/viewall warnings, the __KG_DIMS__
+  // sizing line, the benign CGAL applyHull assertion block, and the per-render
+  // cache / "Top level object" dump don't leak into the clinician-visible
+  // console. Real ERROR/WARNING/ECHO lines still come through.
   const bytes = await runExportInWorker(job, {
-    onLog: t => { if (!/__KG_DIMS__/.test(t)) logRaw(t); },
+    onLog: t => { if (!isNoiseLine(t)) logRaw(t); },
   });
   const elapsed = (performance.now() - t0) / 1000;
   // Console is clinician-visible: say "precision" rather than the backend's
@@ -2148,6 +2348,30 @@ async function exportCurrent(fmt) {
   if (fmt === 'STL-CGAL') fmt = 'STL';
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
+
+  // Pick the destination NOW, while this click's user gesture is still live.
+  // showSaveFilePicker requires transient activation (~5 s in Chromium); a
+  // precision (CGAL) render takes minutes, so picking AFTER the render threw
+  // "Must be handling a user gesture to show a file picker" and silently
+  // discarded the rendered STL. Pick first, render, then write to the handle
+  // (writeSaveLocation needs no gesture). The chosen file is created empty at
+  // pick time, so cancelling a precision render mid-way can leave a 0-byte file
+  // behind — an acceptable trade for never losing a multi-minute render.
+  const fname = exportBaseName() + '.' + spec.ext;
+  let target;
+  try {
+    target = await pickSaveLocation({
+      suggestedName: fname,
+      description: `${fmt} file`, mime: spec.mime, exts: ['.' + spec.ext],
+    });
+  } catch (e) {
+    logLine('Export failed: ' + e.message);
+    setStatus('Export failed: ' + e.message, 'error');
+    console.error(e);
+    return;
+  }
+  if (target === null) { logLine(`${fmt} export cancelled.`); return; }
+
   const prevStatusText = statusEl.innerHTML;
   const prevStatusKind = statusEl.className;
   // The slow CGAL precision render gets a modal with an elapsed timer and a
@@ -2163,28 +2387,8 @@ async function exportCurrent(fmt) {
   if (showModal) openExportProgress(fmt);
   try {
     const bytes = await renderExportBytes(fmt, backend);
-    const fname = exportBaseName() + '.' + spec.ext;
-    // Prefer writing STL/SVG straight into the project folder so the
-    // deliverable lands next to the .scad it came from. Falls back to a
-    // browser download if there's no writable folder handle (fixture mode
-    // or denied permission). PNG never reaches here — exportPNG() always
-    // downloads it, deliberately, so it can't clobber the project's
-    // screenshot .png.
-    if (project.dirHandle && await ensureWritePermission()) {
-      const fh = await project.dirHandle.getFileHandle(fname, { create: true });
-      const w = await fh.createWritable();
-      await w.write(bytes);
-      await w.close();
-      logLine(`Saved ${fmt} to project folder as "${fname}"`);
-    } else {
-      const url = URL.createObjectURL(new Blob([bytes], { type: spec.mime }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fname;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-      logLine(`Downloaded "${fname}" (no writable project folder)`);
-    }
+    const saved = await writeSaveLocation(target, bytes, { suggestedName: fname, mime: spec.mime });
+    if (saved) logLine(`Saved ${fmt} as "${saved}"`);
     setStatus(prevStatusText, prevStatusKind);
   } catch (e) {
     if (e && e.cancelled) {
@@ -2349,9 +2553,19 @@ function buildCustomizerForm(sections) {
     const div = document.createElement('div');
     div.className = 'section';
     div.dataset.section = sec.name;
-    div.innerHTML = `<div class="section-header"><span class="caret">▶</span>${sec.name}</div>
-                     <div class="section-body"></div>`;
-    const body = div.querySelector('.section-body');
+    // Build with textContent (not innerHTML) so a section name from an untrusted
+    // .scad's /* [Section] */ comment can't inject markup/script.
+    const header = document.createElement('div');
+    header.className = 'section-header';
+    const caret = document.createElement('span');
+    caret.className = 'caret';
+    caret.textContent = '▶';
+    header.appendChild(caret);
+    header.appendChild(document.createTextNode(sec.name));
+    const body = document.createElement('div');
+    body.className = 'section-body';
+    div.appendChild(header);
+    div.appendChild(body);
     for (const p of sec.params) {
       body.appendChild(buildParamControl(p));
     }
@@ -2543,27 +2757,59 @@ async function checkOAFile() {
 // a rasterisation step we've deferred).
 const IMAGE_EXT = /\.(jpe?g|png)$/i;
 
-// The FIRST .jpg/.jpeg/.png in the project folder (deterministic iteration
-// order), as { name, handle }, or null. Deliberately does NOT call
-// getFile(): a freshly added file (especially under OneDrive) can make
-// getFile() throw transiently, and presence detection must not hinge on
-// reading the file's bytes/metadata — that's what made an added image go
-// unnoticed after a removal. The actual read happens in rescanScreenshot,
-// which logs + retries on failure.
-async function firstImageEntry() {
-  if (!project || !project.dirHandle) return null;
+// ALL .jpg/.jpeg/.png files in the project folder as [{ name, handle }],
+// sorted by a stable numeric-aware name compare. The sort is the whole point:
+// the File System Access API's entries() iteration order is NOT guaranteed
+// stable (especially under OneDrive), so a naive "first entry" flips between
+// files poll-to-poll when 2+ images exist — which spammed the console and
+// fired a bogus "no image found" popup. Sorting makes selection deterministic.
+// Deliberately does NOT call getFile(): a freshly added file (especially under
+// OneDrive) can make getFile() throw transiently, and presence detection must
+// not hinge on reading bytes — the read happens in rescanScreenshot, which
+// logs + retries on failure.
+async function listImageEntries() {
+  const out = [];
+  if (!project || !project.dirHandle) return out;
   for await (const [name, handle] of project.dirHandle.entries()) {
     if (handle.kind !== 'file') continue;
     if (!IMAGE_EXT.test(name)) continue;
-    return { name, handle };
+    out.push({ name, handle });
   }
-  return null;
+  out.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  return out;
 }
 
-// Cheap identity of an image file — name + mtime + size. Lets the watcher
-// detect add / remove / replace without reading the bytes every poll.
-function imageSig(name, file) {
-  return `${name}|${file.lastModified}|${file.size}`;
+// Stable signature of the image set + the active selection, so the watcher
+// re-scans only on a real add/remove/replace (or a selection change) — never
+// on entries()-order churn. Names are pre-sorted by listImageEntries().
+async function imageListSignature(entries, selName) {
+  const names = entries.map(e => e.name).join('\x1f');
+  let selSig = '';
+  const sel = selName && entries.find(e => e.name === selName);
+  if (sel) {
+    try { const f = await sel.handle.getFile(); selSig = `${f.lastModified}|${f.size}`; }
+    catch { selSig = '?'; }   // unreadable (e.g. OneDrive placeholder) — retry next poll
+  }
+  return `${names}||${selName || ''}||${selSig}`;
+}
+
+// (Re)build the screenshot picker dropdown. Visible only when the overlay is
+// on (include_screenshot="yes") AND there's a real choice to make (2+ images).
+function updateScreenshotPicker() {
+  const wrap = document.getElementById('screenshot-picker-wrap');
+  const sel  = document.getElementById('screenshot-picker');
+  if (!wrap || !sel) return;
+  const names = (project && project.imageNames) || [];
+  const wantShot = project && currentFormValues().include_screenshot === 'yes';
+  if (!wantShot || names.length < 2) { wrap.style.display = 'none'; return; }
+  // Rebuild options via DOM (no HTML-escaping concerns with arbitrary names).
+  sel.replaceChildren(...names.map(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    o.selected = (n === project.selectedScreenshot);
+    return o;
+  }));
+  wrap.style.display = 'flex';
 }
 
 // Scans the project folder for the FIRST image and caches the bytes + a
@@ -2578,15 +2824,26 @@ async function rescanScreenshot() {
   project.screenshotTexture = null;
   if (old) old.dispose();
 
-  let entry;
+  let entries;
   try {
-    entry = await firstImageEntry();
+    entries = await listImageEntries();
   } catch (e) {
     logLine(`Screenshot scan failed: ${e.message}`);
     return;
   }
-  if (!entry) {
-    project.imgSig = null;
+  project.imageNames = entries.map(e => e.name);
+
+  // Active image: keep the user's pick if it's still present, else default to
+  // the first (numeric-aware sorted) image.
+  let selName = project.selectedScreenshot;
+  if (!selName || !project.imageNames.includes(selName)) {
+    selName = entries.length ? entries[0].name : null;
+  }
+  project.selectedScreenshot = selName;
+  updateScreenshotPicker();
+
+  if (!selName) {
+    project.imgListSig = await imageListSignature(entries, null);
     // reportedImg is the filename we last told the user we're using, or
     // 'none' once we've reported the no-image state. Report each transition
     // exactly once.
@@ -2598,36 +2855,35 @@ async function rescanScreenshot() {
     project.reportedImg = 'none';
     return;
   }
+  const entry = entries.find(e => e.name === selName);
   try {
-    const { name, handle } = entry;
-    const file = await handle.getFile();
+    const file = await entry.handle.getFile();
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    const mime = selName.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
     const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
     const tex = await new Promise((resolve, reject) => {
       new THREE.TextureLoader().load(url, t => { URL.revokeObjectURL(url); resolve(t); },
         undefined, err => { URL.revokeObjectURL(url); reject(err); });
     });
     tex.colorSpace = THREE.SRGBColorSpace;
-    project.screenshotName = name;
+    project.screenshotName = selName;
     project.screenshotBytes = bytes;
     project.screenshotTexture = tex;
-    project.imgSig = imageSig(name, file);
     project.warnedNoScreenshot = false;
-    // Report only when the in-use file changes (deduped by filename), so a
-    // re-scan that resolves to the same image stays silent.
-    if (project.reportedImg !== name) {
-      logLine(`Screenshot: using "${name}"`);
-      project.reportedImg = name;
+    project.imgListSig = await imageListSignature(entries, selName);
+    // Report only when the in-use file changes (deduped by filename).
+    if (project.reportedImg !== selName) {
+      logLine(`Screenshot: using "${selName}"`);
+      project.reportedImg = selName;
     }
   } catch (e) {
-    project.imgSig = null;
+    project.imgListSig = await imageListSignature(entries, selName);
     // Deduped: a placeholder that won't hydrate would otherwise log this
     // every poll. Report once per (file, error); a later successful read
     // clears it via the normal "using" path.
-    const key = `err:${entry.name}:${e.message}`;
+    const key = `err:${selName}:${e.message}`;
     if (project.reportedImg !== key) {
-      logLine(`Screenshot scan failed for "${entry.name}": ${e.message}`);
+      logLine(`Screenshot scan failed for "${selName}": ${e.message}`);
       project.reportedImg = key;
     }
   }
@@ -2639,30 +2895,20 @@ async function rescanScreenshot() {
 // otherwise the texture is just refreshed for when it's switched on.
 async function checkScreenshotFile() {
   if (!project || !project.dirHandle) return;
-  let entry;
+  let entries;
   try {
-    entry = await firstImageEntry();   // {name, handle} | null — no getFile, robust
+    entries = await listImageEntries();   // sorted [{name,handle}] — no getFile, robust
   } catch (e) {
     return;   // entries() itself failed; try again next poll
   }
-  const oldSig = project.imgSig ?? null;
-  let newSig = null;
-  if (entry) {
-    // Prefer a content signature (name|mtime|size); if the file can't be
-    // read yet (e.g. a OneDrive placeholder just dropped in), still treat
-    // it as present-and-changed so rescanScreenshot runs, logs, and the
-    // next poll retries — rather than silently doing nothing.
-    try {
-      newSig = imageSig(entry.name, await entry.handle.getFile());
-    } catch (e) {
-      newSig = `${entry.name}|?`;
-    }
-  }
-  if (newSig === oldSig) return;   // unchanged on disk
+  // Signature over the (sorted) image set + the active selection. Stable
+  // across polls when nothing changed on disk, so multiple images no longer
+  // cause poll-to-poll churn. Compare against the last known signature.
+  const newSig = await imageListSignature(entries, project.selectedScreenshot);
+  if (newSig === (project.imgListSig ?? null)) return;   // unchanged on disk
 
-  // rescanScreenshot() is the single console reporter (deduped by
-  // filename: "using X" / "no longer using X"), so the watcher just
-  // refreshes state and re-renders when the screenshot is shown.
+  // rescanScreenshot() is the single console reporter (deduped by filename)
+  // and the single picker updater; it recomputes imgListSig too.
   await rescanScreenshot();
   if (currentFormValues().include_screenshot === 'yes') triggerWatchRerender();
 }
@@ -2719,7 +2965,6 @@ function updateDirty() {
   if (!project) return;
   const dirty = isDirty();
   document.getElementById('dirty-marker').classList.toggle('visible', dirty);
-  document.getElementById('preset-select').classList.toggle('dirty', dirty);
   document.getElementById('save-preset-btn').disabled = !dirty;
   document.getElementById('reset-btn').disabled = !dirty;
 }
@@ -2736,13 +2981,27 @@ container.addEventListener('input', e => {
 container.addEventListener('change', async e => {
   if (!project || !e.target.dataset.paramName) return;
   updateDirty();
-  // Rescan for the screenshot when the user flips include_screenshot ON, so
-  // a folder change since Open Project gets picked up.
-  if (e.target.dataset.paramName === 'include_screenshot' && e.target.value === 'yes') {
-    await rescanScreenshot();
+  // When the user flips include_screenshot: ON → rescan (a folder change
+  // since Open Project gets picked up) and reveal the picker if 2+ images;
+  // OFF → just hide the picker. updateScreenshotPicker reads the new value.
+  if (e.target.dataset.paramName === 'include_screenshot') {
+    if (e.target.value === 'yes') await rescanScreenshot();
+    updateScreenshotPicker();
   }
   scheduleRender();
 });
+
+// Screenshot picker: choosing a different image loads it and (if shown)
+// re-renders so the overlay updates immediately.
+{
+  const picker = document.getElementById('screenshot-picker');
+  if (picker) picker.addEventListener('change', async () => {
+    if (!project) return;
+    project.selectedScreenshot = picker.value;
+    await rescanScreenshot();
+    if (currentFormValues().include_screenshot === 'yes') triggerWatchRerender();
+  });
+}
 
 // ---------- splitter drag logic ----------
 function makeHSplit(el, leftEl, rightEl) {
@@ -2801,29 +3060,11 @@ document.getElementById('copy-btn').addEventListener('click', () => {
 document.getElementById('save-btn').addEventListener('click', async () => {
   const text = consoleEl.textContent;
   try {
-    if (window.showSaveFilePicker) {
-      // True Save As dialog with an empty filename box; .txt extension.
-      // Default the dialog to the open project folder when there is one.
-      const opts = {
-        suggestedName: '',
-        types: [{ description: 'Text file', accept: { 'text/plain': ['.txt'] } }],
-      };
-      if (project && project.dirHandle) opts.startIn = project.dirHandle;
-      const handle = await window.showSaveFilePicker(opts);
-      const w = await handle.createWritable();
-      await w.write(text);
-      await w.close();
-      logLine(`Saved console to "${handle.name}"`);
-    } else {
-      // Fallback for browsers without the File System Access API: a plain
-      // blob download (the browser, not us, decides whether to prompt).
-      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'console.txt';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-    }
+    const saved = await saveAs(text, {
+      suggestedName: 'console.txt',
+      description: 'Text file', mime: 'text/plain', exts: ['.txt'],
+    });
+    if (saved) logLine(`Saved console to "${saved}"`);
   } catch (e) {
     if (e && e.name === 'AbortError') return;   // user cancelled the dialog
     logLine('Save console failed: ' + e.message);
@@ -2845,7 +3086,21 @@ document.getElementById('open-project-btn').addEventListener('click', () => {
 const __fixtureParams = new URLSearchParams(location.search);
 const __fixturePath = __fixtureParams.get('fixture');
 const __fixtureScad = __fixtureParams.get('scad');
-if (__fixturePath && __fixtureScad) {
+// SECURITY: the fixture loader fetches the .scad/.json/OA from URL params and
+// renders them. Only allow SAME-ORIGIN (relative) paths, so a crafted link
+// can't make the app pull and run an attacker-hosted project from a foreign
+// server. Playwright fixtures are served same-origin, so this doesn't affect
+// them. See SECURITY.md.
+const __sameOrigin = (p) => {
+  if (!p) return true;            // an absent oa override is fine
+  try { return new URL(p, location.href).origin === location.origin; }
+  catch { return false; }
+};
+if (__fixturePath && __fixtureScad &&
+    (!__sameOrigin(__fixturePath) || !__sameOrigin(__fixtureParams.get('oa')))) {
+  logLine('Fixture load blocked: cross-origin fixture/oa is not allowed.');
+  setStatus('Fixture load blocked (cross-origin not allowed)', 'error');
+} else if (__fixturePath && __fixtureScad) {
   const __parseTriple = (s) => {
     if (!s) return null;
     const parts = s.split(',').map(p => parseFloat(p));
@@ -2883,7 +3138,13 @@ if (__fixturePath && __fixtureScad) {
     if (!stored) return;
     const label = document.getElementById('project-folder-label');
     const btn = document.getElementById('open-project-btn');
-    if (label) label.innerHTML = `last folder: <b>${stored.name}</b> — click <b>Open Project…</b> to reopen`;
+    if (label) {
+      label.textContent = 'last folder: ';
+      const nB = document.createElement('b'); nB.textContent = stored.name;
+      label.append(nB, ' — click ');
+      const oB = document.createElement('b'); oB.textContent = 'Open Project…';
+      label.append(oB, ' to reopen');
+    }
     if (btn) btn.title = `Reopen "${stored.name}" or pick a different folder`;
   })();
 }
@@ -2923,28 +3184,128 @@ exportMenu.addEventListener('click', e => {
 });
 
 // ---------- preset select + dirty state ----------
-const presetSelect = document.getElementById('preset-select');
 const dirtyMarker = document.getElementById('dirty-marker');
 const savePresetBtn = document.getElementById('save-preset-btn');
 const resetBtn = document.getElementById('reset-btn');
 
-presetSelect.addEventListener('change', async () => {
+// ===== Editable preset combobox (mirrors OpenSCAD's Qt combobox) =====
+const presetInput = document.getElementById('preset-input');
+const presetList = document.getElementById('preset-list');
+const presetDropdownBtn = document.getElementById('preset-dropdown-btn');
+
+function openPresetList() {
   if (!project) return;
+  rebuildPresetDropdown();
+  presetList.classList.add('open');
+  const act = presetList.querySelector('li.active');
+  if (act) act.scrollIntoView({ block: 'nearest' });
+}
+function closePresetList() { presetList.classList.remove('open'); }
+
+// Switch to preset `name`, honouring the unsaved-changes guard. Replaces the
+// former <select> change handler; reused by Up/Down stepping and list clicks.
+async function selectPreset(name) {
+  if (!project || name === project.currentPreset) {
+    if (project) presetInput.value = project.currentPreset;
+    return;
+  }
   if (isDirty()) {
     const proceed = await confirmDiscard(
       `You have unsaved changes to "${project.currentPreset}". ` +
       `Switching presets will discard them.`);
-    if (!proceed) {
-      presetSelect.value = project.currentPreset;   // revert the dropdown
-      return;
-    }
+    if (!proceed) { presetInput.value = project.currentPreset; return; }
   }
-  project.currentPreset = presetSelect.value;
-  populateFormFromPreset(presetSelect.value);
+  project.currentPreset = name;
+  rebuildPresetDropdown();
+  populateFormFromPreset(name);
   updateDelPresetButton();
-  logLine(`Selected preset: "${presetSelect.value}" — re-rendering...`);
+  logLine(`Selected preset: "${name}" — re-rendering...`);
   await rescanScreenshot();
   doRender();
+}
+
+// Up/Down: step to the previous/next preset in the ordered list.
+function stepPreset(delta) {
+  if (!project) return;
+  const names = project.presetNames;
+  const i = names.indexOf(project.currentPreset);
+  if (i < 0) return;
+  const j = Math.max(0, Math.min(names.length - 1, i + delta));
+  if (j !== i) selectPreset(names[j]);
+}
+
+// Rename the current preset (edit the name in the box + Enter). Relabels the
+// parameterSets key on disk; params and dirty state are unchanged.
+async function renamePreset(newName) {
+  if (!project) return;
+  const oldName = project.currentPreset;
+  newName = (newName || '').trim();
+  if (!newName || newName === oldName) { presetInput.value = oldName; return; }
+  if (oldName === 'design default values') {
+    alert('"design default values" is read-only and cannot be renamed.');
+    presetInput.value = oldName; return;
+  }
+  if (newName === 'design default values') {
+    alert('That name is reserved.'); presetInput.value = oldName; return;
+  }
+  if (project.rawPresetNames.includes(newName)) {
+    alert(`A preset named "${newName}" already exists.`); presetInput.value = oldName; return;
+  }
+  if (!(await ensureWritePermission())) {
+    logLine('Rename preset: write permission was not granted.');
+    presetInput.value = oldName; return;
+  }
+  try {
+    const existing = project.jsonText ? JSON.parse(project.jsonText) : { parameterSets: {} };
+    const parameterSets = existing.parameterSets || {};
+    parameterSets[newName] = parameterSets[oldName] || {};
+    delete parameterSets[oldName];
+    const newText = buildPresetJson(parameterSets);
+    const jsonName = project.jsonName || project.scadName.replace(/\.scad$/i, '') + '.json';
+    const fileHandle = await project.dirHandle.getFileHandle(jsonName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(newText);
+    await writable.close();
+    project.jsonText = newText;
+    project.jsonName = jsonName;
+    project.rawPresetNames = project.rawPresetNames.map(n => (n === oldName ? newName : n));
+    project.presetNames = orderedPresetNames(project.rawPresetNames);
+    project.currentPreset = newName;
+    rebuildPresetDropdown();
+    updateDelPresetButton();
+    logLine(`Renamed preset "${oldName}" to "${newName}" in ${jsonName}`);
+  } catch (e) {
+    logLine('Rename preset failed: ' + e.message);
+    console.error(e);
+    presetInput.value = oldName;
+  }
+}
+
+presetDropdownBtn.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  if (!project) return;
+  if (presetList.classList.contains('open')) closePresetList();
+  else { openPresetList(); presetInput.focus(); }
+});
+
+presetInput.addEventListener('keydown', (e) => {
+  if (!project) return;
+  if (e.key === 'ArrowDown')    { e.preventDefault(); stepPreset(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); stepPreset(-1); }
+  else if (e.key === 'Enter')   { e.preventDefault(); closePresetList(); renamePreset(presetInput.value); }
+  else if (e.key === 'Escape')  { e.preventDefault(); presetInput.value = project.currentPreset; closePresetList(); presetInput.blur(); }
+});
+
+// Revert uncommitted typing and close the list when focus leaves. The short
+// delay lets a list-item mousedown (selection) run first.
+presetInput.addEventListener('blur', () => {
+  setTimeout(() => { if (project) presetInput.value = project.currentPreset; closePresetList(); }, 150);
+});
+
+// Close the dropdown on an outside click.
+document.addEventListener('mousedown', (e) => {
+  const combo = document.getElementById('preset-combo');
+  if (combo && !combo.contains(e.target)) closePresetList();
 });
 
 resetBtn.addEventListener('click', () => {

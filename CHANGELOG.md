@@ -10,6 +10,21 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 4
+
+### New features
+
+- **Screenshot picker.** When a project folder holds more than one image and
+  the screenshot overlay is on, a picker appears at the top-right of the 3D
+  view so you can choose which image shows through the cutouts.
+
+### Bug fixes
+
+- **Multiple screenshot images no longer misbehave.** With two or more images
+  in the folder, the app could spam the console with an endless "Screenshot:
+  using …" loop and pop a false "no image found" message. The app now picks
+  images consistently and the messages are correct.
+
 ## Release 3
 
 ### New features

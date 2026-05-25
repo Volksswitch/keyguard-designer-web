@@ -66,13 +66,15 @@ const CACHE_NAME = 'keyguard-v1';   →   const CACHE_NAME = 'keyguard-v2';
 Edit it by hand in your editor — it's a single digit and a manual edit is the least
 error-prone. The number must only ever **go up**.
 
-Now bump the **release number** in `app.html` to match. Find `const APP_RELEASE = 2;`
-(near `SETTINGS_KEY`) and increment the integer by one. This is the number clinicians
-see on **Settings → About**, so it must move in lock-step with `CACHE_NAME`: one
-release = one `CACHE_NAME` bump *and* one `APP_RELEASE` bump, every time. (The two
-numbers don't have to be equal — `CACHE_NAME` started at v1 and `APP_RELEASE` at 2 —
-they just both increment by one per release.) Like the cache number, it only ever
-goes up.
+Now reconcile the **release number** in `app.html`. `APP_RELEASE` (near `SETTINGS_KEY`) is
+pre-incremented on `dev` at the *start* of each development cycle (the convention mirrors
+keyguard.scad's `keyguard_designer_version`), so by the time you merge `dev → main` it should
+**already** read the number you're releasing. **Verify** `const APP_RELEASE = N;` is the new
+release number — it normally needs no edit here. (If a cycle somehow shipped without a
+pre-bump, set it now.) It is the number clinicians see on **Settings → About** and in the
+project-open console banner. `CACHE_NAME` is the separate cache key bumped above; the two end
+up equal-by-increment but don't have to be equal in value. Like the cache number, `APP_RELEASE`
+only ever goes up.
 
 Now update `CHANGELOG.md`: rename the **`## Unreleased (next release)`** heading to
 **`## Release <new APP_RELEASE>`**, and add a fresh empty `## Unreleased (next release)`
@@ -101,8 +103,12 @@ Then keep working on `dev` as usual.
 - **Never commit app changes straight to `main`.** Only the release merge moves `main`.
 - **The cache number only increases** (v5 → v6, never back to v4). Browsers detect a
   *changed* `sw.js`, and a lower/old number can leave clients stuck.
-- **`APP_RELEASE` moves with `CACHE_NAME`, never on its own.** It only ever increases,
-  only during the ritual, only on `main`. Never bump it on `dev`.
+- **`APP_RELEASE` is pre-bumped on `dev`; `CACHE_NAME` is not.** `APP_RELEASE` is a display
+  label — increment it on `dev` to (last public release + 1) at the *start* of each cycle, so
+  a dev build always reads one ahead of public (mirrors keyguard.scad's
+  `keyguard_designer_version`). `CACHE_NAME` is the deployment cache key and still moves ONLY
+  during the release ritual, on `main` (above). At release the two end up equal-by-increment;
+  between releases `dev`'s `APP_RELEASE` leads. Both only ever increase.
 - If `git merge` reports a conflict in `sw.js`, the **`main` side's version number always
   wins** — resolve in favor of `main`, then bump it as normal. (Conflicts here are rare:
   `dev` never touches the `CACHE_NAME` line.)

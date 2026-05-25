@@ -63,6 +63,22 @@ When the sum of any "App layout in mm" parameters exceeds 5 mm, cell openings st
 the way through. May be resolved by the Manifold thin-floor fix — re-test against current main
 before digging in.
 
+### Manifold workaround redundancy (after the hole_cutter prism fix)
+The cell-floor "membrane" root cause turned out to be Manifold snapping the cell cutter's
+degenerate thin-slab `hull()` (the flat all-90 body) at exact round `cell_edge_chamfer` /
+`screen_area_thickness` values. `keyguard.scad`'s `hole_cutter` now builds that flat body as a
+single `linear_extrude` prism (CGAL-identical solid, no thin-slab hull), eliminating the snap at
+the source — same single-solid treatment already applied to the recess cutter (`hole_cutter2`).
+Once that `.scad` fix is in the upstream `keyguard.scad`, re-evaluate whether the two
+membrane-era workarounds in `app.html` are still doing anything:
+  - the `fudge` / `ff` = 0.05 bump (vs the `.scad` native 0.01), and
+  - `extend_through_cuts="yes"` (passed on both the preview and export paths).
+Test: render the round-value sweep (cec 0.5/1.0/1.5, sat 3.5) with `extend_through_cuts="no"`
+and `fudge=0.01`; if it stays clean (genus ~117, no membranes), those two are redundant for the
+membrane and can be simplified. This does NOT replace the CGAL "precision" export, which still
+handles the separate Manifold-vs-CGAL parts/bbox/area divergences (TC53, TC8, TC54, …). Treat any
+removal as its own change with its own geometry-gate run.
+
 ### WASM crash clusters (identified 2026-05-15 full-suite run)
 - **Cluster 1 — zero/negative `cell_corner_radius` + all-90 slopes** (WASM frame
   `wasm-function[3256]:0x1d30f9`): TC19 step 2 (cr=−10), TC23 step 2 (cr=−5),
@@ -73,9 +89,60 @@ before digging in.
   TC10 steps 3–4 (SVG generation), TC13 step 3 (`geometry: false`), TC46 step 4 (SVG).
   These need the visual harness to learn about non-STL output kinds.
 
+### WASM OOM on heavy / no-recess (sat==kt) designs ("memory access out of bounds") — intermittent
+Heavy designs (dense grids — e.g. "…Grid Super Core 30 max rails" renders at ≈2× the geometry
+of the plain variant) and no-recess configs (`sat == kt` — note `sat = min(kt, sata)` clamps it
+to ≤ kt, so a user reaches this by setting `screen_area_thickness ≥ kt`) can crash a *live* render with
+`Render failed: memory access out of bounds` — an openscad-wasm OOM trap. The build has
+`ALLOW_MEMORY_GROWTH`, so the trap is a memory-*growth failure*, not a fixed ceiling: wasm32
+linear memory is a single contiguous ArrayBuffer, and because the app spins up a fresh wasm
+instance per render, a long-lived tab fragments its address space until a large contiguous grow
+can't be satisfied — even with free RAM. That's why it's intermittent: `Ctrl-Shift-R` (fresh
+tab) clears the fragmentation and the same design renders. Confirmed it is NOT a geometry bug and
+NOT membrane-related — the geometry/RTP gates, which get fresh memory per test, render these exact
+designs cleanly (e.g. "Fintie - Grid Super Core 30 max rails" passed in the RTP gate). Leads:
+reuse a single wasm instance instead of tearing down/recreating per render (less fragmentation);
+verify torn-down instances' ArrayBuffers are actually released; and/or pre-size the heap so growth
+never fires. NOTE pre-sizing needs a *rebuild* — it cannot be set from the web app with the
+current bundle: `openscad.js` creates its own internal memory (`wasmMemory = wasmExports["Vb"]`,
+exported, NOT imported) and has no `Module["INITIAL_MEMORY"]` / `wasmMemory` override hook, so
+`INITIAL_MEMORY` and the growth ceiling are baked into the `.wasm` at build time. To change it,
+rebuild openscad-wasm with `-sINITIAL_MEMORY=<large>` (optionally `-sALLOW_MEMORY_GROWTH=0` for a
+fixed buffer), or with `-sIMPORTED_MEMORY` so `app.html` can supply a pre-sized
+`WebAssembly.Memory({initial, maximum})` per instance at runtime. Caveat: wasm32 caps at 4 GB and
+a big buffer is reserved per instance, so pre-sizing pairs best with single-instance reuse. Also
+likely eased once the per-cell extender (`extend_through_cuts`) is retired (see "Manifold
+workaround redundancy") — it inflates the heap most on dense "max rails" grids.
+
 ### Image parity tuning
 Both projects capture at 2048×1536. Web uses FOV 22.5° to approximate OpenSCAD's CLI default.
 After Ken reviews side-by-side pairs, may need to nudge FOV or vpd interpretation.
+
+### Pre-existing Manifold↔CGAL geometry-gate divergences (TC5/8/46/47/54) — KEN to investigate
+The geometry gate (`tests/geometry.spec.mjs`, Manifold vs the `.scad` CGAL golden manifest) fails
+13 steps across Test Cases 5, 8, 46, 47, 53, 54. Confirmed **identical on `.scad` main** (baseline
+run 2026-05-24) → pre-existing Manifold-backend divergences, NOT caused by the v78 membrane fix.
+Volume matches the golden in nearly all; the divergences are in:
+- parts count — TC5 1≠3, TC47 16≠1 (embossed text @ depth +2), TC54 4≠1, TC8 1≠2;
+- bbox ~1 mm shifts — TC8, TC46;
+- surface area — TC8 up to 3.67%, TC53 3.8%.
+This is the class the CGAL "precision" export exists for. TC53 is separately documented in the
+`.scad` CLAUDE.md (non-manifold, 7 parts). Note the v78 fix *improved* several toward the golden
+(TC46 s3 laser-cut vol Δ16%→0.03%; TC53 vol/parts), but TC5 s1 gained ~32k reversed facets
+(non-gated / slicer-tolerated; TC5 already routes to CGAL precision).
+**ACTION (Ken):** investigate why Manifold diverges from CGAL on TC5/8/46/47/54 and whether each
+should auto-fall back to the CGAL precision export; report findings back.
+
+### RTP gate "golden" is the downloaded-website snapshot, not a current CGAL golden — KEN to clarify
+`tests/ready-to-print.spec.mjs` passed 292/292 (2026-05-24), but the deltas it prints are measured
+against `golden-rtp-stats.json` = the **downloaded-website** reference (a different design/version
+snapshot), so large deltas (e.g. `Δvol=+89.76%` on "Grid Super Core 30 max rails") are
+informational, not pass/fail. An RTP "pass" therefore confirms the design *renders* via Manifold,
+not that it *matches CGAL*. The meaningful Manifold-vs-CGAL RTP check is the separate "run the
+membrane comparison" (`compare-rtp-membranes.py` vs `golden-rtp-cgal-stats.json`) and/or
+regenerating the RTP CGAL golden.
+**ACTION (Ken):** decide whether the RTP gate should compare against the CGAL golden (a meaningful
+pass/fail) rather than/in addition to the website snapshot; report findings back.
 
 ---
 
@@ -206,8 +273,70 @@ keyguard-designer-web/
   release ritual (merge `dev → main` + bump `CACHE_NAME` in the same merge commit). Never
   commit app changes directly to `main`. Never bump `CACHE_NAME` on `dev`. Pushing to `dev`
   must never reach clinicians — that invariant is the whole point of the split.
+- **Version numbering — `dev` is always one ahead of public.** `APP_RELEASE` (in `app.html`)
+  is the app's integer version — the analog of `keyguard_designer_version` in `keyguard.scad`.
+  The moment you start a new development cycle, **pre-increment `APP_RELEASE` on `dev` to (last
+  public release + 1)**, exactly as you bump `keyguard_designer_version` at the start of new
+  `.scad` work. So a dev build always reads one ahead of what's deployed, and the project-open
+  console banner makes that visible. This is the ONE release constant that moves on `dev`:
+  `APP_RELEASE` is a display label and is pre-bumped; `CACHE_NAME` is the service-worker cache
+  key and is NOT — it still moves only during the release ritual, to match `APP_RELEASE`. See
+  `RELEASING.md`.
 - **Releasing is a deliberate, infrequent act, not an automatic consequence of a push.** Do
   not merge `dev → main` after every change. See `RELEASING.md` for the full when/how —
   follow it exactly; it is the source of truth for the release process.
 - Run `scripts/test.sh` (all layers) after any change. Scope visual tests to affected cases
   during iteration; run the full suite before declaring a feature complete.
+
+## Working by trigger phrase (no manual shell commands)
+
+Ken does not run PowerShell/Bash/Python commands by hand. For ANY repeatable
+operation:
+1. Create or reuse a script under `scripts/`.
+2. Give it a trigger phrase of the form **"run &lt;name&gt;"** and document that
+   phrase (and exactly what it runs) HERE in CLAUDE.md, in the same change.
+3. When Ken says the phrase, Claude runs the script for him — in the background if
+   it is long-running — and reports the result. Never hand Ken raw commands to type.
+
+Scripts must run unchanged on either machine: derive paths from `$env:OneDrive`
+(never hardcode `C:\Users\<name>`), and let Claude pick the interpreter so the
+phrase is all Ken needs. Because CLAUDE.md is the only thing that syncs and is
+auto-loaded on both machines, a new phrase only works after OneDrive syncs this
+file AND the other machine's Claude session is restarted.
+
+## Trigger phrases — RTP CGAL golden regen (2-machine split)
+
+DISAMBIGUATION: "chunk N" alone is ambiguous — the .scad project's
+`geometry-chunk.sh` (test-case `--geometry` validation, 9 chunks) also takes a
+chunk number. The RTP golden job here has ONLY 2 chunks. If Ken says a bare
+"chunk N" with N>2, he means the geometry validation, not this. For THIS job he
+should say **"run RTP chunk N"**.
+
+When Ken says **"run RTP chunk N"** (or "ready-to-print chunk N"), run the wrapper in
+the **background** and report when it finishes — it is a multi-hour CGAL render:
+
+```
+powershell -File scripts\rtp-chunk.ps1 N
+```
+
+`N` is 1 (laptop) or 2 (desktop); the wrapper hardcodes the 2-machine split, derives the
+designer path from `$env:OneDrive` (RTP root = `<designer>\tests\rtp`), and writes
+`<designer>\tests\rtp\golden-stl\cgal-chunks\chunk-N-of-2.json` (resumable — rerunning continues).
+Both machines share one OneDrive; the harness renders each design in a private temp dir and
+writes distinct per-chunk files, so the two chunks never collide.
+
+When Ken says **"merge the RTP golden"**, run `powershell -File scripts\rtp-chunk.ps1 merge`
+→ combines the chunk files into `tests\rtp\golden-stl\golden-rtp-cgal-stats.json` (the membrane-detection
+reference). Do this only after both chunks have finished.
+
+When Ken says **"run the membrane comparison"**, run
+`python scripts\compare-rtp-membranes.py` (defaults to `<designer>\tests\rtp`; override with
+`KEYGUARD_RTP_ROOT`). It diffs the app's Manifold export stats
+(`output\ready-to-print\results\*.json`) against the CGAL golden and flags membrane suspects
+(surface area well above the golden, and/or a part-count split) plus designs that crashed the
+export. Writes `output\ready-to-print\membrane-comparison.csv`. Then run
+`python scripts\generate-membrane-review.py` for the human worklist
+(`output\ready-to-print\MEMBRANE-REVIEW.md`): export crashes + membrane suspects tiered by
+severity with STL paths, a pattern breakdown, and a few passed designs to spot-check.
+NOTE: the results files come from the `ready-to-print.spec.mjs` Playwright run — if they're
+stale, re-run that spec first so the comparison reflects the current app/.scad.
