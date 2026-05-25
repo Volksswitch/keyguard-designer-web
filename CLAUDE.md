@@ -63,6 +63,22 @@ When the sum of any "App layout in mm" parameters exceeds 5 mm, cell openings st
 the way through. May be resolved by the Manifold thin-floor fix — re-test against current main
 before digging in.
 
+### Manifold workaround redundancy (after the hole_cutter prism fix)
+The cell-floor "membrane" root cause turned out to be Manifold snapping the cell cutter's
+degenerate thin-slab `hull()` (the flat all-90 body) at exact round `cell_edge_chamfer` /
+`screen_area_thickness` values. `keyguard.scad`'s `hole_cutter` now builds that flat body as a
+single `linear_extrude` prism (CGAL-identical solid, no thin-slab hull), eliminating the snap at
+the source — same single-solid treatment already applied to the recess cutter (`hole_cutter2`).
+Once that `.scad` fix is in the upstream `keyguard.scad`, re-evaluate whether the two
+membrane-era workarounds in `app.html` are still doing anything:
+  - the `fudge` / `ff` = 0.05 bump (vs the `.scad` native 0.01), and
+  - `extend_through_cuts="yes"` (passed on both the preview and export paths).
+Test: render the round-value sweep (cec 0.5/1.0/1.5, sat 3.5) with `extend_through_cuts="no"`
+and `fudge=0.01`; if it stays clean (genus ~117, no membranes), those two are redundant for the
+membrane and can be simplified. This does NOT replace the CGAL "precision" export, which still
+handles the separate Manifold-vs-CGAL parts/bbox/area divergences (TC53, TC8, TC54, …). Treat any
+removal as its own change with its own geometry-gate run.
+
 ### WASM crash clusters (identified 2026-05-15 full-suite run)
 - **Cluster 1 — zero/negative `cell_corner_radius` + all-90 slopes** (WASM frame
   `wasm-function[3256]:0x1d30f9`): TC19 step 2 (cr=−10), TC23 step 2 (cr=−5),
