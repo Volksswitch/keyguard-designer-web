@@ -191,10 +191,23 @@
   .split-item:hover { background: #e8f0fc; }
   .split-item .hint { color: #888; font-size: 11px; font-weight: normal; }
 
-  /* ---------- dirty indicator ---------- */
-  .preset-row select.dirty { font-style: italic; color: #a33; }
+  /* ---------- dirty indicator: OpenSCAD-style "*" to the right (no text styling) ---------- */
   #dirty-marker { color: #a33; font-weight: bold; margin-left: 4px; display: none; }
   #dirty-marker.visible { display: inline; }
+
+  /* ---------- editable preset combobox (mirrors OpenSCAD's Qt combobox) ---------- */
+  .preset-combo { position: relative; flex: 1; display: flex; min-width: 0; }
+  #preset-input { flex: 1 1 auto; min-width: 0; }
+  #preset-dropdown-btn { flex: 0 0 auto; margin-left: 2px; padding: 0 6px; cursor: pointer; }
+  #preset-list { position: absolute; top: 100%; left: 0; right: 0; z-index: 60; margin: 2px 0 0;
+                 padding: 0; list-style: none; max-height: 240px; overflow-y: auto; background: #fff;
+                 border: 1px solid #888; box-shadow: 0 2px 6px rgba(0,0,0,.2); display: none; }
+  #preset-list.open { display: block; }
+  #preset-list li { padding: 3px 8px; cursor: pointer; white-space: nowrap;
+                    overflow: hidden; text-overflow: ellipsis; }
+  #preset-list li:hover { background: #e8f0fc; }
+  #preset-list li.active { background: #d6e6fb; font-weight: bold; }
+
   button:disabled { opacity: 0.45; cursor: not-allowed; }
 
   /* ---------- Settings modal ---------- */
@@ -409,11 +422,13 @@
         </div>
         <div style="font-size:11px; color:#888; margin-bottom:6px;" id="watch-status"></div>
         <div class="preset-row">
-          <select id="preset-select">
-            <option value="design default values">design default values</option>
-            <option value="Smith iPad AAC grid">Smith iPad AAC grid</option>
-            <option value="Jones Surface 6-cell">Jones Surface 6-cell</option>
-          </select>
+          <div id="preset-combo" class="preset-combo">
+            <input type="text" id="preset-input" autocomplete="off" spellcheck="false"
+                   title="Preset — Up/Down to switch; edit the name and press Enter to rename">
+            <button type="button" id="preset-dropdown-btn" tabindex="-1"
+                    aria-label="Show preset list" title="Show preset list">&#9662;</button>
+            <ul id="preset-list" role="listbox"></ul>
+          </div>
           <span id="dirty-marker" title="unsaved changes">*</span>
         </div>
         <div class="preset-btns">
@@ -832,7 +847,12 @@ const Y_UP = new THREE.Vector3(0, 1, 0);
 // leftmost Preview button: handy for "clear the console, then render again"
 // so only the latest render's messages are shown.
 document.getElementById('view-render').addEventListener('click', () => {
-  if (project) doRender();
+  if (!project) return;
+  // On an on-demand render, append the version banner + screenshot status to
+  // the console (no clear), then let doRender() append this render's output.
+  logVersionBanner(project.scadName, project.scadText);
+  logScreenshotStatus();
+  doRender();
 });
 document.getElementById('view-fit').addEventListener('click', () => {
   if (currentMesh) fitCameraToObject(currentMesh);
@@ -917,6 +937,25 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // deployment cache key: it is NOT pre-bumped on dev, only at release, to match
 // this number. See RELEASING.md.
 const APP_RELEASE = 4;
+
+// Two-line version banner: the running app release plus the loaded designer
+// file's version (read from its `keyguard_designer_version = NN;` line). Shown
+// on project open, on project change, and on each on-demand render (the
+// view-render button) so a clinician always has both numbers near the top of
+// the console to copy into a support email.
+function logVersionBanner(scadName, scadText) {
+  const m = (scadText || '').match(/keyguard_designer_version\s*=\s*(\d+)/);
+  logLine(`Keyguard Designer web app — release ${APP_RELEASE}`);
+  logLine(`Designer file "${scadName}" — version ${m ? m[1] : 'unknown'}`);
+}
+
+// Reports the currently loaded screenshot image, matching rescanScreenshot's
+// existing wording. Logged with the version banner on an on-demand render.
+function logScreenshotStatus() {
+  const name = project && project.screenshotName;
+  if (name) logLine(`Screenshot: using "${name}"`);
+  else      logLine('Screenshot: no .jpg/.jpeg/.png in project folder');
+}
 // Default teal / cornfield are the long-standing viewport colours; the
 // Customizer text sizes mirror the CSS :root defaults.
 const DEFAULT_ITEM_COLOR = '#40E0D0';   // Turquoise — the default teal
@@ -1087,17 +1126,28 @@ function orderedPresetNames(rawNames) {
   )];
 }
 
+// Rebuild the editable preset combobox: set the input to the current preset
+// and rebuild the dropdown list, marking the active item. The list items use
+// mousedown (not click) so selection runs before the input's blur-revert.
 function rebuildPresetDropdown() {
-  const sel = document.getElementById('preset-select');
-  if (!sel || !project) return;
-  const current = project.currentPreset;
-  sel.innerHTML = '';
+  const input = document.getElementById('preset-input');
+  const list  = document.getElementById('preset-list');
+  if (!input || !list || !project) return;
+  input.value = project.currentPreset;
+  list.innerHTML = '';
   for (const n of project.presetNames) {
-    const opt = document.createElement('option');
-    opt.value = n; opt.textContent = n;
-    sel.appendChild(opt);
+    const li = document.createElement('li');
+    li.textContent = n;
+    li.dataset.name = n;
+    if (n === project.currentPreset) li.classList.add('active');
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      closePresetList();
+      if (n !== project.currentPreset) selectPreset(n);
+      else input.value = project.currentPreset;
+    });
+    list.appendChild(li);
   }
-  sel.value = current;
 }
 
 // ===== Project model =====
@@ -1208,8 +1258,8 @@ async function resetToNoProject() {
   cameraFitOnce = false;
   consoleEl.textContent = '';
   container.innerHTML = '';
-  document.getElementById('preset-select').innerHTML = '';
-  document.getElementById('preset-select').classList.remove('dirty');
+  document.getElementById('preset-input').value = '';
+  document.getElementById('preset-list').innerHTML = '';
   document.getElementById('dirty-marker').classList.remove('visible');
   for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn']) {
     const b = document.getElementById(id);
@@ -1364,9 +1414,7 @@ async function openProject() {
   // release is the running build's APP_RELEASE constant (accurate on the public
   // build); the designer version is read straight from the loaded keyguard.scad
   // (its `keyguard_designer_version = NN;` declaration).
-  const scadVerMatch = scadText.match(/keyguard_designer_version\s*=\s*(\d+)/);
-  logLine(`Keyguard Designer web app — release ${APP_RELEASE}`);
-  logLine(`Designer file "${scadName}" — version ${scadVerMatch ? scadVerMatch[1] : 'unknown'}`);
+  logVersionBanner(scadName, scadText);
   logLine(`Opening project folder "${dirHandle.name}"...`);
 
   if (files['openings_and_additions.txt']) {
@@ -1422,14 +1470,7 @@ async function openProject() {
     opBtn.textContent = 'Change Project…';
     opBtn.title = `Currently "${dirHandle.name}". Click to switch to a different folder.`;
   }
-  const sel = document.getElementById('preset-select');
-  sel.innerHTML = '';
-  for (const n of presetNames) {
-    const opt = document.createElement('option');
-    opt.value = n; opt.textContent = n;
-    sel.appendChild(opt);
-  }
-  sel.value = project.currentPreset;
+  rebuildPresetDropdown();
 
   // Build form and populate with values from the selected preset
   buildCustomizerForm(customizer);
@@ -1536,14 +1577,8 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
     fm.textContent = '(fixture mode)';
     lbl.appendChild(fm);
   }
-  const sel = document.getElementById('preset-select');
-  sel.innerHTML = '';
-  for (const n of presetNames) {
-    const opt = document.createElement('option');
-    opt.value = n; opt.textContent = n;
-    sel.appendChild(opt);
-  }
-  sel.value = currentPreset;
+  project.currentPreset = currentPreset;
+  rebuildPresetDropdown();
 
   buildCustomizerForm(customizer);
   populateFormFromPreset(currentPreset);
@@ -2930,7 +2965,6 @@ function updateDirty() {
   if (!project) return;
   const dirty = isDirty();
   document.getElementById('dirty-marker').classList.toggle('visible', dirty);
-  document.getElementById('preset-select').classList.toggle('dirty', dirty);
   document.getElementById('save-preset-btn').disabled = !dirty;
   document.getElementById('reset-btn').disabled = !dirty;
 }
@@ -3150,28 +3184,128 @@ exportMenu.addEventListener('click', e => {
 });
 
 // ---------- preset select + dirty state ----------
-const presetSelect = document.getElementById('preset-select');
 const dirtyMarker = document.getElementById('dirty-marker');
 const savePresetBtn = document.getElementById('save-preset-btn');
 const resetBtn = document.getElementById('reset-btn');
 
-presetSelect.addEventListener('change', async () => {
+// ===== Editable preset combobox (mirrors OpenSCAD's Qt combobox) =====
+const presetInput = document.getElementById('preset-input');
+const presetList = document.getElementById('preset-list');
+const presetDropdownBtn = document.getElementById('preset-dropdown-btn');
+
+function openPresetList() {
   if (!project) return;
+  rebuildPresetDropdown();
+  presetList.classList.add('open');
+  const act = presetList.querySelector('li.active');
+  if (act) act.scrollIntoView({ block: 'nearest' });
+}
+function closePresetList() { presetList.classList.remove('open'); }
+
+// Switch to preset `name`, honouring the unsaved-changes guard. Replaces the
+// former <select> change handler; reused by Up/Down stepping and list clicks.
+async function selectPreset(name) {
+  if (!project || name === project.currentPreset) {
+    if (project) presetInput.value = project.currentPreset;
+    return;
+  }
   if (isDirty()) {
     const proceed = await confirmDiscard(
       `You have unsaved changes to "${project.currentPreset}". ` +
       `Switching presets will discard them.`);
-    if (!proceed) {
-      presetSelect.value = project.currentPreset;   // revert the dropdown
-      return;
-    }
+    if (!proceed) { presetInput.value = project.currentPreset; return; }
   }
-  project.currentPreset = presetSelect.value;
-  populateFormFromPreset(presetSelect.value);
+  project.currentPreset = name;
+  rebuildPresetDropdown();
+  populateFormFromPreset(name);
   updateDelPresetButton();
-  logLine(`Selected preset: "${presetSelect.value}" — re-rendering...`);
+  logLine(`Selected preset: "${name}" — re-rendering...`);
   await rescanScreenshot();
   doRender();
+}
+
+// Up/Down: step to the previous/next preset in the ordered list.
+function stepPreset(delta) {
+  if (!project) return;
+  const names = project.presetNames;
+  const i = names.indexOf(project.currentPreset);
+  if (i < 0) return;
+  const j = Math.max(0, Math.min(names.length - 1, i + delta));
+  if (j !== i) selectPreset(names[j]);
+}
+
+// Rename the current preset (edit the name in the box + Enter). Relabels the
+// parameterSets key on disk; params and dirty state are unchanged.
+async function renamePreset(newName) {
+  if (!project) return;
+  const oldName = project.currentPreset;
+  newName = (newName || '').trim();
+  if (!newName || newName === oldName) { presetInput.value = oldName; return; }
+  if (oldName === 'design default values') {
+    alert('"design default values" is read-only and cannot be renamed.');
+    presetInput.value = oldName; return;
+  }
+  if (newName === 'design default values') {
+    alert('That name is reserved.'); presetInput.value = oldName; return;
+  }
+  if (project.rawPresetNames.includes(newName)) {
+    alert(`A preset named "${newName}" already exists.`); presetInput.value = oldName; return;
+  }
+  if (!(await ensureWritePermission())) {
+    logLine('Rename preset: write permission was not granted.');
+    presetInput.value = oldName; return;
+  }
+  try {
+    const existing = project.jsonText ? JSON.parse(project.jsonText) : { parameterSets: {} };
+    const parameterSets = existing.parameterSets || {};
+    parameterSets[newName] = parameterSets[oldName] || {};
+    delete parameterSets[oldName];
+    const newText = buildPresetJson(parameterSets);
+    const jsonName = project.jsonName || project.scadName.replace(/\.scad$/i, '') + '.json';
+    const fileHandle = await project.dirHandle.getFileHandle(jsonName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(newText);
+    await writable.close();
+    project.jsonText = newText;
+    project.jsonName = jsonName;
+    project.rawPresetNames = project.rawPresetNames.map(n => (n === oldName ? newName : n));
+    project.presetNames = orderedPresetNames(project.rawPresetNames);
+    project.currentPreset = newName;
+    rebuildPresetDropdown();
+    updateDelPresetButton();
+    logLine(`Renamed preset "${oldName}" to "${newName}" in ${jsonName}`);
+  } catch (e) {
+    logLine('Rename preset failed: ' + e.message);
+    console.error(e);
+    presetInput.value = oldName;
+  }
+}
+
+presetDropdownBtn.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  if (!project) return;
+  if (presetList.classList.contains('open')) closePresetList();
+  else { openPresetList(); presetInput.focus(); }
+});
+
+presetInput.addEventListener('keydown', (e) => {
+  if (!project) return;
+  if (e.key === 'ArrowDown')    { e.preventDefault(); stepPreset(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); stepPreset(-1); }
+  else if (e.key === 'Enter')   { e.preventDefault(); closePresetList(); renamePreset(presetInput.value); }
+  else if (e.key === 'Escape')  { e.preventDefault(); presetInput.value = project.currentPreset; closePresetList(); presetInput.blur(); }
+});
+
+// Revert uncommitted typing and close the list when focus leaves. The short
+// delay lets a list-item mousedown (selection) run first.
+presetInput.addEventListener('blur', () => {
+  setTimeout(() => { if (project) presetInput.value = project.currentPreset; closePresetList(); }, 150);
+});
+
+// Close the dropdown on an outside click.
+document.addEventListener('mousedown', (e) => {
+  const combo = document.getElementById('preset-combo');
+  if (combo && !combo.contains(e.target)) closePresetList();
 });
 
 resetBtn.addEventListener('click', () => {
