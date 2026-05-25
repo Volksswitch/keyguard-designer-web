@@ -89,6 +89,22 @@ removal as its own change with its own geometry-gate run.
   TC10 steps 3–4 (SVG generation), TC13 step 3 (`geometry: false`), TC46 step 4 (SVG).
   These need the visual harness to learn about non-STL output kinds.
 
+### WASM OOM on heavy / sat≥kt designs ("memory access out of bounds") — intermittent
+Heavy designs (dense grids — e.g. "…Grid Super Core 30 max rails" renders at ≈2× the geometry
+of the plain variant) and `sat ≥ kt` configs (no recess) can crash a *live* render with
+`Render failed: memory access out of bounds` — an openscad-wasm OOM trap. The build has
+`ALLOW_MEMORY_GROWTH`, so the trap is a memory-*growth failure*, not a fixed ceiling: wasm32
+linear memory is a single contiguous ArrayBuffer, and because the app spins up a fresh wasm
+instance per render, a long-lived tab fragments its address space until a large contiguous grow
+can't be satisfied — even with free RAM. That's why it's intermittent: `Ctrl-Shift-R` (fresh
+tab) clears the fragmentation and the same design renders. Confirmed it is NOT a geometry bug and
+NOT membrane-related — the geometry/RTP gates, which get fresh memory per test, render these exact
+designs cleanly (e.g. "Fintie - Grid Super Core 30 max rails" passed in the RTP gate). Leads:
+reuse a single wasm instance instead of tearing down/recreating per render (less fragmentation);
+pre-grow `INITIAL_MEMORY`; verify torn-down instances' ArrayBuffers are actually released. Likely
+eased once the per-cell extender (`extend_through_cuts`) is retired (see "Manifold workaround
+redundancy") — it inflates the heap most on dense "max rails" grids.
+
 ### Image parity tuning
 Both projects capture at 2048×1536. Web uses FOV 22.5° to approximate OpenSCAD's CLI default.
 After Ken reviews side-by-side pairs, may need to nudge FOV or vpd interpretation.
