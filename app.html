@@ -112,6 +112,7 @@
             font-size: 14px; border-radius: 2px; color: #333; min-width: 26px; }
   .vp-btn:hover { background: #d8d8d8; border-color: #aaa; }
   .vp-btn:active { background: #cfcfcf; }
+  .vp-btn.active { background: #cfe0f5; border-color: #6a9bd8; color: #06c; }
   /* Original CC0 inline SVG icons drawn in OpenSCAD's flat axonometric
      style (cube + highlighted face for views) so users moving between this
      app and native OpenSCAD see the same visual language. currentColor lets
@@ -734,19 +735,92 @@ function resize() {
 new ResizeObserver(resize).observe(viewport);
 resize();
 
+// Declared here (before animate's first synchronous call) so the orientation
+// gizmo toggle is in scope; the gizmo scene itself is built further below.
+let gizmoOn = false;
 (function animate() {
   controls.update();
   renderer.render(scene, camera);
+  if (gizmoOn) renderGizmo();
   requestAnimationFrame(animate);
 })();
 
 // ===== Axes + grid helpers (toggled by toolbar buttons) =====
-let axesHelper = null;
 let gridHelper = null;
-function ensureAxes() {
-  if (axesHelper) return;
-  axesHelper = new THREE.AxesHelper(80);
-  scene.add(axesHelper);
+
+// ----- Orientation gizmo (OpenSCAD-style corner navigator) -----
+// A small, separate scene drawn in the lower-left corner of the viewport that
+// shows the X (red) / Y (green) / Z (blue) axes and rotates with the main
+// camera, mirroring OpenSCAD's axis indicator. It's a navigator overlay, not
+// world geometry — so it never appears in exports and doesn't sit at the model
+// origin. Toggled by the "Show Axes" toolbar button. (`gizmoOn` is declared
+// above the animate loop so its first synchronous frame can read it.)
+const GIZMO_PX = 96;      // on-screen size of the corner navigator (CSS px)
+const GIZMO_MARGIN = 8;   // gap from the viewport's left/bottom edges (CSS px)
+const gizmoScene = new THREE.Scene();
+// Orthographic so the axes keep constant length regardless of view distance.
+const gizmoCam = new THREE.OrthographicCamera(-1.6, 1.6, 1.6, -1.6, 0.1, 100);
+
+function makeGizmoLabel(text, color) {
+  const px = 64;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = px;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.font = 'bold 46px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, px / 2, px / 2 + 2);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  spr.scale.set(0.7, 0.7, 0.7);
+  return spr;
+}
+
+(function buildGizmo() {
+  const L = 1.0;                       // axis length in gizmo space
+  const X = new THREE.Vector3(1, 0, 0),
+        Y = new THREE.Vector3(0, 1, 0),
+        Z = new THREE.Vector3(0, 0, 1);
+  const RED = 0xd11500, GREEN = 0x00a000, BLUE = 0x1060d8;
+  const axis = (dir, color) => {
+    const g = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0), dir.clone().multiplyScalar(L),
+    ]);
+    return new THREE.Line(g, new THREE.LineBasicMaterial({ color, depthTest: false }));
+  };
+  gizmoScene.add(axis(X, RED), axis(Y, GREEN), axis(Z, BLUE));
+  const lx = makeGizmoLabel('x', '#d11500'); lx.position.copy(X.clone().multiplyScalar(L + 0.35));
+  const ly = makeGizmoLabel('y', '#00a000'); ly.position.copy(Y.clone().multiplyScalar(L + 0.35));
+  const lz = makeGizmoLabel('z', '#1060d8'); lz.position.copy(Z.clone().multiplyScalar(L + 0.35));
+  gizmoScene.add(lx, ly, lz);
+})();
+
+// Draw the gizmo into a small scissored viewport in the lower-left corner.
+// Called after the main render, with the gizmo camera oriented to match the
+// main view direction so the axes rotate exactly as the model does.
+const _gizmoSize = new THREE.Vector2();
+function renderGizmo() {
+  const target = controls ? controls.target : new THREE.Vector3();
+  const dir = camera.position.clone().sub(target);
+  if (dir.lengthSq() < 1e-9) dir.set(0, 0, 1);
+  gizmoCam.position.copy(dir.normalize().multiplyScalar(5));
+  gizmoCam.up.copy(camera.up);
+  gizmoCam.lookAt(0, 0, 0);
+  renderer.getSize(_gizmoSize);
+  // Overlay the axes on top of the already-rendered viewport — no colour clear,
+  // so there's no opaque box behind the gizmo (matching OpenSCAD's indicator).
+  // Only the depth buffer is cleared so the axes aren't occluded by the model.
+  renderer.autoClear = false;
+  renderer.setScissorTest(true);
+  renderer.setViewport(GIZMO_MARGIN, GIZMO_MARGIN, GIZMO_PX, GIZMO_PX);
+  renderer.setScissor(GIZMO_MARGIN, GIZMO_MARGIN, GIZMO_PX, GIZMO_PX);
+  renderer.clearDepth();
+  renderer.render(gizmoScene, gizmoCam);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, _gizmoSize.x, _gizmoSize.y);
+  renderer.autoClear = true;
 }
 // Reference grid: a build-plate-sized rectangle in the XY plane (z = 0) with
 // minor lines every 10 mm and major lines every 50 mm. Lines are generated
@@ -832,8 +906,9 @@ function rebuildGridIfVisible() {
   ensureGrid();
 }
 function toggleAxes() {
-  if (axesHelper) { scene.remove(axesHelper); axesHelper.dispose && axesHelper.dispose(); axesHelper = null; }
-  else ensureAxes();
+  gizmoOn = !gizmoOn;
+  const btn = document.getElementById('view-axes');
+  if (btn) btn.classList.toggle('active', gizmoOn);
 }
 function toggleGrid() {
   if (gridHelper) disposeGrid();
@@ -848,9 +923,10 @@ const Y_UP = new THREE.Vector3(0, 1, 0);
 // so only the latest render's messages are shown.
 document.getElementById('view-render').addEventListener('click', () => {
   if (!project) return;
-  // On an on-demand render, append the version banner + screenshot status to
-  // the console (no clear), then let doRender() append this render's output.
+  // On an on-demand render, append the version banner + project/preset + screenshot
+  // status to the console (no clear), then let doRender() append this render's output.
   logVersionBanner(project.scadName, project.scadText);
+  logLine(`Project "${project.dirHandle ? project.dirHandle.name : '(unknown)'}" — preset "${project.currentPreset}"`);
   logScreenshotStatus();
   doRender();
 });
@@ -998,6 +1074,8 @@ const SETTINGS_DEFAULTS = {
   orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
   orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.25 … 3.0
   paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
+  custPaneWidth: 280,                    // Customizer (right) pane width in px — restored across sessions
+  consoleHeight: 180,                    // Console (bottom) pane height in px — restored across sessions
 };
 let settings = loadSettings();
 
@@ -3004,21 +3082,29 @@ container.addEventListener('change', async e => {
 }
 
 // ---------- splitter drag logic ----------
+// Pane sizes are persisted (settings.custPaneWidth / consoleHeight) so the
+// layout a clinician sets up survives a reload. The clamps here must match the
+// restore clamps in applyPaneSizes().
+const PANE_W_MIN = 180, PANE_W_MAX = 700;
+const PANE_H_MIN = 60,  PANE_H_MAX = 600;
 function makeHSplit(el, leftEl, rightEl) {
   el.addEventListener('mousedown', e => {
     e.preventDefault();
     document.body.classList.add('dragging');
     const startX = e.clientX;
     const startW = rightEl.getBoundingClientRect().width;
+    let lastW = startW;
     function move(ev) {
       const dx = ev.clientX - startX;
-      const newW = Math.max(180, Math.min(700, startW - dx));
-      rightEl.style.width = newW + 'px';
+      lastW = Math.max(PANE_W_MIN, Math.min(PANE_W_MAX, startW - dx));
+      rightEl.style.width = lastW + 'px';
+      resize();
     }
     function up() {
       document.body.classList.remove('dragging');
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
+      setSetting('custPaneWidth', Math.round(lastW));
     }
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
@@ -3030,20 +3116,32 @@ function makeVSplit(el, topEl, bottomEl) {
     document.body.classList.add('dragging', 'row');
     const startY = e.clientY;
     const startH = bottomEl.getBoundingClientRect().height;
+    let lastH = startH;
     function move(ev) {
       const dy = ev.clientY - startY;
-      const newH = Math.max(60, Math.min(600, startH - dy));
-      bottomEl.style.height = newH + 'px';
+      lastH = Math.max(PANE_H_MIN, Math.min(PANE_H_MAX, startH - dy));
+      bottomEl.style.height = lastH + 'px';
+      resize();
     }
     function up() {
       document.body.classList.remove('dragging', 'row');
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
+      setSetting('consoleHeight', Math.round(lastH));
     }
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   });
 }
+// Restore persisted pane sizes on load (clamped to the same limits as the drag).
+function applyPaneSizes() {
+  const w = Math.max(PANE_W_MIN, Math.min(PANE_W_MAX, Number(settings.custPaneWidth) || SETTINGS_DEFAULTS.custPaneWidth));
+  const h = Math.max(PANE_H_MIN, Math.min(PANE_H_MAX, Number(settings.consoleHeight) || SETTINGS_DEFAULTS.consoleHeight));
+  document.getElementById('right').style.width = w + 'px';
+  document.getElementById('console-wrap').style.height = h + 'px';
+  resize();
+}
+applyPaneSizes();
 makeHSplit(document.getElementById('hsplit-cust'),
            document.getElementById('left'),
            document.getElementById('right'));
