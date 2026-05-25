@@ -102,9 +102,17 @@ tab) clears the fragmentation and the same design renders. Confirmed it is NOT a
 NOT membrane-related — the geometry/RTP gates, which get fresh memory per test, render these exact
 designs cleanly (e.g. "Fintie - Grid Super Core 30 max rails" passed in the RTP gate). Leads:
 reuse a single wasm instance instead of tearing down/recreating per render (less fragmentation);
-pre-grow `INITIAL_MEMORY`; verify torn-down instances' ArrayBuffers are actually released. Likely
-eased once the per-cell extender (`extend_through_cuts`) is retired (see "Manifold workaround
-redundancy") — it inflates the heap most on dense "max rails" grids.
+verify torn-down instances' ArrayBuffers are actually released; and/or pre-size the heap so growth
+never fires. NOTE pre-sizing needs a *rebuild* — it cannot be set from the web app with the
+current bundle: `openscad.js` creates its own internal memory (`wasmMemory = wasmExports["Vb"]`,
+exported, NOT imported) and has no `Module["INITIAL_MEMORY"]` / `wasmMemory` override hook, so
+`INITIAL_MEMORY` and the growth ceiling are baked into the `.wasm` at build time. To change it,
+rebuild openscad-wasm with `-sINITIAL_MEMORY=<large>` (optionally `-sALLOW_MEMORY_GROWTH=0` for a
+fixed buffer), or with `-sIMPORTED_MEMORY` so `app.html` can supply a pre-sized
+`WebAssembly.Memory({initial, maximum})` per instance at runtime. Caveat: wasm32 caps at 4 GB and
+a big buffer is reserved per instance, so pre-sizing pairs best with single-instance reuse. Also
+likely eased once the per-cell extender (`extend_through_cuts`) is retired (see "Manifold
+workaround redundancy") — it inflates the heap most on dense "max rails" grids.
 
 ### Image parity tuning
 Both projects capture at 2048×1536. Web uses FOV 22.5° to approximate OpenSCAD's CLI default.
