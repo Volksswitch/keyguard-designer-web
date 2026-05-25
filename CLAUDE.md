@@ -118,6 +118,32 @@ workaround redundancy") — it inflates the heap most on dense "max rails" grids
 Both projects capture at 2048×1536. Web uses FOV 22.5° to approximate OpenSCAD's CLI default.
 After Ken reviews side-by-side pairs, may need to nudge FOV or vpd interpretation.
 
+### Pre-existing Manifold↔CGAL geometry-gate divergences (TC5/8/46/47/54) — KEN to investigate
+The geometry gate (`tests/geometry.spec.mjs`, Manifold vs the `.scad` CGAL golden manifest) fails
+13 steps across Test Cases 5, 8, 46, 47, 53, 54. Confirmed **identical on `.scad` main** (baseline
+run 2026-05-24) → pre-existing Manifold-backend divergences, NOT caused by the v78 membrane fix.
+Volume matches the golden in nearly all; the divergences are in:
+- parts count — TC5 1≠3, TC47 16≠1 (embossed text @ depth +2), TC54 4≠1, TC8 1≠2;
+- bbox ~1 mm shifts — TC8, TC46;
+- surface area — TC8 up to 3.67%, TC53 3.8%.
+This is the class the CGAL "precision" export exists for. TC53 is separately documented in the
+`.scad` CLAUDE.md (non-manifold, 7 parts). Note the v78 fix *improved* several toward the golden
+(TC46 s3 laser-cut vol Δ16%→0.03%; TC53 vol/parts), but TC5 s1 gained ~32k reversed facets
+(non-gated / slicer-tolerated; TC5 already routes to CGAL precision).
+**ACTION (Ken):** investigate why Manifold diverges from CGAL on TC5/8/46/47/54 and whether each
+should auto-fall back to the CGAL precision export; report findings back.
+
+### RTP gate "golden" is the downloaded-website snapshot, not a current CGAL golden — KEN to clarify
+`tests/ready-to-print.spec.mjs` passed 292/292 (2026-05-24), but the deltas it prints are measured
+against `golden-rtp-stats.json` = the **downloaded-website** reference (a different design/version
+snapshot), so large deltas (e.g. `Δvol=+89.76%` on "Grid Super Core 30 max rails") are
+informational, not pass/fail. An RTP "pass" therefore confirms the design *renders* via Manifold,
+not that it *matches CGAL*. The meaningful Manifold-vs-CGAL RTP check is the separate "run the
+membrane comparison" (`compare-rtp-membranes.py` vs `golden-rtp-cgal-stats.json`) and/or
+regenerating the RTP CGAL golden.
+**ACTION (Ken):** decide whether the RTP gate should compare against the CGAL golden (a meaningful
+pass/fail) rather than/in addition to the website snapshot; report findings back.
+
 ---
 
 ## Implementation notes
