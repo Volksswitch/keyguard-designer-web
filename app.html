@@ -2712,7 +2712,15 @@ function buildParamControl(p) {
   switch (p.control.kind) {
     case 'dropdown': {
       input = document.createElement('select');
-      for (const c of p.control.choices) {
+      // "first layer for SVG/DXF file" is a 2D laser-cut output. The web app
+      // already exposes that via the dedicated "Export as SVG" menu item
+      // (which forces the right generate value internally), so surfacing it
+      // here would only let a clinician pick a generate option that can't
+      // be exported as STL. Suppress it from the dropdown.
+      const choices = p.name === 'generate'
+        ? p.control.choices.filter(c => c.value !== 'first layer for SVG/DXF file')
+        : p.control.choices;
+      for (const c of choices) {
         const opt = document.createElement('option');
         opt.value = c.value; opt.textContent = c.label;
         input.appendChild(opt);
