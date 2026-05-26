@@ -621,8 +621,9 @@ function buildOrbitControls() {
 
   if (orbitScheme === 'tumble') {
     controls = new TrackballControls(camera, canvas);
-    controls.staticMoving = false;
-    controls.dynamicDampingFactor = 0.15;
+    // Inertia disabled — rotation must stop the instant the mouse is released.
+    controls.staticMoving = true;
+    controls.dynamicDampingFactor = 0.15;   // unused while staticMoving is true
     controls.panSpeed = 0.6;
     // zoomSpeed is set by applyOrbitZoom() below (honours the user setting).
     controls.mouseButtons = {
@@ -635,8 +636,9 @@ function buildOrbitControls() {
   } else {
     orbitScheme = 'turntable';
     controls = new OrbitControls(camera, canvas);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.1;
+    // Inertia disabled — rotation must stop the instant the mouse is released.
+    controls.enableDamping = false;
+    controls.dampingFactor = 0.1;   // unused while enableDamping is false
     // Match OpenSCAD: left=rotate, right=pan, middle=rotate, wheel=zoom
     controls.mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN
@@ -874,7 +876,11 @@ function buildGridGroup(gx, gy) {
 // grid sits visibly below the keyguard (and below the screenshot canvas,
 // which keyguard.scad places just under the keyguard) rather than slicing
 // through it at z = 0.
-const GRID_GAP_MM = 3;
+// Grid sits just below the model's bounding-box minimum z, with this tiny gap
+// to avoid z-fighting. When the screenshot underlay is present (it lives at
+// z = -kt/2 - 0.05 inside currentMesh's group), it falls between the keyguard
+// bottom and the grid by construction.
+const GRID_GAP_MM = 0.1;
 
 function gridZForModel() {
   if (!currentMesh) return 0;
@@ -913,6 +919,8 @@ function toggleAxes() {
 function toggleGrid() {
   if (gridHelper) disposeGrid();
   else ensureGrid();
+  const btn = document.getElementById('view-grid');
+  if (btn) btn.classList.toggle('active', !!gridHelper);
 }
 
 // ===== Viewport toolbar wiring =====
@@ -1969,7 +1977,11 @@ async function doRender() {
         if (label === 'highlights') {
           return { elapsed, bytes: null };
         }
-        logLine(`  ${label} render returned code ${rc}`);
+        // generate="Customizer settings" intentionally exits with rc=1
+        // (echoes-only, no STL); don't surface the return-code line for it.
+        if (!(label === 'keyguard' && currentFormValues().generate === 'Customizer settings')) {
+          logLine(`  ${label} render returned code ${rc}`);
+        }
         return { elapsed, bytes: null };
       }
       let bytes = null;
@@ -2114,8 +2126,19 @@ async function doRender() {
     const totalElapsed = tkElapsed + thElapsed;
     setStatus(`Rendered in ${totalElapsed.toFixed(1)} s`, 'ok');
   } catch (e) {
-    logLine('Render failed: ' + e.message);
-    setStatus('Render failed: ' + e.message, 'error');
+    // generate="Customizer settings" raises "keyguard render produced no STL"
+    // by design (the echoed customizer settings ARE the deliverable). Treat
+    // that as a successful outcome — don't show "Render failed:" in either
+    // the console pane or the status bar.
+    const customizerNoSTL = (project && project.customizer
+                             && currentFormValues().generate === 'Customizer settings'
+                             && e.message === 'keyguard render produced no STL');
+    if (customizerNoSTL) {
+      setStatus('Customizer settings written to console.', 'ok');
+    } else {
+      logLine('Render failed: ' + e.message);
+      setStatus('Render failed: ' + e.message, 'error');
+    }
     console.error(e);
   } finally {
     renderInProgress = false;
@@ -2426,6 +2449,23 @@ async function exportCurrent(fmt) {
   if (fmt === 'STL-CGAL') fmt = 'STL';
   const spec = EXPORT_FORMATS[fmt];
   if (!spec) { alert(`Unknown export format: ${fmt}`); return; }
+
+  // STL is a 3D format. The "first layer for SVG/DXF file" generate option
+  // emits a 2D OpenSCAD object, and "Customizer settings" emits no geometry
+  // at all (it just echoes settings to the console with rc=1). Either one
+  // makes OpenSCAD's STL export fail; without this guard the save-as dialog
+  // still pops up and leaves a 0-byte file behind. Catch them up front.
+  if (fmt === 'STL') {
+    const gen = currentFormValues().generate;
+    if (gen === 'first layer for SVG/DXF file') {
+      alert('STL is a 3D format, but generate="first layer for SVG/DXF file" produces a 2D outline. Export as SVG instead, or change "generate" to a 3D option.');
+      return;
+    }
+    if (gen === 'Customizer settings') {
+      alert('generate="Customizer settings" produces no geometry — it just echoes the current parameter values to the console. Change "generate" to a 3D option to export an STL.');
+      return;
+    }
+  }
 
   // Pick the destination NOW, while this click's user gesture is still live.
   // showSaveFilePicker requires transient activation (~5 s in Chromium); a
