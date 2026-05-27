@@ -26,7 +26,14 @@
   * { box-sizing: border-box; }
   /* Customizer text sizes are driven by these so the Settings → Text panel
      can retune them live. Defaults match the historical hard-coded values. */
-  :root { --kg-section-heading-pt: 14px; --kg-param-text-pt: 12px; }
+  :root {
+    --kg-section-heading-pt:     14px;
+    --kg-section-heading-weight: bold;
+    --kg-section-heading-style:  normal;
+    --kg-param-text-pt:          12px;
+    --kg-param-text-weight:      bold;
+    --kg-param-text-style:       normal;
+  }
 
   /* Light/dark theming for the Customizer (#right) and Console (#console-wrap)
      panes. The viewport and menubar are intentionally NOT themed here — the
@@ -157,7 +164,9 @@
   #cust-sections { flex: 1; overflow-y: auto; }
   .section { border-bottom: 1px solid var(--kg-pane-border-soft); }
   .section-header { padding: 7px 10px; cursor: pointer; user-select: none;
-                    display: flex; align-items: center; gap: 4px; font-weight: bold;
+                    display: flex; align-items: center; gap: 4px;
+                    font-weight: var(--kg-section-heading-weight);
+                    font-style: var(--kg-section-heading-style);
                     font-size: var(--kg-section-heading-pt);
                     background: var(--kg-pane-section-bg); }
   .section-header:hover { background: var(--kg-pane-hover); }
@@ -167,7 +176,8 @@
                   font-size: var(--kg-param-text-pt); }
   .section.open .section-body { display: block; }
   .param { margin-bottom: 8px; }
-  .param-label { display: block; font-weight: bold; margin-bottom: 2px;
+  .param-label { display: block; font-weight: var(--kg-param-text-weight);
+                 font-style: var(--kg-param-text-style); margin-bottom: 2px;
                  font-size: var(--kg-param-text-pt); }
   .param-help { color: var(--kg-pane-text-dim); font-size: 11px; margin-bottom: 3px; }
   .param select, .param input[type=text], .param input[type=number] {
@@ -1042,15 +1052,19 @@ function logScreenshotStatus() {
 }
 // Default teal / cornfield are the long-standing viewport colours; the
 // Customizer text sizes mirror the CSS :root defaults.
-const DEFAULT_ITEM_COLOR = '#40E0D0';   // Turquoise — the default teal
+const DEFAULT_ITEM_COLOR = '#40E1D1';   // Turquoise — the default teal
 const DEFAULT_BG_COLOR   = '#FFFFE5';   // OpenSCAD Cornfield-style cream
-const DEFAULT_SECTION_PT  = 14;
-const DEFAULT_PARAM_PT    = 12;
+const DEFAULT_SECTION_PT     = 14;
+const DEFAULT_SECTION_WEIGHT = 'bold';
+const DEFAULT_SECTION_STYLE  = 'normal';
+const DEFAULT_PARAM_PT       = 12;
+const DEFAULT_PARAM_WEIGHT   = 'bold';
+const DEFAULT_PARAM_STYLE    = 'normal';
 
 // Eight saturated item colours; eight neutral backgrounds chosen to stay
 // distinct from the item set and keep good contrast for any pairing.
 const ITEM_COLORS = [
-  { name: 'Teal',   hex: '#40E0D0' },
+  { name: 'Teal',   hex: '#40E1D1' },
   { name: 'Blue',   hex: '#4682B4' },
   { name: 'Green',  hex: '#3CB371' },
   { name: 'Gold',   hex: '#DAA520' },
@@ -1074,8 +1088,12 @@ const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
   gridX: 256,                    // reference-grid extent in mm (build-plate X)
   gridY: 256,                    // reference-grid extent in mm (build-plate Y)
-  sectionHeadingPt: DEFAULT_SECTION_PT,  // Customizer section-heading point size
-  paramTextPt: DEFAULT_PARAM_PT,         // Customizer parameter text point size
+  sectionHeadingPt:     DEFAULT_SECTION_PT,      // Customizer section-heading point size
+  sectionHeadingWeight: DEFAULT_SECTION_WEIGHT,  // 'bold' | 'normal'
+  sectionHeadingStyle:  DEFAULT_SECTION_STYLE,   // 'normal' | 'italic'
+  paramTextPt:          DEFAULT_PARAM_PT,         // Customizer parameter text point size
+  paramTextWeight:      DEFAULT_PARAM_WEIGHT,     // 'bold' | 'normal'
+  paramTextStyle:       DEFAULT_PARAM_STYLE,      // 'normal' | 'italic'
   itemColor: DEFAULT_ITEM_COLOR,         // generated piece colour in the viewport
   backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
   orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
@@ -1152,7 +1170,8 @@ function onSettingsChanged(key) {
     rebuildPresetDropdown();
   }
   if (key === 'gridX' || key === 'gridY') rebuildGridIfVisible();
-  if (key === 'sectionHeadingPt' || key === 'paramTextPt') applyTextSizes();
+  if (['sectionHeadingPt','sectionHeadingWeight','sectionHeadingStyle',
+       'paramTextPt','paramTextWeight','paramTextStyle'].includes(key)) applyTextSizes();
   if (key === 'backgroundColor') applyBackgroundColor();
   if (key === 'itemColor') applyItemColor();
   if (key === 'paneTheme') applyPaneTheme();
@@ -1164,8 +1183,12 @@ function onSettingsChanged(key) {
 // keys at once only needs one apply call.
 function applyTextSizes() {
   const root = document.documentElement.style;
-  root.setProperty('--kg-section-heading-pt', clampPt(settings.sectionHeadingPt) + 'px');
-  root.setProperty('--kg-param-text-pt', clampPt(settings.paramTextPt) + 'px');
+  root.setProperty('--kg-section-heading-pt',     clampPt(settings.sectionHeadingPt) + 'px');
+  root.setProperty('--kg-section-heading-weight', settings.sectionHeadingWeight || DEFAULT_SECTION_WEIGHT);
+  root.setProperty('--kg-section-heading-style',  settings.sectionHeadingStyle  || DEFAULT_SECTION_STYLE);
+  root.setProperty('--kg-param-text-pt',          clampPt(settings.paramTextPt) + 'px');
+  root.setProperty('--kg-param-text-weight',      settings.paramTextWeight || DEFAULT_PARAM_WEIGHT);
+  root.setProperty('--kg-param-text-style',       settings.paramTextStyle  || DEFAULT_PARAM_STYLE);
 }
 function applyBackgroundColor() {
   scene.background = new THREE.Color(settings.backgroundColor || DEFAULT_BG_COLOR);
@@ -3754,17 +3777,27 @@ const SETTINGS_PANELS = {
   `,
   text: () => `
     <div class="setting">
-      <label>Customizer text size</label>
+      <label>Customizer text size and style</label>
       <div style="color:#666; margin-bottom:8px;">
-        Point size for the Customizer pane on the right. Larger values help
-        when the panel is read at a distance or on a high-resolution display.
+        Point size and style for the Customizer pane on the right. Larger values
+        help when the panel is read at a distance or on a high-resolution display.
       </div>
-      <label class="opt">Section headings (pt)
+      <label style="display:block; font-weight:bold; margin:6px 0 2px;">Section headings</label>
+      <label class="opt">Size (pt)
         <input type="number" id="set-sectionHeadingPt" min="8" max="36" step="1"
           value="${clampPt(settings.sectionHeadingPt)}"></label>
-      <label class="opt">Parameter text (pt)
+      <label class="opt"><input type="checkbox" id="set-sectionHeadingBold"
+        ${(settings.sectionHeadingWeight||DEFAULT_SECTION_WEIGHT) === 'bold' ? 'checked' : ''}> Bold</label>
+      <label class="opt"><input type="checkbox" id="set-sectionHeadingItalic"
+        ${(settings.sectionHeadingStyle||DEFAULT_SECTION_STYLE) === 'italic' ? 'checked' : ''}> Italic</label>
+      <label style="display:block; font-weight:bold; margin:10px 0 2px;">Parameter text</label>
+      <label class="opt">Size (pt)
         <input type="number" id="set-paramTextPt" min="8" max="36" step="1"
           value="${clampPt(settings.paramTextPt)}"></label>
+      <label class="opt"><input type="checkbox" id="set-paramTextBold"
+        ${(settings.paramTextWeight||DEFAULT_PARAM_WEIGHT) === 'bold' ? 'checked' : ''}> Bold</label>
+      <label class="opt"><input type="checkbox" id="set-paramTextItalic"
+        ${(settings.paramTextStyle||DEFAULT_PARAM_STYLE) === 'italic' ? 'checked' : ''}> Italic</label>
       <button class="set-reset" id="reset-text">Reset to defaults</button>
     </div>
   `,
@@ -3847,10 +3880,26 @@ function renderSettingsPanel(cat) {
       if (v !== settings[k]) setSetting(k, v);
     });
   }
+  const hBold = settingsPanel.querySelector('#set-sectionHeadingBold');
+  if (hBold) hBold.addEventListener('change', () =>
+    setSetting('sectionHeadingWeight', hBold.checked ? 'bold' : 'normal'));
+  const hItalic = settingsPanel.querySelector('#set-sectionHeadingItalic');
+  if (hItalic) hItalic.addEventListener('change', () =>
+    setSetting('sectionHeadingStyle', hItalic.checked ? 'italic' : 'normal'));
+  const pBold = settingsPanel.querySelector('#set-paramTextBold');
+  if (pBold) pBold.addEventListener('change', () =>
+    setSetting('paramTextWeight', pBold.checked ? 'bold' : 'normal'));
+  const pItalic = settingsPanel.querySelector('#set-paramTextItalic');
+  if (pItalic) pItalic.addEventListener('change', () =>
+    setSetting('paramTextStyle', pItalic.checked ? 'italic' : 'normal'));
   const resetText = settingsPanel.querySelector('#reset-text');
   if (resetText) resetText.addEventListener('click', () => {
-    setSetting('sectionHeadingPt', DEFAULT_SECTION_PT);
-    setSetting('paramTextPt', DEFAULT_PARAM_PT);
+    setSetting('sectionHeadingPt',     DEFAULT_SECTION_PT);
+    setSetting('sectionHeadingWeight', DEFAULT_SECTION_WEIGHT);
+    setSetting('sectionHeadingStyle',  DEFAULT_SECTION_STYLE);
+    setSetting('paramTextPt',          DEFAULT_PARAM_PT);
+    setSetting('paramTextWeight',      DEFAULT_PARAM_WEIGHT);
+    setSetting('paramTextStyle',       DEFAULT_PARAM_STYLE);
     renderSettingsPanel('text');
   });
   settingsPanel.querySelectorAll('input[type=radio][name=paneTheme]').forEach(r => {
