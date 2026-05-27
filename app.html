@@ -567,10 +567,11 @@ lightTarget.position.set(0, 0, -1);
 camera.add(lightTarget);
 
 // With r170 physical lights, MeshPhong diffuse ≈ albedo × (intensity/π) × dot.
-// Key at 5.0 gives ~1.6× dot at the most-lit face — enough to push the top
-// surface to full material-colour brightness. No fill so shadow faces stay
-// dark; the only floor is the hemisphere's small ambient contribution.
-const key = new THREE.DirectionalLight(0xffffff, 5.0);
+// Top face dot ≈ 0.83 from this camera/light geometry; key=3.5 gives
+// ~(3.5/π)×0.83 ≈ 0.92× at the most-lit face — vivid material colour without
+// clipping. No fill so shadow faces stay dark; only the hemisphere's small
+// ambient contribution provides a floor.
+const key = new THREE.DirectionalLight(0xffffff, 3.5);
 key.position.set(1.0, 1.2, 0);
 key.target = lightTarget;
 camera.add(key);
