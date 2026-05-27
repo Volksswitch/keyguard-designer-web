@@ -551,10 +551,10 @@ renderer.setPixelRatio(window.devicePixelRatio);
 const ambient = new THREE.AmbientLight(0xffffff, 0.0);
 scene.add(ambient);
 
-// Hemisphere with pure-black ground so down-facing surfaces (chamfers,
-// rim undersides, the back face after rotation) drop to near-black,
-// matching OpenSCAD's contrast level.
-const hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 0.5);
+// Low-intensity hemisphere gives a very dim ambient floor. Sky white,
+// ground black so down-facing surfaces fall to near-black; the tiny
+// intensity keeps side faces dark rather than lifting them to gray.
+const hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 0.15);
 hemi.position.set(0, 1, 0);
 camera.add(hemi);
 
@@ -566,19 +566,14 @@ const lightTarget = new THREE.Object3D();
 lightTarget.position.set(0, 0, -1);
 camera.add(lightTarget);
 
-// Strong key from steep upper-right angle so the top face lights up almost
-// fully but anything tilted off that axis (chamfers, side rims) reads much
-// dimmer. Fill is kept very soft — just enough to prevent complete blackness
-// on fully back-facing surfaces; shadows should read dark to match OpenSCAD.
-const key = new THREE.DirectionalLight(0xffffff, 2.2);
+// With r170 physical lights, MeshPhong diffuse ≈ albedo × (intensity/π) × dot.
+// Key at 5.0 gives ~1.6× dot at the most-lit face — enough to push the top
+// surface to full material-colour brightness. No fill so shadow faces stay
+// dark; the only floor is the hemisphere's small ambient contribution.
+const key = new THREE.DirectionalLight(0xffffff, 5.0);
 key.position.set(1.0, 1.2, 0);
 key.target = lightTarget;
 camera.add(key);
-
-const fill = new THREE.DirectionalLight(0xffffff, 0.1);
-fill.position.set(-1.0, -0.5, 0);
-fill.target = lightTarget;
-camera.add(fill);
 
 // A camera's children only render when the camera itself is in the scene graph.
 scene.add(camera);
