@@ -1451,6 +1451,7 @@ async function openProject() {
   let jsonName = null;
   let oaText = '';
   let oaMtime = null;
+  let oaHash = null;
 
   try {
     for await (const [name, handle] of dirHandle.entries()) {
@@ -1504,7 +1505,9 @@ async function openProject() {
   logLine(`Opening project folder "${dirHandle.name}"...`);
 
   if (files['openings_and_additions.txt']) {
-    oaText = dec.decode(files['openings_and_additions.txt']);
+    const oaBytes = files['openings_and_additions.txt'];
+    oaText = dec.decode(oaBytes);
+    oaHash = await sha1Hex(oaBytes);
   } else {
     logLine('  no openings_and_additions.txt in folder — will use an empty one');
   }
@@ -1530,7 +1533,7 @@ async function openProject() {
   const totalParams = customizer.reduce((n, s) => n + s.params.length, 0);
   logLine(`  parsed Customizer: ${customizer.length} sections, ${totalParams} parameters`);
 
-  project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, oaMtime, files,
+  project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, oaMtime, oaHash, files,
               rawPresetNames, presetNames, currentPreset: presetNames[0], customizer, baselineParams: {},
               screenshotName: null, screenshotBytes: null, screenshotTexture: null,
               imageNames: [], selectedScreenshot: null, imgListSig: null,
@@ -1644,7 +1647,7 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
     dirHandle: null,
     scadName, scadText,
     jsonName: jsonBytes ? jsonName : null,
-    jsonText, oaText, oaMtime: null, files,
+    jsonText, oaText, oaMtime: null, oaHash: null, files,
     rawPresetNames, presetNames, currentPreset,
     customizer, baselineParams: {},
     screenshotName: null, screenshotBytes: null, screenshotTexture: null,
@@ -2853,6 +2856,7 @@ async function checkOAFile() {
       logLine('openings_and_additions.txt was deleted — re-rendering with empty O&A');
       project.oaText = '';
       project.oaMtime = null;
+      project.oaHash = null;
       setWatchStatus('👁 watching — file not found', '#a60');
       triggerWatchRerender();
     } else {
@@ -2860,19 +2864,33 @@ async function checkOAFile() {
     }
     return;
   }
+  // Content-hash gate, not mtime. Filesystems + OneDrive routinely round
+  // mtimes to whole seconds, so two distinct OA files pasted into the same
+  // folder inside one second collide on lastModified; a batch script (e.g.
+  // the V1→V2 OA migration that touched every file under tests/rtp/Cases
+  // and App Specifics/) produces many such collisions. A pure mtime check
+  // then misses the change and the .scad keeps rendering against the
+  // previous file's contents — the bug that originally surfaced as a
+  // phantom "negative dimensions" warning whose values weren't derivable
+  // from the OA file actually on disk. Hashing a few KB per 1.5 s poll
+  // is negligible next to a wasm render.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const hash = await sha1Hex(bytes);
   const mtime = file.lastModified;
-  if (project.oaMtime == null) {
+  if (project.oaHash == null) {
     // File just appeared after being absent.
     project.oaMtime = mtime;
-    project.oaText = await file.text();
+    project.oaHash = hash;
+    project.oaText = new TextDecoder().decode(bytes);
     logLine('openings_and_additions.txt appeared — re-rendering');
     setWatchStatus('👁 watching openings_and_additions.txt');
     triggerWatchRerender();
     return;
   }
-  if (mtime !== project.oaMtime) {
+  if (hash !== project.oaHash) {
     project.oaMtime = mtime;
-    project.oaText = await file.text();
+    project.oaHash = hash;
+    project.oaText = new TextDecoder().decode(bytes);
     logLine('openings_and_additions.txt changed on disk — re-rendering');
     triggerWatchRerender();
   }
@@ -2908,6 +2926,19 @@ async function listImageEntries() {
 // Stable signature of the image set + the active selection, so the watcher
 // re-scans only on a real add/remove/replace (or a selection change) — never
 // on entries()-order churn. Names are pre-sorted by listImageEntries().
+// SHA-1 hex digest over the given bytes. Used by the OA-file watcher to
+// detect content changes when mtime alone is unreliable — OneDrive and
+// batch-write scripts routinely produce multiple files with the same
+// second-rounded mtime, which a pure mtime gate misses (a freshly pasted
+// OA file then keeps rendering against the previous file's contents).
+// SHA-1 is plenty for change detection (not security) and the bytes
+// involved (a few KB of OA text) make the per-poll cost negligible
+// compared to a wasm render.
+async function sha1Hex(bytes) {
+  const buf = await crypto.subtle.digest('SHA-1', bytes);
+  return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function imageListSignature(entries, selName) {
   const names = entries.map(e => e.name).join('\x1f');
   let selSig = '';
