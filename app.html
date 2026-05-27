@@ -2944,8 +2944,19 @@ async function imageListSignature(entries, selName) {
   let selSig = '';
   const sel = selName && entries.find(e => e.name === selName);
   if (sel) {
-    try { const f = await sel.handle.getFile(); selSig = `${f.lastModified}|${f.size}`; }
-    catch { selSig = '?'; }   // unreadable (e.g. OneDrive placeholder) — retry next poll
+    // Hash the selected image's bytes, not just (lastModified|size). Same
+    // reasoning as the OA watcher (see sha1Hex): filesystem mtimes round
+    // to whole seconds and batch operations / OneDrive sync can produce
+    // a same-name replacement whose lastModified+size match the prior
+    // file, so a metadata-only signature misses a real content change
+    // and the keyguard keeps showing a stale texture. Reading + hashing
+    // a few-MB image per 1.5 s poll is fast on local disk (<20 ms) and
+    // we already have to call getFile() here anyway.
+    try {
+      const f = await sel.handle.getFile();
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      selSig = `${await sha1Hex(bytes)}|${f.size}`;
+    } catch { selSig = '?'; }   // unreadable (e.g. OneDrive placeholder) — retry next poll
   }
   return `${names}||${selName || ''}||${selSig}`;
 }
