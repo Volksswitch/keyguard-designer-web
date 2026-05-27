@@ -10,6 +10,35 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 5
+
+### New features
+
+- **Orientation gizmo.** A small OpenSCAD-style corner navigator (red X / green Y / blue Z)
+  sits in the lower-left of the 3D view and rotates with the model so you always know which
+  way the keyguard is facing.
+
+### Improvements
+
+- **Pane sizes are remembered.** The Customizer panel width and console height are saved
+  between sessions and restored on reload.
+- **Project and preset shown in console.** The current project folder name and preset are
+  logged to the console when you click Render, making it easier to track which design is
+  which in a long session.
+
+### Bug fixes
+
+- **File replacements now detected reliably.** Swapping in a same-name
+  `openings_and_additions.txt` or screenshot image (same filename, different contents) no
+  longer leaves the app rendering against the old file. The watchers now check file contents,
+  not just timestamps — a common pitfall with OneDrive sync and batch-copied files.
+- **Non-printable generate options blocked from STL export.** Choosing a 2D or diagnostic
+  option from the Generate dropdown and then exporting now shows a clear message instead of
+  silently downloading a 0-byte file.
+- **2D generate option hidden from dropdown.** The "first layer for SVG/DXF file" option
+  (only reachable via Export → SVG) has been removed from the Generate dropdown to prevent
+  the above confusion.
+
 ## Release 4
 
 ### New features
