@@ -1100,6 +1100,7 @@ const SETTINGS_DEFAULTS = {
   paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
   custPaneWidth: 280,                    // Customizer (right) pane width in px — restored across sessions
   consoleHeight: 180,                    // Console (bottom) pane height in px — restored across sessions
+  customizerWheelStep: 3,                // entries advanced per mouse-wheel notch in the Customizer pane + dropdowns
 };
 let settings = loadSettings();
 
@@ -1121,6 +1122,11 @@ applyAppearance();   // honour persisted text sizes + viewport colours on load
 function clampPt(v) {
   const n = Math.round(Number(v));
   return Number.isFinite(n) ? Math.max(8, Math.min(36, n)) : DEFAULT_PARAM_PT;
+}
+
+function clampWheelStep(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(1, Math.min(10, n)) : SETTINGS_DEFAULTS.customizerWheelStep;
 }
 
 // Pick a tick mark that stays legible on the swatch it sits on.
@@ -2801,6 +2807,37 @@ container.addEventListener('click', e => {
   header.parentElement.classList.toggle('open');
 });
 
+// Mouse wheel: advance N entries per notch.
+// - On a <select>: change selectedIndex by N (instead of the browser's default 1).
+// - Elsewhere in the panel: scroll by N row-heights so long sections turn at a
+//   pace the user can read; default 3 per notch, configurable in General settings.
+container.addEventListener('wheel', e => {
+  if (e.ctrlKey) return;  // leave browser zoom alone
+  const n = clampWheelStep(settings.customizerWheelStep);
+  const dir = Math.sign(e.deltaY);
+  if (!dir) return;
+
+  const sel = e.target.closest('select');
+  if (sel) {
+    // An open dropdown popup lives outside the panel DOM, so this handler
+    // never fires while the list is showing — only the closed-select case
+    // reaches here, where the browser default is to step by 1.
+    e.preventDefault();
+    const i = Math.max(0, Math.min(sel.options.length - 1, sel.selectedIndex + dir * n));
+    if (i !== sel.selectedIndex) {
+      sel.selectedIndex = i;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    return;
+  }
+
+  // Panel scroll: estimate a row height from a current param or header.
+  const probe = container.querySelector('.param') || container.querySelector('.section-header');
+  const rowH = probe ? probe.offsetHeight : 30;
+  e.preventDefault();
+  container.scrollTop += dir * n * rowH;
+}, { passive: false });
+
 // ===== Populate form values from a preset =====
 // Preset values come from the .json file (all strings) or, for "design default values",
 // from the .scad defaults captured during parsing.
@@ -3725,6 +3762,17 @@ const SETTINGS_PANELS = {
       <label class="opt"><input type="radio" name="presetOrder" value="creation"
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
+    <div class="setting">
+      <label>Customizer mouse-wheel step</label>
+      <div style="color:#666; margin-bottom:8px;">
+        How many entries each notch of the mouse wheel advances — both when
+        scrolling the Customizer panel and when changing a value inside a
+        pull-down.
+      </div>
+      <label class="opt">Entries per notch
+        <input type="number" id="set-customizerWheelStep" min="1" max="10" step="1"
+          value="${clampWheelStep(settings.customizerWheelStep)}" style="width:60px;"></label>
+    </div>
   `,
   viewport: () => {
     const sch = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
@@ -3888,6 +3936,12 @@ function renderSettingsPanel(cat) {
     };
     inp.addEventListener('change', commit);
   }
+  const wheelStep = settingsPanel.querySelector('#set-customizerWheelStep');
+  if (wheelStep) wheelStep.addEventListener('change', () => {
+    const v = clampWheelStep(wheelStep.value);
+    wheelStep.value = v;
+    if (v !== settings.customizerWheelStep) setSetting('customizerWheelStep', v);
+  });
   for (const k of ['sectionHeadingPt', 'paramTextPt']) {
     const inp = settingsPanel.querySelector('#set-' + k);
     if (!inp) continue;
