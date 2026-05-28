@@ -2805,7 +2805,34 @@ function populateFormFromPreset(presetName) {
         // Use the .scad default; strip surrounding quotes for strings.
         val = p.default.replace(/^"|"$/g, '');
       }
-      input.value = val;
+      if (input.tagName === 'SELECT') {
+        // A select silently coerces an unrecognised .value to "" (selectedIndex
+        // = -1). Some real-world presets carry near-misses (e.g.
+        // split_line_type="dovetail" vs the enum's "dovetails") — match
+        // case-insensitively so the canonical option lights up. If even that
+        // misses, splice the literal preset value in as a synthetic option so
+        // the field doesn't render blank and the value still flows to the
+        // .scad via -D when the user later edits an unrelated field.
+        const options = Array.from(input.options);
+        const exact = options.find(o => o.value === val);
+        if (exact) {
+          input.value = val;
+        } else {
+          const ci = options.find(o => o.value.toLowerCase() === String(val).toLowerCase());
+          if (ci) {
+            input.value = ci.value;
+          } else {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = val;
+            opt.dataset.synthetic = '1';
+            input.appendChild(opt);
+            input.value = val;
+          }
+        }
+      } else {
+        input.value = val;
+      }
     }
   }
   // Snapshot the baseline so dirty-state comparisons work
