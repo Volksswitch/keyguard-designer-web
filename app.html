@@ -2830,19 +2830,11 @@ container.addEventListener('wheel', e => {
   const dir = Math.sign(e.deltaY);
   if (!dir) return;
 
-  const sel = e.target.closest('select');
-  if (sel) {
-    // An open dropdown popup lives outside the panel DOM, so this handler
-    // never fires while the list is showing — only the closed-select case
-    // reaches here, where the browser default is to step by 1.
-    e.preventDefault();
-    const i = Math.max(0, Math.min(sel.options.length - 1, sel.selectedIndex + dir * n));
-    if (i !== sel.selectedIndex) {
-      sel.selectedIndex = i;
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    return;
-  }
+  // Closed selects are deliberately NOT intercepted — wheeling over one
+  // would otherwise change the selection (and kick off a render) without
+  // the user ever opening the list, which is too easy to do by accident.
+  // The user must open the dropdown first; the popup is browser-managed,
+  // so the wheel scrolls the option list there.
 
   // Panel scroll: estimate a row height from a current param or header.
   const probe = container.querySelector('.param') || container.querySelector('.section-header');
@@ -3778,9 +3770,9 @@ const SETTINGS_PANELS = {
     <div class="setting">
       <label>Customizer mouse-wheel step</label>
       <div style="color:#666; margin-bottom:8px;">
-        How many entries each notch of the mouse wheel advances — both when
-        scrolling the Customizer panel and when changing a value inside a
-        pull-down.
+        How many entries each notch of the mouse wheel scrolls the
+        Customizer panel. Pull-downs are not changed by wheel scrolling —
+        open the dropdown first to scroll its list.
       </div>
       <label class="opt">Entries per notch
         <input type="number" id="set-customizerWheelStep" min="1" max="10" step="1"
