@@ -2836,9 +2836,17 @@ container.addEventListener('wheel', e => {
   // The user must open the dropdown first; the popup is browser-managed,
   // so the wheel scrolls the option list there.
 
-  // Panel scroll: estimate a row height from a current param or header.
-  const probe = container.querySelector('.param') || container.querySelector('.section-header');
-  const rowH = probe ? probe.offsetHeight : 30;
+  // Panel scroll: estimate a row height from a visible param (preferred) or
+  // the always-rendered section header. .param elements inside a collapsed
+  // .section-body have offsetHeight == 0, so guard against picking one.
+  let rowH = 0;
+  for (const p of container.querySelectorAll('.param')) {
+    if (p.offsetHeight > 0) { rowH = p.offsetHeight; break; }
+  }
+  if (!rowH) {
+    const h = container.querySelector('.section-header');
+    rowH = h ? h.offsetHeight : 30;
+  }
   e.preventDefault();
   container.scrollTop += dir * n * rowH;
 }, { passive: false });
