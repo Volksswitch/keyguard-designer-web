@@ -2800,11 +2800,23 @@ function buildParamControl(p) {
   return wrap;
 }
 
-// Click to expand/collapse
+// Click to expand/collapse.
+// Anchor the clicked header to its current viewport position before toggling,
+// then restore it. The header itself doesn't move when its own body appears
+// below it, but anything that nudges scrollTop on open (browser autoscroll,
+// focus, or a wheel event coalesced with the click) used to leave the
+// clicked header drifting off the top. We measure the drift and undo it,
+// so a click always grows the section downward and leaves the header still.
 container.addEventListener('click', e => {
   const header = e.target.closest('.section-header');
   if (!header) return;
-  header.parentElement.classList.toggle('open');
+  const section = header.closest('.section');
+  if (!section) return;
+  const before = header.getBoundingClientRect().top;
+  section.classList.toggle('open');
+  const after = header.getBoundingClientRect().top;
+  const drift = after - before;
+  if (Math.abs(drift) > 0.5) container.scrollTop += drift;
 });
 
 // Mouse wheel: advance N entries per notch.
