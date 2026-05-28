@@ -2686,6 +2686,15 @@ function parseCustomizer(scadText) {
   return sections;
 }
 
+// Number of fractional digits implied by a Customizer step (e.g. .1 -> 1,
+// 0.05 -> 2, 1 -> 0). Used to format numeric inputs so a step of .1 displays
+// as 0.0 rather than 0 — matching native OpenSCAD's Customizer rendering.
+function decimalsForStep(step) {
+  const s = String(step);
+  const dot = s.indexOf('.');
+  return dot < 0 ? 0 : s.length - dot - 1;
+}
+
 // ===== Form generation =====
 const container = document.getElementById('cust-sections');
 
@@ -2756,13 +2765,19 @@ function buildParamControl(p) {
       input.type = 'number';
       input.min = p.control.min;
       input.max = p.control.max;
-      if (p.control.step != null) input.step = p.control.step;
+      if (p.control.step != null) {
+        input.step = p.control.step;
+        input.dataset.decimals = decimalsForStep(p.control.step);
+      }
       break;
     }
     case 'number': {
       input = document.createElement('input');
       input.type = 'number';
-      if (p.control.step != null) input.step = p.control.step;
+      if (p.control.step != null) {
+        input.step = p.control.step;
+        input.dataset.decimals = decimalsForStep(p.control.step);
+      }
       break;
     }
     case 'vector':
@@ -2805,7 +2820,11 @@ function populateFormFromPreset(presetName) {
         // Use the .scad default; strip surrounding quotes for strings.
         val = p.default.replace(/^"|"$/g, '');
       }
-      input.value = val;
+      if (input.type === 'number' && input.dataset.decimals != null && val !== '' && !Number.isNaN(parseFloat(val))) {
+        input.value = parseFloat(val).toFixed(+input.dataset.decimals);
+      } else {
+        input.value = val;
+      }
     }
   }
   // Snapshot the baseline so dirty-state comparisons work
