@@ -225,6 +225,27 @@
   #preset-list li:hover { background: #e8f0fc; }
   #preset-list li.active { background: #d6e6fb; font-weight: bold; }
 
+  /* When no project is open the preset combo is repurposed as a Recent Projects
+     picker: the action buttons and dirty marker are nonsensical, so hide them.
+     The combo itself is hidden when there are no recents to offer. */
+  #cust-header.no-project .preset-btns { display: none; }
+  #cust-header.no-project #dirty-marker { display: none; }
+  #cust-header.no-project.no-recents .preset-row { display: none; }
+
+  /* Change-Project inline dropdown: list of other known projects + "Pick a
+     different folder…" escape hatch. Anchored under the button. */
+  #change-project-menu { position: absolute; top: 100%; right: 0; z-index: 60;
+                         margin: 2px 0 0; padding: 0; list-style: none;
+                         min-width: 200px; max-height: 260px; overflow-y: auto;
+                         background: #fff; border: 1px solid #888;
+                         box-shadow: 0 2px 6px rgba(0,0,0,.2); display: none;
+                         font-size: 12px; }
+  #change-project-menu.open { display: block; }
+  #change-project-menu li { padding: 4px 10px; cursor: pointer; white-space: nowrap;
+                            overflow: hidden; text-overflow: ellipsis; }
+  #change-project-menu li:hover { background: #e8f0fc; }
+  #change-project-menu li.picker { border-top: 1px solid #ddd; font-style: italic; color: #444; }
+
   button:disabled { opacity: 0.45; cursor: not-allowed; }
 
   /* ---------- Settings modal ---------- */
@@ -428,11 +449,12 @@
 
     <!-- RIGHT: Customizer pane -->
     <div id="right">
-      <div id="cust-header">
-        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+      <div id="cust-header" class="no-project no-recents">
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; position:relative;">
           <h2 style="margin:0; flex:1;">Customizer</h2>
           <button id="open-project-btn" title="Pick a folder containing keyguard.scad and openings_and_additions.txt"
                   style="font-size:11px; padding:3px 8px; cursor:pointer;">Open Project…</button>
+          <ul id="change-project-menu" role="listbox"></ul>
         </div>
         <div style="font-size:11px; color:#666; margin-bottom:6px;" id="project-folder-label">
           <i>no project folder open</i>
@@ -1270,6 +1292,57 @@ function rebuildPresetDropdown() {
   }
 }
 
+// ===== No-project UI mode =====
+// Until a project is loaded the preset combo is repurposed as a Recent
+// Projects picker, and the 5 preset-management buttons are hidden (they're
+// nonsensical without presets to manage). applyNoProjectUI / applyProjectUI
+// toggle the .no-project / .no-recents classes on #cust-header that drive
+// the visibility rules in CSS, and populate the recents dropdown.
+async function applyNoProjectUI() {
+  const hdr = document.getElementById('cust-header');
+  if (hdr) hdr.classList.add('no-project');
+  const input = document.getElementById('preset-input');
+  if (input) {
+    input.value = '';
+    input.placeholder = 'Recent projects';
+    input.readOnly = true;
+    input.title = 'Click to choose a recently-opened folder';
+  }
+  await refreshRecentsDropdown();
+}
+function applyProjectUI() {
+  const hdr = document.getElementById('cust-header');
+  if (hdr) { hdr.classList.remove('no-project'); hdr.classList.remove('no-recents'); }
+  const input = document.getElementById('preset-input');
+  if (input) {
+    input.placeholder = '';
+    input.readOnly = false;
+    input.title = 'Preset — Up/Down to switch; edit the name and press Enter to rename';
+  }
+}
+// Populate the dropdown with recent project folders and toggle .no-recents so
+// the combo row hides itself entirely when there's nothing to offer.
+async function refreshRecentsDropdown() {
+  const hdr = document.getElementById('cust-header');
+  const list = document.getElementById('preset-list');
+  if (!list) return;
+  const recents = await idbGetRecents();
+  list.innerHTML = '';
+  if (!recents.length) { if (hdr) hdr.classList.add('no-recents'); return; }
+  if (hdr) hdr.classList.remove('no-recents');
+  for (const h of recents) {
+    const li = document.createElement('li');
+    li.textContent = h.name;
+    li.title = `Open "${h.name}"`;
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      list.classList.remove('open');
+      openProject(h);
+    });
+    list.appendChild(li);
+  }
+}
+
 // ===== Project model =====
 // A "project" is the contents of a folder the user picked:
 //   scadName        e.g. "keyguard_v77.scad"
@@ -1293,6 +1366,12 @@ const HANDLE_DB = 'keyguard-db';
 const LEGACY_HANDLE_DB = 'keyguard-spike-db';   // pre-rename
 const HANDLE_STORE = 'handles';
 const HANDLE_KEY = 'lastProject';
+// Recents list — separate IDB key holding an array of recently-opened folder
+// handles (most-recent first, capped). Shown in the Customizer preset combo
+// in the empty (no-project) state so the user can jump straight back into a
+// folder without going through the directory picker.
+const RECENTS_KEY = 'recentProjects';
+const RECENTS_MAX = 8;
 
 function idbOpenNamed(name) {
   return new Promise((resolve, reject) => {
@@ -1362,6 +1441,50 @@ async function idbClearHandle() {
   await idbDeleteFrom(LEGACY_HANDLE_DB);
 }
 
+async function idbGetRecents() {
+  try {
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readonly');
+      const req = tx.objectStore(HANDLE_STORE).get(RECENTS_KEY);
+      req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return []; }
+}
+async function idbPutRecents(arr) {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).put(arr, RECENTS_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) { console.warn('Could not persist recent projects:', e); }
+}
+// Move `handle` to the front of the recents list. Dedupe via isSameEntry so
+// the same folder opened twice doesn't show up twice. Capped at RECENTS_MAX.
+async function pushRecent(handle) {
+  const recents = await idbGetRecents();
+  const filtered = [];
+  for (const h of recents) {
+    try { if (await h.isSameEntry(handle)) continue; } catch {}
+    filtered.push(h);
+  }
+  filtered.unshift(handle);
+  await idbPutRecents(filtered.slice(0, RECENTS_MAX));
+}
+async function removeRecent(handle) {
+  const recents = await idbGetRecents();
+  const filtered = [];
+  for (const h of recents) {
+    try { if (await h.isSameEntry(handle)) continue; } catch {}
+    filtered.push(h);
+  }
+  await idbPutRecents(filtered);
+}
+
 // Return the app to its initial "no project" layout: clear the 3D viewport,
 // console, and Customizer panes, drop every internal reference to the folder
 // (including the persisted IndexedDB handle), and restore the Open Project
@@ -1393,9 +1516,10 @@ async function resetToNoProject() {
   document.getElementById('project-folder-label').innerHTML = '<i>no project folder open</i>';
   document.getElementById('watch-status').textContent = '';
   setStatus('Click <b>Open Project…</b> to begin.');
+  await applyNoProjectUI();
 }
 
-async function openProject() {
+async function openProject(presetHandle = null) {
   if (!window.showDirectoryPicker) {
     alert('This browser does not support the File System Access API. Please use Chrome or Edge.');
     return;
@@ -1409,14 +1533,29 @@ async function openProject() {
       `Opening a different project will discard them.`);
     if (!proceed) return;
   }
-  let dirHandle = null;
+  let dirHandle = presetHandle;
+  // Caller supplied a handle (e.g. clicking a Recent Projects entry): do the
+  // readwrite permission dance and skip the picker entirely. If denied, drop
+  // the dead handle from recents so it stops cluttering the list.
+  if (dirHandle) {
+    let perm = 'denied';
+    try {
+      perm = await dirHandle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await dirHandle.requestPermission({ mode: 'readwrite' });
+    } catch {}
+    if (perm !== 'granted') {
+      logLine('Folder access was not granted — keeping the current project.');
+      if (!project) { await removeRecent(dirHandle); await applyNoProjectUI(); }
+      return;
+    }
+  }
   // If a project is already loaded, this click means "switch to a different
   // folder" — go straight to the picker. Otherwise, try to reuse the
   // last-opened folder on a fresh page load: requestPermission must be called
   // from a user gesture (the button click that drove us here), so this is
   // the right place. Chrome shows one prompt covering read+write.
   const isChangeProject = !!project;
-  if (!isChangeProject) {
+  if (!dirHandle && !isChangeProject) {
     const stored = await idbGetHandle();
     if (stored) {
       try {
@@ -1470,6 +1609,8 @@ async function openProject() {
     }
   }
   await idbPutHandle(dirHandle);
+  await pushRecent(dirHandle);
+  applyProjectUI();
   stopWatcher();
   // Re-frame the scene on the first render of the newly opened project.
   cameraFitOnce = false;
@@ -1509,6 +1650,10 @@ async function openProject() {
     // directory picker instead of reusing the dead handle.
     if (e.name === 'NotFoundError' || /could not be found/i.test(e.message || '')) {
       await idbClearHandle();
+      // Also drop it from recents so the dead entry doesn't clog the
+      // Recent Projects / Change Project dropdowns indefinitely.
+      await removeRecent(dirHandle);
+      await refreshRecentsDropdown();
       logLine(`  Stored folder is no longer accessible — cleared. Click "Open Project…" again and pick the folder.`);
       setStatus('Folder not found — click Open Project to pick it again.', 'error');
       return;
@@ -3302,7 +3447,7 @@ function updateDirty() {
   document.getElementById('dirty-marker').classList.toggle('visible', dirty);
   document.getElementById('save-preset-btn').disabled = !dirty;
   document.getElementById('reset-btn').disabled = !dirty;
-  document.getElementById('export-preset-btn').disabled = dirty || !project.currentPreset;
+  document.getElementById('export-preset-btn').disabled = dirty || !project.currentPreset || project.currentPreset === 'design default values';
 }
 
 container.addEventListener('input', e => {
@@ -3434,12 +3579,71 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     logLine('Save console failed: ' + e.message);
   }
 });
-document.getElementById('open-project-btn').addEventListener('click', () => {
+// "Change Project" (project already open) is the common pivot to another
+// known folder, so offer the recents inline before falling through to the OS
+// picker. With 0–1 known projects there's nothing to choose between — go
+// straight to the picker. "Open Project" (no project open) always goes
+// straight to the picker too; the empty-state preset combo is where recents
+// are surfaced in that case.
+async function maybeShowChangeProjectMenu() {
+  const menu = document.getElementById('change-project-menu');
+  if (!menu || !project) return false;
+  const recents = await idbGetRecents();
+  // Filter out the currently-open project so the user only sees alternatives.
+  const others = [];
+  for (const h of recents) {
+    let same = false;
+    try { same = await h.isSameEntry(project.dirHandle); } catch {}
+    if (!same) others.push(h);
+  }
+  if (!others.length) return false;
+  menu.innerHTML = '';
+  for (const h of others) {
+    const li = document.createElement('li');
+    li.textContent = h.name;
+    li.title = `Switch to "${h.name}"`;
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      menu.classList.remove('open');
+      openProject(h).catch(err => {
+        logLine('Open Project failed: ' + err.message);
+        setStatus('Open Project failed: ' + err.message, 'error');
+      });
+    });
+    menu.appendChild(li);
+  }
+  const pick = document.createElement('li');
+  pick.className = 'picker';
+  pick.textContent = 'Pick a different folder…';
+  pick.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    menu.classList.remove('open');
+    openProject().catch(err => {
+      logLine('Open Project failed: ' + err.message);
+      setStatus('Open Project failed: ' + err.message, 'error');
+    });
+  });
+  menu.appendChild(pick);
+  menu.classList.add('open');
+  return true;
+}
+document.getElementById('open-project-btn').addEventListener('click', async () => {
+  const menu = document.getElementById('change-project-menu');
+  if (menu && menu.classList.contains('open')) { menu.classList.remove('open'); return; }
+  if (await maybeShowChangeProjectMenu()) return;
   openProject().catch(e => {
     logLine('Open Project failed: ' + e.message);
     setStatus('Open Project failed: ' + e.message, 'error');
     console.error(e);
   });
+});
+// Dismiss the change-project menu on any outside click.
+document.addEventListener('mousedown', (e) => {
+  const menu = document.getElementById('change-project-menu');
+  const btn = document.getElementById('open-project-btn');
+  if (!menu || !menu.classList.contains('open')) return;
+  if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
+  menu.classList.remove('open');
 });
 
 // Test hook: if the URL has ?fixture=PATH&scad=FILENAME (and optionally
@@ -3497,7 +3701,10 @@ if (__fixturePath && __fixtureScad &&
 } else {
   // Surface the remembered folder name on page load so the user knows clicking
   // Open Project will try it first (one permission prompt, no file picker).
+  // Also populate the Recent Projects dropdown so the empty-state combo is
+  // immediately useful.
   (async () => {
+    await refreshRecentsDropdown();
     const stored = await idbGetHandle();
     if (!stored) return;
     const label = document.getElementById('project-folder-label');
@@ -3557,8 +3764,15 @@ const presetInput = document.getElementById('preset-input');
 const presetList = document.getElementById('preset-list');
 const presetDropdownBtn = document.getElementById('preset-dropdown-btn');
 
-function openPresetList() {
-  if (!project) return;
+async function openPresetList() {
+  if (!project) {
+    // No-project mode: list is recents. Don't open if there are none —
+    // the combo row is hidden anyway, but be defensive.
+    await refreshRecentsDropdown();
+    if (!presetList.children.length) return;
+    presetList.classList.add('open');
+    return;
+  }
   rebuildPresetDropdown();
   presetList.classList.add('open');
   const act = presetList.querySelector('li.active');
@@ -3647,9 +3861,14 @@ async function renamePreset(newName) {
 
 presetDropdownBtn.addEventListener('mousedown', (e) => {
   e.preventDefault();
-  if (!project) return;
   if (presetList.classList.contains('open')) closePresetList();
   else { openPresetList(); presetInput.focus(); }
+});
+// In no-project mode the input is readonly and the user expects clicking it
+// (or the placeholder text) to drop the recents list.
+presetInput.addEventListener('mousedown', () => {
+  if (project) return;
+  if (!presetList.classList.contains('open')) openPresetList();
 });
 
 presetInput.addEventListener('keydown', (e) => {
