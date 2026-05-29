@@ -183,9 +183,20 @@ function discoverCases() {
       // intent of e.g. Test Case 0, which sets "geometry": false and has
       // no "expected"). If "expected" IS set alongside "console", both
       // checks run, as the .scad runner does.
+      //
+      // "geometry: false" without "console" (e.g. Test Case 10 step 3,
+      // Test Case 46 step 4) means the SCAD produces non-3D output — a
+      // 2D laser-cut SVG / "Customizer settings" dump — that the .scad
+      // CLI renders via its 2D PNG path, but the web app's Three.js
+      // viewport has no equivalent. Treat these as PNG-skipped too: the
+      // .scad reference PNG is intentionally meaningless to compare
+      // against an empty 3D viewport, and the harness can still verify
+      // the page didn't crash and no unexpected console errors fired.
       const consoleFile     = typeof step.console === 'string' ? step.console : null;
       const expectedExplicit = typeof step.expected === 'string';
-      const consoleOnly     = !!consoleFile && !expectedExplicit;
+      const geometryFalse   = step.geometry === false;
+      const consoleOnly     = (!!consoleFile && !expectedExplicit) || geometryFalse;
+      const nonStlGenerate  = geometryFalse;
       let consoleExpected = null;   // array of expected lines, or null
       let consoleRefMissing = null; // path string if the ref file is absent
       if (consoleFile) {
@@ -210,6 +221,7 @@ function discoverCases() {
         oaFile,
         vpt, vpr, vpd,
         consoleOnly,
+        nonStlGenerate,
         consoleExpected,
         consoleRefMissing,
         // Snapshot path segments — Playwright's toHaveScreenshot() accepts
@@ -346,11 +358,11 @@ if (discoveryError || CASES.length === 0) {
       }
 
       expect(pageErrors, 'page threw an uncaught error').toEqual([]);
-      // Console-only steps run the designer in its Customizer-settings dump
-      // mode and intentionally produce no geometry, so doRender always logs
-      // "keyguard render produced no STL". That specific error is expected
-      // for these steps; every other console.error still fails the test.
-      const reportableConsoleErrors = c.consoleOnly
+      // Steps that intentionally produce no 3D geometry (console-only or
+      // "geometry: false" + non-STL generate) always log "keyguard render
+      // produced no STL". That specific error is expected for these steps;
+      // every other console.error still fails the test.
+      const reportableConsoleErrors = (c.consoleOnly || c.nonStlGenerate)
         ? consoleErrors.filter(t => !t.includes('keyguard render produced no STL'))
         : consoleErrors;
       expect(reportableConsoleErrors, 'console.error was called').toEqual([]);
