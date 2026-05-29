@@ -184,6 +184,10 @@
   .param select, .param input[type=text], .param input[type=number] {
     width: 100%; padding: 2px 4px; font-size: 12px; }
   .param input[type=number] { padding-left: calc(4px + 1ch); }
+  /* Range params: a slider (visual proxy) paired with the canonical number+spinner box. */
+  .param-slider-row { display: flex; align-items: center; gap: 6px; }
+  .param-slider-row .param-slider { flex: 1 1 auto; min-width: 0; order: 1; margin: 0; }
+  .param-slider-row input[type=number] { flex: 0 0 5.5rem; width: 5.5rem; order: 2; }
 
   /* ---------- splitter drag overlay (prevents iframe/text selection during drag) ---------- */
   .dragging, .dragging * { user-select: none !important; cursor: col-resize !important; }
@@ -2733,6 +2737,19 @@ function buildCustomizerForm(sections) {
   }
 }
 
+// Range params that should NOT get a slider — rendered as number+spinner only.
+// The five "App Layout in px" offsets (huge 0–10000 px ranges) and the two
+// screenshot-nudge offsets in "Special Actions and Settings".
+const RANGE_PARAMS_NO_SLIDER = new Set([
+  'bottom_of_status_bar',
+  'bottom_of_upper_message_bar',
+  'bottom_of_upper_command_bar',
+  'top_of_lower_message_bar',
+  'top_of_lower_command_bar',
+  'move_screenshot_horizontally',
+  'move_screenshot_vertically',
+]);
+
 function buildParamControl(p) {
   const wrap = document.createElement('div');
   wrap.className = 'param';
@@ -2770,15 +2787,67 @@ function buildParamControl(p) {
       break;
     }
     case 'range': {
-      input = document.createElement('input');
-      input.type = 'number';
-      input.min = p.control.min;
-      input.max = p.control.max;
-      if (p.control.step != null) {
-        input.step = p.control.step;
-        input.dataset.decimals = decimalsForStep(p.control.step);
+      // A few range params read better as a plain number+spinner with no slider
+      // (large px ranges and the screenshot-nudge offsets). Render those like a
+      // 'number' control: keep min/max/step but skip the slider proxy.
+      if (RANGE_PARAMS_NO_SLIDER.has(p.name)) {
+        input = document.createElement('input');
+        input.type = 'number';
+        input.min = p.control.min;
+        input.max = p.control.max;
+        if (p.control.step != null) {
+          input.step = p.control.step;
+          input.dataset.decimals = decimalsForStep(p.control.step);
+        }
+        break;
       }
-      break;
+      // Canonical control: the number+spinner box. It carries data-param-name
+      // and is the single source of truth read by currentFormValues /
+      // populateFormFromPreset. It is placed FIRST in the DOM so their
+      // `[data-param-name] input` querySelector resolves to it (CSS `order`
+      // still shows the slider on the left, matching native OpenSCAD).
+      const num = document.createElement('input');
+      num.type = 'number';
+      num.min = p.control.min;
+      num.max = p.control.max;
+      if (p.control.step != null) {
+        num.step = p.control.step;
+        num.dataset.decimals = decimalsForStep(p.control.step);
+      }
+      num.dataset.paramName = p.name;
+      num.dataset.valueType = p.valueType;
+
+      // Visual proxy slider — deliberately NO data-param-name, so value-readers
+      // ignore it and never treat it as a second source of truth.
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.className = 'param-slider';
+      slider.min = p.control.min;
+      slider.max = p.control.max;
+      if (p.control.step != null) slider.step = p.control.step;
+      slider.tabIndex = -1;                 // keep keyboard tab order on the box
+      slider.setAttribute('aria-hidden', 'true');
+
+      const fmt = v => (num.dataset.decimals != null && !Number.isNaN(parseFloat(v)))
+        ? parseFloat(v).toFixed(+num.dataset.decimals) : v;
+      // Dragging updates the box live (dirty marker, no render) and commits a
+      // render on release; both flow through the box's delegated handlers.
+      slider.addEventListener('input', () => {
+        num.value = fmt(slider.value);
+        num.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      slider.addEventListener('change', () => {
+        num.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      // Typing in the box (or stepping it) moves the slider to match.
+      num.addEventListener('input',  () => { slider.value = num.value; });
+      num.addEventListener('change', () => { slider.value = num.value; });
+
+      const row = document.createElement('div');
+      row.className = 'param-slider-row';
+      row.append(num, slider);
+      wrap.appendChild(row);
+      return wrap;
     }
     case 'number': {
       input = document.createElement('input');
@@ -2878,6 +2947,12 @@ function populateFormFromPreset(presetName) {
         input.value = val;
       }
     }
+  }
+  // Mirror each range slider to its just-populated canonical number box
+  // (programmatic .value sets above don't fire the sync input/change events).
+  for (const s of container.querySelectorAll('.param-slider-row .param-slider')) {
+    const n = s.parentElement.querySelector('input[type=number]');
+    if (n) s.value = n.value;
   }
   // Snapshot the baseline so dirty-state comparisons work
   project.baselineParams = currentFormValues();
