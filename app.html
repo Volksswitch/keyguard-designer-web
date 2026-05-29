@@ -161,6 +161,7 @@
   #cust-header button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
   #cust-header .preset-btns { display: flex; gap: 4px; }
   #cust-header .preset-btns button { flex: 1; }
+  #cust-header .preset-btns #export-preset-btn { flex: 0 0 32px; padding: 0; }
   #cust-sections { flex: 1; overflow-y: auto; }
   .section { border-bottom: 1px solid var(--kg-pane-border-soft); }
   .section-header { padding: 7px 10px; cursor: pointer; user-select: none;
@@ -448,6 +449,7 @@
           <button id="del-preset-btn" title="Delete current preset">−</button>
           <button id="save-preset-btn" title="Save current parameters to current preset" disabled>Save preset</button>
           <button id="reset-btn" title="Revert parameters to current preset baseline" disabled>Reset</button>
+          <button id="export-preset-btn" title="Save current preset to a JSON file…" disabled>💾</button>
         </div>
       </div>
 
@@ -1375,7 +1377,7 @@ async function resetToNoProject() {
   document.getElementById('preset-input').value = '';
   document.getElementById('preset-list').innerHTML = '';
   document.getElementById('dirty-marker').classList.remove('visible');
-  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn']) {
+  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn', 'export-preset-btn']) {
     const b = document.getElementById(id);
     if (b) b.disabled = true;
   }
@@ -3225,6 +3227,7 @@ function updateDirty() {
   document.getElementById('dirty-marker').classList.toggle('visible', dirty);
   document.getElementById('save-preset-btn').disabled = !dirty;
   document.getElementById('reset-btn').disabled = !dirty;
+  document.getElementById('export-preset-btn').disabled = dirty || !project.currentPreset;
 }
 
 container.addEventListener('input', e => {
@@ -3238,6 +3241,14 @@ container.addEventListener('input', e => {
 });
 container.addEventListener('change', async e => {
   if (!project || !e.target.dataset.paramName) return;
+  // Reformat a committed numeric value to the step's implied decimals (e.g. a
+  // step of .1 makes a typed "0" display as "0.0"), matching native OpenSCAD's
+  // Customizer and the formatting populateFormFromPreset already applies.
+  const t = e.target;
+  if (t.type === 'number' && t.dataset.decimals != null &&
+      t.value !== '' && !Number.isNaN(parseFloat(t.value))) {
+    t.value = parseFloat(t.value).toFixed(+t.dataset.decimals);
+  }
   updateDirty();
   // When the user flips include_screenshot: ON → rescan (a folder change
   // since Open Project gets picked up) and reveal the picker if 2+ images;
@@ -3590,6 +3601,47 @@ resetBtn.addEventListener('click', () => {
   if (!project) return;
   populateFormFromPreset(project.currentPreset);
   doRender();
+});
+
+// ===== Export current preset to a user-chosen .json file =====
+document.getElementById('export-preset-btn').addEventListener('click', async () => {
+  if (!project) return;
+  const name = project.currentPreset;
+  const cur = currentFormValues();
+  const asStrings = {};
+  for (const [k, v] of Object.entries(cur)) asStrings[k] = String(v);
+  const text = buildPresetJson({ [name]: asStrings });
+  const safeName = name.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'preset';
+  const suggestedName = safeName + '.json';
+  try {
+    if (window.showSaveFilePicker) {
+      const pickerOpts = {
+        suggestedName,
+        types: [{ description: 'JSON file', accept: { 'application/json': ['.json'] } }],
+      };
+      if (project.dirHandle) pickerOpts.startIn = project.dirHandle;
+      const handle = await window.showSaveFilePicker(pickerOpts);
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      logLine(`Exported preset "${name}" to ${handle.name}`);
+    } else {
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = suggestedName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      logLine(`Exported preset "${name}" as ${suggestedName}`);
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    logLine('Export preset failed: ' + e.message);
+    console.error(e);
+  }
 });
 
 // ===== Save preset: write current form values back to the project's .json =====
