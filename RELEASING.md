@@ -44,7 +44,9 @@ Ken says **"Release the web app"** (or an obvious variant — "do a web release"
 "ship the web app"). That single phrase authorizes the entire ritual below.
 Claude runs steps automatically through the merge + `CACHE_NAME` bump + commit,
 then shows the release summary and new cache number and waits for one go-ahead
-before the final `git push origin main`. No other per-step instruction is needed.
+before the final `git push origin main`. After pushing, Claude immediately
+performs the post-release steps (sync + pre-bump) without waiting to be asked.
+No other per-step instruction is needed.
 
 ## How to release (the ritual)
 
@@ -94,7 +96,19 @@ GitHub Pages redeploys within ~1 minute. Clinicians get the new app on their nex
 reload/reopen (occasionally the one after that, because the service worker swaps in on
 one load and serves the new shell on the next).
 
-Then keep working on `dev` as usual.
+**Post-release (do this immediately after pushing `main`):**
+
+```
+git checkout dev
+git merge main --no-edit          # bring CHANGELOG + sw.js back into dev
+# bump APP_RELEASE in app.html: N → N+1
+git add app.html
+git commit -m "chore: pre-bump APP_RELEASE to <N+1> for next dev cycle"
+git push origin dev
+```
+
+This keeps `dev` one ahead of public at all times and closes the window where a
+dev build would report the same release number as the just-shipped public version.
 
 ## Invariants — do not break these
 

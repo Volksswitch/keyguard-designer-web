@@ -26,7 +26,14 @@
   * { box-sizing: border-box; }
   /* Customizer text sizes are driven by these so the Settings → Text panel
      can retune them live. Defaults match the historical hard-coded values. */
-  :root { --kg-section-heading-pt: 14px; --kg-param-text-pt: 12px; }
+  :root {
+    --kg-section-heading-pt:     14px;
+    --kg-section-heading-weight: bold;
+    --kg-section-heading-style:  normal;
+    --kg-param-text-pt:          12px;
+    --kg-param-text-weight:      bold;
+    --kg-param-text-style:       normal;
+  }
 
   /* Light/dark theming for the Customizer (#right) and Console (#console-wrap)
      panes. The viewport and menubar are intentionally NOT themed here — the
@@ -154,10 +161,13 @@
   #cust-header button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
   #cust-header .preset-btns { display: flex; gap: 4px; }
   #cust-header .preset-btns button { flex: 1; }
+  #cust-header .preset-btns #export-preset-btn { flex: 0 0 32px; padding: 0; }
   #cust-sections { flex: 1; overflow-y: auto; }
   .section { border-bottom: 1px solid var(--kg-pane-border-soft); }
   .section-header { padding: 7px 10px; cursor: pointer; user-select: none;
-                    display: flex; align-items: center; gap: 4px; font-weight: bold;
+                    display: flex; align-items: center; gap: 4px;
+                    font-weight: var(--kg-section-heading-weight);
+                    font-style: var(--kg-section-heading-style);
                     font-size: var(--kg-section-heading-pt);
                     background: var(--kg-pane-section-bg); }
   .section-header:hover { background: var(--kg-pane-hover); }
@@ -167,11 +177,17 @@
                   font-size: var(--kg-param-text-pt); }
   .section.open .section-body { display: block; }
   .param { margin-bottom: 8px; }
-  .param-label { display: block; font-weight: bold; margin-bottom: 2px;
+  .param-label { display: block; font-weight: var(--kg-param-text-weight);
+                 font-style: var(--kg-param-text-style); margin-bottom: 2px;
                  font-size: var(--kg-param-text-pt); }
   .param-help { color: var(--kg-pane-text-dim); font-size: 11px; margin-bottom: 3px; }
   .param select, .param input[type=text], .param input[type=number] {
     width: 100%; padding: 2px 4px; font-size: 12px; }
+  .param input[type=number] { padding-left: calc(4px + 1ch); }
+  /* Range params: a slider (visual proxy) paired with the canonical number+spinner box. */
+  .param-slider-row { display: flex; align-items: center; gap: 6px; }
+  .param-slider-row .param-slider { flex: 1 1 auto; min-width: 0; order: 1; margin: 0; }
+  .param-slider-row input[type=number] { flex: 0 0 5.5rem; width: 5.5rem; order: 2; }
 
   /* ---------- splitter drag overlay (prevents iframe/text selection during drag) ---------- */
   .dragging, .dragging * { user-select: none !important; cursor: col-resize !important; }
@@ -208,6 +224,27 @@
                     overflow: hidden; text-overflow: ellipsis; }
   #preset-list li:hover { background: #e8f0fc; }
   #preset-list li.active { background: #d6e6fb; font-weight: bold; }
+
+  /* When no project is open the preset combo is repurposed as a Recent Projects
+     picker: the action buttons and dirty marker are nonsensical, so hide them.
+     The combo itself is hidden when there are no recents to offer. */
+  #cust-header.no-project .preset-btns { display: none; }
+  #cust-header.no-project #dirty-marker { display: none; }
+  #cust-header.no-project.no-recents .preset-row { display: none; }
+
+  /* Change-Project inline dropdown: list of other known projects + "Pick a
+     different folder…" escape hatch. Anchored under the button. */
+  #change-project-menu { position: absolute; top: 100%; right: 0; z-index: 60;
+                         margin: 2px 0 0; padding: 0; list-style: none;
+                         min-width: 200px; max-height: 260px; overflow-y: auto;
+                         background: #fff; border: 1px solid #888;
+                         box-shadow: 0 2px 6px rgba(0,0,0,.2); display: none;
+                         font-size: 12px; }
+  #change-project-menu.open { display: block; }
+  #change-project-menu li { padding: 4px 10px; cursor: pointer; white-space: nowrap;
+                            overflow: hidden; text-overflow: ellipsis; }
+  #change-project-menu li:hover { background: #e8f0fc; }
+  #change-project-menu li.picker { border-top: 1px solid #ddd; font-style: italic; color: #444; }
 
   button:disabled { opacity: 0.45; cursor: not-allowed; }
 
@@ -412,11 +449,12 @@
 
     <!-- RIGHT: Customizer pane -->
     <div id="right">
-      <div id="cust-header">
-        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+      <div id="cust-header" class="no-project no-recents">
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; position:relative;">
           <h2 style="margin:0; flex:1;">Customizer</h2>
           <button id="open-project-btn" title="Pick a folder containing keyguard.scad and openings_and_additions.txt"
                   style="font-size:11px; padding:3px 8px; cursor:pointer;">Open Project…</button>
+          <ul id="change-project-menu" role="listbox"></ul>
         </div>
         <div style="font-size:11px; color:#666; margin-bottom:6px;" id="project-folder-label">
           <i>no project folder open</i>
@@ -437,6 +475,7 @@
           <button id="del-preset-btn" title="Delete current preset">−</button>
           <button id="save-preset-btn" title="Save current parameters to current preset" disabled>Save preset</button>
           <button id="reset-btn" title="Revert parameters to current preset baseline" disabled>Reset</button>
+          <button id="export-preset-btn" title="Save current preset to a JSON file…" disabled>💾</button>
         </div>
       </div>
 
@@ -541,9 +580,10 @@ renderer.setPixelRatio(window.devicePixelRatio);
 const ambient = new THREE.AmbientLight(0xffffff, 0.0);
 scene.add(ambient);
 
-// Hemisphere with a very dark ground so down-facing surfaces (chamfers,
-// rim undersides, the back face after rotation) drop sharply in brightness.
-const hemi = new THREE.HemisphereLight(0xffffff, 0x202020, 0.5);
+// Low-intensity hemisphere gives a very dim ambient floor. Sky white,
+// ground black so down-facing surfaces fall to near-black; the tiny
+// intensity keeps side faces dark rather than lifting them to gray.
+const hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 0.15);
 hemi.position.set(0, 1, 0);
 camera.add(hemi);
 
@@ -555,18 +595,15 @@ const lightTarget = new THREE.Object3D();
 lightTarget.position.set(0, 0, -1);
 camera.add(lightTarget);
 
-// Strong key from steep upper-right angle so the top face lights up almost
-// fully but anything tilted off that axis (chamfers, side rims) reads much
-// dimmer. Fill is a soft balance on the opposite side.
-const key = new THREE.DirectionalLight(0xffffff, 2.2);
+// With r170 physical lights, MeshPhong diffuse ≈ albedo × (intensity/π) × dot.
+// Top face dot ≈ 0.83 from this camera/light geometry; key=3.5 gives
+// ~(3.5/π)×0.83 ≈ 0.92× at the most-lit face — vivid material colour without
+// clipping. No fill so shadow faces stay dark; only the hemisphere's small
+// ambient contribution provides a floor.
+const key = new THREE.DirectionalLight(0xffffff, 3.5);
 key.position.set(1.0, 1.2, 0);
 key.target = lightTarget;
 camera.add(key);
-
-const fill = new THREE.DirectionalLight(0xffffff, 0.4);
-fill.position.set(-1.0, -0.5, 0);
-fill.target = lightTarget;
-camera.add(fill);
 
 // A camera's children only render when the camera itself is in the scene graph.
 scene.add(camera);
@@ -1020,7 +1057,7 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
 // deployment cache key: it is NOT pre-bumped on dev, only at release, to match
 // this number. See RELEASING.md.
-const APP_RELEASE = 5;
+const APP_RELEASE = 6;
 
 // Two-line version banner: the running app release plus the loaded designer
 // file's version (read from its `keyguard_designer_version = NN;` line). Shown
@@ -1042,15 +1079,19 @@ function logScreenshotStatus() {
 }
 // Default teal / cornfield are the long-standing viewport colours; the
 // Customizer text sizes mirror the CSS :root defaults.
-const DEFAULT_ITEM_COLOR = '#40E0D0';   // Turquoise — the default teal
+const DEFAULT_ITEM_COLOR = '#40E1D1';   // Turquoise — the default teal
 const DEFAULT_BG_COLOR   = '#FFFFE5';   // OpenSCAD Cornfield-style cream
-const DEFAULT_SECTION_PT  = 14;
-const DEFAULT_PARAM_PT    = 12;
+const DEFAULT_SECTION_PT     = 14;
+const DEFAULT_SECTION_WEIGHT = 'bold';
+const DEFAULT_SECTION_STYLE  = 'normal';
+const DEFAULT_PARAM_PT       = 12;
+const DEFAULT_PARAM_WEIGHT   = 'bold';
+const DEFAULT_PARAM_STYLE    = 'normal';
 
 // Eight saturated item colours; eight neutral backgrounds chosen to stay
 // distinct from the item set and keep good contrast for any pairing.
 const ITEM_COLORS = [
-  { name: 'Teal',   hex: '#40E0D0' },
+  { name: 'Teal',   hex: '#40E1D1' },
   { name: 'Blue',   hex: '#4682B4' },
   { name: 'Green',  hex: '#3CB371' },
   { name: 'Gold',   hex: '#DAA520' },
@@ -1074,8 +1115,12 @@ const SETTINGS_DEFAULTS = {
   presetOrder: 'alphabetical',   // 'alphabetical' | 'creation'
   gridX: 256,                    // reference-grid extent in mm (build-plate X)
   gridY: 256,                    // reference-grid extent in mm (build-plate Y)
-  sectionHeadingPt: DEFAULT_SECTION_PT,  // Customizer section-heading point size
-  paramTextPt: DEFAULT_PARAM_PT,         // Customizer parameter text point size
+  sectionHeadingPt:     DEFAULT_SECTION_PT,      // Customizer section-heading point size
+  sectionHeadingWeight: DEFAULT_SECTION_WEIGHT,  // 'bold' | 'normal'
+  sectionHeadingStyle:  DEFAULT_SECTION_STYLE,   // 'normal' | 'italic'
+  paramTextPt:          DEFAULT_PARAM_PT,         // Customizer parameter text point size
+  paramTextWeight:      DEFAULT_PARAM_WEIGHT,     // 'bold' | 'normal'
+  paramTextStyle:       DEFAULT_PARAM_STYLE,      // 'normal' | 'italic'
   itemColor: DEFAULT_ITEM_COLOR,         // generated piece colour in the viewport
   backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
   orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
@@ -1084,6 +1129,7 @@ const SETTINGS_DEFAULTS = {
   paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
   custPaneWidth: 280,                    // Customizer (right) pane width in px — restored across sessions
   consoleHeight: 180,                    // Console (bottom) pane height in px — restored across sessions
+  customizerWheelStep: 3,                // entries advanced per mouse-wheel notch in the Customizer pane + dropdowns
 };
 let settings = loadSettings();
 
@@ -1105,6 +1151,11 @@ applyAppearance();   // honour persisted text sizes + viewport colours on load
 function clampPt(v) {
   const n = Math.round(Number(v));
   return Number.isFinite(n) ? Math.max(8, Math.min(36, n)) : DEFAULT_PARAM_PT;
+}
+
+function clampWheelStep(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(1, Math.min(10, n)) : SETTINGS_DEFAULTS.customizerWheelStep;
 }
 
 // Pick a tick mark that stays legible on the swatch it sits on.
@@ -1152,7 +1203,8 @@ function onSettingsChanged(key) {
     rebuildPresetDropdown();
   }
   if (key === 'gridX' || key === 'gridY') rebuildGridIfVisible();
-  if (key === 'sectionHeadingPt' || key === 'paramTextPt') applyTextSizes();
+  if (['sectionHeadingPt','sectionHeadingWeight','sectionHeadingStyle',
+       'paramTextPt','paramTextWeight','paramTextStyle'].includes(key)) applyTextSizes();
   if (key === 'backgroundColor') applyBackgroundColor();
   if (key === 'itemColor') applyItemColor();
   if (key === 'paneTheme') applyPaneTheme();
@@ -1164,8 +1216,12 @@ function onSettingsChanged(key) {
 // keys at once only needs one apply call.
 function applyTextSizes() {
   const root = document.documentElement.style;
-  root.setProperty('--kg-section-heading-pt', clampPt(settings.sectionHeadingPt) + 'px');
-  root.setProperty('--kg-param-text-pt', clampPt(settings.paramTextPt) + 'px');
+  root.setProperty('--kg-section-heading-pt',     clampPt(settings.sectionHeadingPt) + 'px');
+  root.setProperty('--kg-section-heading-weight', settings.sectionHeadingWeight || DEFAULT_SECTION_WEIGHT);
+  root.setProperty('--kg-section-heading-style',  settings.sectionHeadingStyle  || DEFAULT_SECTION_STYLE);
+  root.setProperty('--kg-param-text-pt',          clampPt(settings.paramTextPt) + 'px');
+  root.setProperty('--kg-param-text-weight',      settings.paramTextWeight || DEFAULT_PARAM_WEIGHT);
+  root.setProperty('--kg-param-text-style',       settings.paramTextStyle  || DEFAULT_PARAM_STYLE);
 }
 function applyBackgroundColor() {
   scene.background = new THREE.Color(settings.backgroundColor || DEFAULT_BG_COLOR);
@@ -1236,6 +1292,57 @@ function rebuildPresetDropdown() {
   }
 }
 
+// ===== No-project UI mode =====
+// Until a project is loaded the preset combo is repurposed as a Recent
+// Projects picker, and the 5 preset-management buttons are hidden (they're
+// nonsensical without presets to manage). applyNoProjectUI / applyProjectUI
+// toggle the .no-project / .no-recents classes on #cust-header that drive
+// the visibility rules in CSS, and populate the recents dropdown.
+async function applyNoProjectUI() {
+  const hdr = document.getElementById('cust-header');
+  if (hdr) hdr.classList.add('no-project');
+  const input = document.getElementById('preset-input');
+  if (input) {
+    input.value = '';
+    input.placeholder = 'Recent projects';
+    input.readOnly = true;
+    input.title = 'Click to choose a recently-opened folder';
+  }
+  await refreshRecentsDropdown();
+}
+function applyProjectUI() {
+  const hdr = document.getElementById('cust-header');
+  if (hdr) { hdr.classList.remove('no-project'); hdr.classList.remove('no-recents'); }
+  const input = document.getElementById('preset-input');
+  if (input) {
+    input.placeholder = '';
+    input.readOnly = false;
+    input.title = 'Preset — Up/Down to switch; edit the name and press Enter to rename';
+  }
+}
+// Populate the dropdown with recent project folders and toggle .no-recents so
+// the combo row hides itself entirely when there's nothing to offer.
+async function refreshRecentsDropdown() {
+  const hdr = document.getElementById('cust-header');
+  const list = document.getElementById('preset-list');
+  if (!list) return;
+  const recents = await idbGetRecents();
+  list.innerHTML = '';
+  if (!recents.length) { if (hdr) hdr.classList.add('no-recents'); return; }
+  if (hdr) hdr.classList.remove('no-recents');
+  for (const h of recents) {
+    const li = document.createElement('li');
+    li.textContent = h.name;
+    li.title = `Open "${h.name}"`;
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      list.classList.remove('open');
+      openProject(h);
+    });
+    list.appendChild(li);
+  }
+}
+
 // ===== Project model =====
 // A "project" is the contents of a folder the user picked:
 //   scadName        e.g. "keyguard_v77.scad"
@@ -1259,6 +1366,12 @@ const HANDLE_DB = 'keyguard-db';
 const LEGACY_HANDLE_DB = 'keyguard-spike-db';   // pre-rename
 const HANDLE_STORE = 'handles';
 const HANDLE_KEY = 'lastProject';
+// Recents list — separate IDB key holding an array of recently-opened folder
+// handles (most-recent first, capped). Shown in the Customizer preset combo
+// in the empty (no-project) state so the user can jump straight back into a
+// folder without going through the directory picker.
+const RECENTS_KEY = 'recentProjects';
+const RECENTS_MAX = 8;
 
 function idbOpenNamed(name) {
   return new Promise((resolve, reject) => {
@@ -1328,6 +1441,50 @@ async function idbClearHandle() {
   await idbDeleteFrom(LEGACY_HANDLE_DB);
 }
 
+async function idbGetRecents() {
+  try {
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readonly');
+      const req = tx.objectStore(HANDLE_STORE).get(RECENTS_KEY);
+      req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return []; }
+}
+async function idbPutRecents(arr) {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).put(arr, RECENTS_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) { console.warn('Could not persist recent projects:', e); }
+}
+// Move `handle` to the front of the recents list. Dedupe via isSameEntry so
+// the same folder opened twice doesn't show up twice. Capped at RECENTS_MAX.
+async function pushRecent(handle) {
+  const recents = await idbGetRecents();
+  const filtered = [];
+  for (const h of recents) {
+    try { if (await h.isSameEntry(handle)) continue; } catch {}
+    filtered.push(h);
+  }
+  filtered.unshift(handle);
+  await idbPutRecents(filtered.slice(0, RECENTS_MAX));
+}
+async function removeRecent(handle) {
+  const recents = await idbGetRecents();
+  const filtered = [];
+  for (const h of recents) {
+    try { if (await h.isSameEntry(handle)) continue; } catch {}
+    filtered.push(h);
+  }
+  await idbPutRecents(filtered);
+}
+
 // Return the app to its initial "no project" layout: clear the 3D viewport,
 // console, and Customizer panes, drop every internal reference to the folder
 // (including the persisted IndexedDB handle), and restore the Open Project
@@ -1347,7 +1504,7 @@ async function resetToNoProject() {
   document.getElementById('preset-input').value = '';
   document.getElementById('preset-list').innerHTML = '';
   document.getElementById('dirty-marker').classList.remove('visible');
-  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn']) {
+  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn', 'export-preset-btn']) {
     const b = document.getElementById(id);
     if (b) b.disabled = true;
   }
@@ -1359,9 +1516,10 @@ async function resetToNoProject() {
   document.getElementById('project-folder-label').innerHTML = '<i>no project folder open</i>';
   document.getElementById('watch-status').textContent = '';
   setStatus('Click <b>Open Project…</b> to begin.');
+  await applyNoProjectUI();
 }
 
-async function openProject() {
+async function openProject(presetHandle = null) {
   if (!window.showDirectoryPicker) {
     alert('This browser does not support the File System Access API. Please use Chrome or Edge.');
     return;
@@ -1375,14 +1533,29 @@ async function openProject() {
       `Opening a different project will discard them.`);
     if (!proceed) return;
   }
-  let dirHandle = null;
+  let dirHandle = presetHandle;
+  // Caller supplied a handle (e.g. clicking a Recent Projects entry): do the
+  // readwrite permission dance and skip the picker entirely. If denied, drop
+  // the dead handle from recents so it stops cluttering the list.
+  if (dirHandle) {
+    let perm = 'denied';
+    try {
+      perm = await dirHandle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await dirHandle.requestPermission({ mode: 'readwrite' });
+    } catch {}
+    if (perm !== 'granted') {
+      logLine('Folder access was not granted — keeping the current project.');
+      if (!project) { await removeRecent(dirHandle); await applyNoProjectUI(); }
+      return;
+    }
+  }
   // If a project is already loaded, this click means "switch to a different
   // folder" — go straight to the picker. Otherwise, try to reuse the
   // last-opened folder on a fresh page load: requestPermission must be called
   // from a user gesture (the button click that drove us here), so this is
   // the right place. Chrome shows one prompt covering read+write.
   const isChangeProject = !!project;
-  if (!isChangeProject) {
+  if (!dirHandle && !isChangeProject) {
     const stored = await idbGetHandle();
     if (stored) {
       try {
@@ -1436,6 +1609,8 @@ async function openProject() {
     }
   }
   await idbPutHandle(dirHandle);
+  await pushRecent(dirHandle);
+  applyProjectUI();
   stopWatcher();
   // Re-frame the scene on the first render of the newly opened project.
   cameraFitOnce = false;
@@ -1475,6 +1650,10 @@ async function openProject() {
     // directory picker instead of reusing the dead handle.
     if (e.name === 'NotFoundError' || /could not be found/i.test(e.message || '')) {
       await idbClearHandle();
+      // Also drop it from recents so the dead entry doesn't clog the
+      // Recent Projects / Change Project dropdowns indefinitely.
+      await removeRecent(dirHandle);
+      await refreshRecentsDropdown();
       logLine(`  Stored folder is no longer accessible — cleared. Click "Open Project…" again and pick the folder.`);
       setStatus('Folder not found — click Open Project to pick it again.', 'error');
       return;
@@ -2633,7 +2812,7 @@ function parseCustomizer(scadText) {
           const inside = bracketMatch[1];
           // Range: number:number or number:number:number
           const rangeParts = inside.split(':').map(s => s.trim());
-          const allNumeric = rangeParts.every(p => /^-?\d+(\.\d+)?$/.test(p));
+          const allNumeric = rangeParts.every(p => /^-?(\d+(\.\d+)?|\.\d+)$/.test(p));
           if (rangeParts.length === 2 && allNumeric) {
             control = { kind: 'range', min: +rangeParts[0], max: +rangeParts[1] };
           } else if (rangeParts.length === 3 && allNumeric) {
@@ -2665,6 +2844,15 @@ function parseCustomizer(scadText) {
   return sections;
 }
 
+// Number of fractional digits implied by a Customizer step (e.g. .1 -> 1,
+// 0.05 -> 2, 1 -> 0). Used to format numeric inputs so a step of .1 displays
+// as 0.0 rather than 0 — matching native OpenSCAD's Customizer rendering.
+function decimalsForStep(step) {
+  const s = String(step);
+  const dot = s.indexOf('.');
+  return dot < 0 ? 0 : s.length - dot - 1;
+}
+
 // ===== Form generation =====
 const container = document.getElementById('cust-sections');
 
@@ -2693,6 +2881,19 @@ function buildCustomizerForm(sections) {
     container.appendChild(div);
   }
 }
+
+// Range params that should NOT get a slider — rendered as number+spinner only.
+// The five "App Layout in px" offsets (huge 0–10000 px ranges) and the two
+// screenshot-nudge offsets in "Special Actions and Settings".
+const RANGE_PARAMS_NO_SLIDER = new Set([
+  'bottom_of_status_bar',
+  'bottom_of_upper_message_bar',
+  'bottom_of_upper_command_bar',
+  'top_of_lower_message_bar',
+  'top_of_lower_command_bar',
+  'move_screenshot_horizontally',
+  'move_screenshot_vertically',
+]);
 
 function buildParamControl(p) {
   const wrap = document.createElement('div');
@@ -2731,17 +2932,75 @@ function buildParamControl(p) {
       break;
     }
     case 'range': {
-      input = document.createElement('input');
-      input.type = 'number';
-      input.min = p.control.min;
-      input.max = p.control.max;
-      if (p.control.step != null) input.step = p.control.step;
-      break;
+      // A few range params read better as a plain number+spinner with no slider
+      // (large px ranges and the screenshot-nudge offsets). Render those like a
+      // 'number' control: keep min/max/step but skip the slider proxy.
+      if (RANGE_PARAMS_NO_SLIDER.has(p.name)) {
+        input = document.createElement('input');
+        input.type = 'number';
+        input.min = p.control.min;
+        input.max = p.control.max;
+        if (p.control.step != null) {
+          input.step = p.control.step;
+          input.dataset.decimals = decimalsForStep(p.control.step);
+        }
+        break;
+      }
+      // Canonical control: the number+spinner box. It carries data-param-name
+      // and is the single source of truth read by currentFormValues /
+      // populateFormFromPreset. It is placed FIRST in the DOM so their
+      // `[data-param-name] input` querySelector resolves to it (CSS `order`
+      // still shows the slider on the left, matching native OpenSCAD).
+      const num = document.createElement('input');
+      num.type = 'number';
+      num.min = p.control.min;
+      num.max = p.control.max;
+      if (p.control.step != null) {
+        num.step = p.control.step;
+        num.dataset.decimals = decimalsForStep(p.control.step);
+      }
+      num.dataset.paramName = p.name;
+      num.dataset.valueType = p.valueType;
+
+      // Visual proxy slider — deliberately NO data-param-name, so value-readers
+      // ignore it and never treat it as a second source of truth.
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.className = 'param-slider';
+      slider.min = p.control.min;
+      slider.max = p.control.max;
+      if (p.control.step != null) slider.step = p.control.step;
+      slider.tabIndex = -1;                 // keep keyboard tab order on the box
+      slider.setAttribute('aria-hidden', 'true');
+
+      const fmt = v => (num.dataset.decimals != null && !Number.isNaN(parseFloat(v)))
+        ? parseFloat(v).toFixed(+num.dataset.decimals) : v;
+      // Dragging updates the box live (dirty marker, no render) and commits a
+      // render on release; both flow through the box's delegated handlers.
+      slider.addEventListener('input', () => {
+        num.value = fmt(slider.value);
+        num.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      slider.addEventListener('change', () => {
+        num.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      // Typing in the box (or stepping it) moves the slider to match.
+      num.addEventListener('input',  () => { slider.value = num.value; });
+      num.addEventListener('change', () => { slider.value = num.value; });
+
+      const row = document.createElement('div');
+      row.className = 'param-slider-row';
+      row.append(num, slider);
+      wrap.appendChild(row);
+      return wrap;
     }
     case 'number': {
       input = document.createElement('input');
       input.type = 'number';
-      if (p.control.step != null) input.step = p.control.step;
+      if (p.control.step != null) {
+        input.step = p.control.step;
+        input.dataset.decimals = decimalsForStep(p.control.step);
+      }
       break;
     }
     case 'vector':
@@ -2758,12 +3017,55 @@ function buildParamControl(p) {
   return wrap;
 }
 
-// Click to expand/collapse
+// Click to expand/collapse.
+// Anchor the clicked header to its current viewport position before toggling,
+// then restore it. The header itself doesn't move when its own body appears
+// below it, but anything that nudges scrollTop on open (browser autoscroll,
+// focus, or a wheel event coalesced with the click) used to leave the
+// clicked header drifting off the top. We measure the drift and undo it,
+// so a click always grows the section downward and leaves the header still.
 container.addEventListener('click', e => {
   const header = e.target.closest('.section-header');
   if (!header) return;
-  header.parentElement.classList.toggle('open');
+  const section = header.closest('.section');
+  if (!section) return;
+  const before = header.getBoundingClientRect().top;
+  section.classList.toggle('open');
+  const after = header.getBoundingClientRect().top;
+  const drift = after - before;
+  if (Math.abs(drift) > 0.5) container.scrollTop += drift;
 });
+
+// Mouse wheel: advance N entries per notch.
+// - On a <select>: change selectedIndex by N (instead of the browser's default 1).
+// - Elsewhere in the panel: scroll by N row-heights so long sections turn at a
+//   pace the user can read; default 3 per notch, configurable in General settings.
+container.addEventListener('wheel', e => {
+  if (e.ctrlKey) return;  // leave browser zoom alone
+  const n = clampWheelStep(settings.customizerWheelStep);
+  const dir = Math.sign(e.deltaY);
+  if (!dir) return;
+
+  // Closed selects are deliberately NOT intercepted — wheeling over one
+  // would otherwise change the selection (and kick off a render) without
+  // the user ever opening the list, which is too easy to do by accident.
+  // The user must open the dropdown first; the popup is browser-managed,
+  // so the wheel scrolls the option list there.
+
+  // Panel scroll: estimate a row height from a visible param (preferred) or
+  // the always-rendered section header. .param elements inside a collapsed
+  // .section-body have offsetHeight == 0, so guard against picking one.
+  let rowH = 0;
+  for (const p of container.querySelectorAll('.param')) {
+    if (p.offsetHeight > 0) { rowH = p.offsetHeight; break; }
+  }
+  if (!rowH) {
+    const h = container.querySelector('.section-header');
+    rowH = h ? h.offsetHeight : 30;
+  }
+  e.preventDefault();
+  container.scrollTop += dir * n * rowH;
+}, { passive: false });
 
 // ===== Populate form values from a preset =====
 // Preset values come from the .json file (all strings) or, for "design default values",
@@ -2784,8 +3086,18 @@ function populateFormFromPreset(presetName) {
         // Use the .scad default; strip surrounding quotes for strings.
         val = p.default.replace(/^"|"$/g, '');
       }
-      input.value = val;
+      if (input.type === 'number' && input.dataset.decimals != null && val !== '' && !Number.isNaN(parseFloat(val))) {
+        input.value = parseFloat(val).toFixed(+input.dataset.decimals);
+      } else {
+        input.value = val;
+      }
     }
+  }
+  // Mirror each range slider to its just-populated canonical number box
+  // (programmatic .value sets above don't fire the sync input/change events).
+  for (const s of container.querySelectorAll('.param-slider-row .param-slider')) {
+    const n = s.parentElement.querySelector('input[type=number]');
+    if (n) s.value = n.value;
   }
   // Snapshot the baseline so dirty-state comparisons work
   project.baselineParams = currentFormValues();
@@ -3135,6 +3447,7 @@ function updateDirty() {
   document.getElementById('dirty-marker').classList.toggle('visible', dirty);
   document.getElementById('save-preset-btn').disabled = !dirty;
   document.getElementById('reset-btn').disabled = !dirty;
+  document.getElementById('export-preset-btn').disabled = dirty || !project.currentPreset || project.currentPreset === 'design default values';
 }
 
 container.addEventListener('input', e => {
@@ -3148,6 +3461,14 @@ container.addEventListener('input', e => {
 });
 container.addEventListener('change', async e => {
   if (!project || !e.target.dataset.paramName) return;
+  // Reformat a committed numeric value to the step's implied decimals (e.g. a
+  // step of .1 makes a typed "0" display as "0.0"), matching native OpenSCAD's
+  // Customizer and the formatting populateFormFromPreset already applies.
+  const t = e.target;
+  if (t.type === 'number' && t.dataset.decimals != null &&
+      t.value !== '' && !Number.isNaN(parseFloat(t.value))) {
+    t.value = parseFloat(t.value).toFixed(+t.dataset.decimals);
+  }
   updateDirty();
   // When the user flips include_screenshot: ON → rescan (a folder change
   // since Open Project gets picked up) and reveal the picker if 2+ images;
@@ -3258,12 +3579,71 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     logLine('Save console failed: ' + e.message);
   }
 });
-document.getElementById('open-project-btn').addEventListener('click', () => {
+// "Change Project" (project already open) is the common pivot to another
+// known folder, so offer the recents inline before falling through to the OS
+// picker. With 0–1 known projects there's nothing to choose between — go
+// straight to the picker. "Open Project" (no project open) always goes
+// straight to the picker too; the empty-state preset combo is where recents
+// are surfaced in that case.
+async function maybeShowChangeProjectMenu() {
+  const menu = document.getElementById('change-project-menu');
+  if (!menu || !project) return false;
+  const recents = await idbGetRecents();
+  // Filter out the currently-open project so the user only sees alternatives.
+  const others = [];
+  for (const h of recents) {
+    let same = false;
+    try { same = await h.isSameEntry(project.dirHandle); } catch {}
+    if (!same) others.push(h);
+  }
+  if (!others.length) return false;
+  menu.innerHTML = '';
+  for (const h of others) {
+    const li = document.createElement('li');
+    li.textContent = h.name;
+    li.title = `Switch to "${h.name}"`;
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      menu.classList.remove('open');
+      openProject(h).catch(err => {
+        logLine('Open Project failed: ' + err.message);
+        setStatus('Open Project failed: ' + err.message, 'error');
+      });
+    });
+    menu.appendChild(li);
+  }
+  const pick = document.createElement('li');
+  pick.className = 'picker';
+  pick.textContent = 'Pick a different folder…';
+  pick.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    menu.classList.remove('open');
+    openProject().catch(err => {
+      logLine('Open Project failed: ' + err.message);
+      setStatus('Open Project failed: ' + err.message, 'error');
+    });
+  });
+  menu.appendChild(pick);
+  menu.classList.add('open');
+  return true;
+}
+document.getElementById('open-project-btn').addEventListener('click', async () => {
+  const menu = document.getElementById('change-project-menu');
+  if (menu && menu.classList.contains('open')) { menu.classList.remove('open'); return; }
+  if (await maybeShowChangeProjectMenu()) return;
   openProject().catch(e => {
     logLine('Open Project failed: ' + e.message);
     setStatus('Open Project failed: ' + e.message, 'error');
     console.error(e);
   });
+});
+// Dismiss the change-project menu on any outside click.
+document.addEventListener('mousedown', (e) => {
+  const menu = document.getElementById('change-project-menu');
+  const btn = document.getElementById('open-project-btn');
+  if (!menu || !menu.classList.contains('open')) return;
+  if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
+  menu.classList.remove('open');
 });
 
 // Test hook: if the URL has ?fixture=PATH&scad=FILENAME (and optionally
@@ -3321,7 +3701,10 @@ if (__fixturePath && __fixtureScad &&
 } else {
   // Surface the remembered folder name on page load so the user knows clicking
   // Open Project will try it first (one permission prompt, no file picker).
+  // Also populate the Recent Projects dropdown so the empty-state combo is
+  // immediately useful.
   (async () => {
+    await refreshRecentsDropdown();
     const stored = await idbGetHandle();
     if (!stored) return;
     const label = document.getElementById('project-folder-label');
@@ -3381,8 +3764,15 @@ const presetInput = document.getElementById('preset-input');
 const presetList = document.getElementById('preset-list');
 const presetDropdownBtn = document.getElementById('preset-dropdown-btn');
 
-function openPresetList() {
-  if (!project) return;
+async function openPresetList() {
+  if (!project) {
+    // No-project mode: list is recents. Don't open if there are none —
+    // the combo row is hidden anyway, but be defensive.
+    await refreshRecentsDropdown();
+    if (!presetList.children.length) return;
+    presetList.classList.add('open');
+    return;
+  }
   rebuildPresetDropdown();
   presetList.classList.add('open');
   const act = presetList.querySelector('li.active');
@@ -3471,9 +3861,14 @@ async function renamePreset(newName) {
 
 presetDropdownBtn.addEventListener('mousedown', (e) => {
   e.preventDefault();
-  if (!project) return;
   if (presetList.classList.contains('open')) closePresetList();
   else { openPresetList(); presetInput.focus(); }
+});
+// In no-project mode the input is readonly and the user expects clicking it
+// (or the placeholder text) to drop the recents list.
+presetInput.addEventListener('mousedown', () => {
+  if (project) return;
+  if (!presetList.classList.contains('open')) openPresetList();
 });
 
 presetInput.addEventListener('keydown', (e) => {
@@ -3500,6 +3895,47 @@ resetBtn.addEventListener('click', () => {
   if (!project) return;
   populateFormFromPreset(project.currentPreset);
   doRender();
+});
+
+// ===== Export current preset to a user-chosen .json file =====
+document.getElementById('export-preset-btn').addEventListener('click', async () => {
+  if (!project) return;
+  const name = project.currentPreset;
+  const cur = currentFormValues();
+  const asStrings = {};
+  for (const [k, v] of Object.entries(cur)) asStrings[k] = String(v);
+  const text = buildPresetJson({ [name]: asStrings });
+  const safeName = name.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'preset';
+  const suggestedName = safeName + '.json';
+  try {
+    if (window.showSaveFilePicker) {
+      const pickerOpts = {
+        suggestedName,
+        types: [{ description: 'JSON file', accept: { 'application/json': ['.json'] } }],
+      };
+      if (project.dirHandle) pickerOpts.startIn = project.dirHandle;
+      const handle = await window.showSaveFilePicker(pickerOpts);
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      logLine(`Exported preset "${name}" to ${handle.name}`);
+    } else {
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = suggestedName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      logLine(`Exported preset "${name}" as ${suggestedName}`);
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    logLine('Export preset failed: ' + e.message);
+    console.error(e);
+  }
 });
 
 // ===== Save preset: write current form values back to the project's .json =====
@@ -3685,6 +4121,17 @@ const SETTINGS_PANELS = {
       <label class="opt"><input type="radio" name="presetOrder" value="creation"
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
+    <div class="setting">
+      <label>Customizer mouse-wheel step</label>
+      <div style="color:#666; margin-bottom:8px;">
+        How many entries each notch of the mouse wheel scrolls the
+        Customizer panel. Pull-downs are not changed by wheel scrolling —
+        open the dropdown first to scroll its list.
+      </div>
+      <label class="opt">Entries per notch
+        <input type="number" id="set-customizerWheelStep" min="1" max="10" step="1"
+          value="${clampWheelStep(settings.customizerWheelStep)}" style="width:60px;"></label>
+    </div>
   `,
   viewport: () => {
     const sch = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
@@ -3754,17 +4201,27 @@ const SETTINGS_PANELS = {
   `,
   text: () => `
     <div class="setting">
-      <label>Customizer text size</label>
+      <label>Customizer text size and style</label>
       <div style="color:#666; margin-bottom:8px;">
-        Point size for the Customizer pane on the right. Larger values help
-        when the panel is read at a distance or on a high-resolution display.
+        Point size and style for the Customizer pane on the right. Larger values
+        help when the panel is read at a distance or on a high-resolution display.
       </div>
-      <label class="opt">Section headings (pt)
+      <label style="display:block; font-weight:bold; margin:6px 0 2px;">Section headings</label>
+      <label class="opt">Size (pt)
         <input type="number" id="set-sectionHeadingPt" min="8" max="36" step="1"
           value="${clampPt(settings.sectionHeadingPt)}"></label>
-      <label class="opt">Parameter text (pt)
+      <label class="opt"><input type="checkbox" id="set-sectionHeadingBold"
+        ${(settings.sectionHeadingWeight||DEFAULT_SECTION_WEIGHT) === 'bold' ? 'checked' : ''}> Bold</label>
+      <label class="opt"><input type="checkbox" id="set-sectionHeadingItalic"
+        ${(settings.sectionHeadingStyle||DEFAULT_SECTION_STYLE) === 'italic' ? 'checked' : ''}> Italic</label>
+      <label style="display:block; font-weight:bold; margin:10px 0 2px;">Parameter text</label>
+      <label class="opt">Size (pt)
         <input type="number" id="set-paramTextPt" min="8" max="36" step="1"
           value="${clampPt(settings.paramTextPt)}"></label>
+      <label class="opt"><input type="checkbox" id="set-paramTextBold"
+        ${(settings.paramTextWeight||DEFAULT_PARAM_WEIGHT) === 'bold' ? 'checked' : ''}> Bold</label>
+      <label class="opt"><input type="checkbox" id="set-paramTextItalic"
+        ${(settings.paramTextStyle||DEFAULT_PARAM_STYLE) === 'italic' ? 'checked' : ''}> Italic</label>
       <button class="set-reset" id="reset-text">Reset to defaults</button>
     </div>
   `,
@@ -3838,6 +4295,12 @@ function renderSettingsPanel(cat) {
     };
     inp.addEventListener('change', commit);
   }
+  const wheelStep = settingsPanel.querySelector('#set-customizerWheelStep');
+  if (wheelStep) wheelStep.addEventListener('change', () => {
+    const v = clampWheelStep(wheelStep.value);
+    wheelStep.value = v;
+    if (v !== settings.customizerWheelStep) setSetting('customizerWheelStep', v);
+  });
   for (const k of ['sectionHeadingPt', 'paramTextPt']) {
     const inp = settingsPanel.querySelector('#set-' + k);
     if (!inp) continue;
@@ -3847,10 +4310,26 @@ function renderSettingsPanel(cat) {
       if (v !== settings[k]) setSetting(k, v);
     });
   }
+  const hBold = settingsPanel.querySelector('#set-sectionHeadingBold');
+  if (hBold) hBold.addEventListener('change', () =>
+    setSetting('sectionHeadingWeight', hBold.checked ? 'bold' : 'normal'));
+  const hItalic = settingsPanel.querySelector('#set-sectionHeadingItalic');
+  if (hItalic) hItalic.addEventListener('change', () =>
+    setSetting('sectionHeadingStyle', hItalic.checked ? 'italic' : 'normal'));
+  const pBold = settingsPanel.querySelector('#set-paramTextBold');
+  if (pBold) pBold.addEventListener('change', () =>
+    setSetting('paramTextWeight', pBold.checked ? 'bold' : 'normal'));
+  const pItalic = settingsPanel.querySelector('#set-paramTextItalic');
+  if (pItalic) pItalic.addEventListener('change', () =>
+    setSetting('paramTextStyle', pItalic.checked ? 'italic' : 'normal'));
   const resetText = settingsPanel.querySelector('#reset-text');
   if (resetText) resetText.addEventListener('click', () => {
-    setSetting('sectionHeadingPt', DEFAULT_SECTION_PT);
-    setSetting('paramTextPt', DEFAULT_PARAM_PT);
+    setSetting('sectionHeadingPt',     DEFAULT_SECTION_PT);
+    setSetting('sectionHeadingWeight', DEFAULT_SECTION_WEIGHT);
+    setSetting('sectionHeadingStyle',  DEFAULT_SECTION_STYLE);
+    setSetting('paramTextPt',          DEFAULT_PARAM_PT);
+    setSetting('paramTextWeight',      DEFAULT_PARAM_WEIGHT);
+    setSetting('paramTextStyle',       DEFAULT_PARAM_STYLE);
     renderSettingsPanel('text');
   });
   settingsPanel.querySelectorAll('input[type=radio][name=paneTheme]').forEach(r => {

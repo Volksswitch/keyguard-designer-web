@@ -10,6 +10,40 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 6
+
+### New features
+
+- **Recent Projects and quick project switching.** The app now remembers the folders you have recently opened. When no project is loaded, a "Recent projects" dropdown lets you reopen a folder in one click. When a project is already open, the Change Project button shows a short list of other known folders alongside a "Pick a different folder…" option — no need to navigate through the file browser each time. Stale entries (folders that have been moved or deleted) remove themselves automatically.
+
+- **Sliders for adjustable settings.** Settings that accept a range of values now show a draggable slider alongside the number box. You can drag the slider or type a number — both stay in sync.
+
+- **Save a preset as a file.** A new save button (💾) lets you export the current preset's settings to a standalone file. Useful for backing up a design configuration or sharing it with a colleague.
+
+- **Mouse wheel speed setting.** A new "Customizer mouse-wheel step" setting (in General settings) controls how many rows the mouse wheel advances at a time. Default is 3 rows per notch.
+
+- **Bold and italic text style options.** Settings → Text tab now has checkboxes to make section headings and setting labels bold or italic.
+
+### Improvements
+
+- **3D preview shading matches printed output more closely.** The highlight and shadow contrast in the 3D view has been tuned to better match what OpenSCAD renders, making the preview a more reliable guide to the final keyguard appearance.
+
+- **Numeric fields show the right number of decimal places.** Number inputs now display the appropriate decimal places for their step size (e.g. a 0.1-step field shows "4.0" rather than "4"), matching the behaviour of the OpenSCAD Customizer.
+
+### Bug fixes
+
+- **Mouse wheel no longer gets stuck when all sections are collapsed.** Scrolling the settings panel now works correctly even when every section is closed.
+
+- **Dropdown values no longer go blank.** Dropdown settings no longer showed a blank value when the current setting was very close to — but not exactly matching — a valid option. This affected some preset values that use non-round numbers.
+
+- **Expanding a section no longer scrolls it off screen.** Clicking a section header to open it now keeps that header visible at the top of the panel.
+
+- **Cell openings with no corner rounding now cut all the way through.** In some keyguards where the cell corner rounding was set to zero, cells could have a very thin film of material left across the opening. This has been fixed.
+
+- **Sloped cell edges no longer incorrectly trimmed.** When a cell opening had sides that angle inward (an undercut slope), the bridge of plastic behind the opening was incorrectly cutting into the angled wall. The slope is now preserved correctly.
+
+- **Six presets with a dovetail split line now render the dovetail correctly.** A typographical error in six saved presets meant the dovetail joint setting was silently ignored, producing a flat split instead. This has been corrected.
+
 ## Release 5
 
 ### New features
