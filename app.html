@@ -606,31 +606,33 @@ key.position.set(1.0, 1.2, 0);
 key.target = lightTarget;
 camera.add(key);
 
-// ── OpenSCAD-mode lighting (world-space fixed) ────────────────────────────────
-// Replicates OpenSCAD's two-light + ambient setup so cross-backend parity
-// comparisons are not confused by camera-angle-dependent brightness swings.
-// DirectionalLight intensities = π so Three.js's (intensity/π)×dot reduces to
-// 1.0×dot, matching OpenGL. AmbientLight is NOT divided by π in Three.js, so
-// wsAmbient.intensity = 0.2 directly (= OpenGL global ambient).
+// ── OpenSCAD-mode lighting (camera-relative, matching OpenSCAD's GL_LIGHT setup) ──────────
+// OpenSCAD sets GL_LIGHT0/GL_LIGHT1 positions in initializeGL() with the identity
+// modelview, storing them in eye-space. Because they are never re-set per frame,
+// the lighting dot-product resolves to dot(N_world, Camera⁻¹ × L_eye), which means
+// the lights ORBIT WITH THE CAMERA — they are effectively camera-relative.
+// We replicate this by attaching the lights as camera children in Three.js.
 //
-//   GL_LIGHT0: direction from surface toward light = normalize(0.5, 0.5, 1.0)
-//              → primary upper-right light; strongly illuminates top (+Z) face.
-//   GL_LIGHT1: direction from surface toward light = normalize(-0.5, -0.5, -0.5)
-//              → secondary fill; illuminates bottom and lower-front faces.
+// Positions from OpenSCAD GLView.cc (eye-space, i.e. camera-local in Three.js):
+//   GL_LIGHT0: (-1, +1, +1, 0)  → upper-left, toward viewer
+//   GL_LIGHT1: (+1, -1, -1, 0)  → lower-right, away from viewer
 //   Global ambient: 0.2 per channel.
 //
-// These are OFF by default (intensity 0); applyLighting() activates them and
+// DirectionalLight intensity = π so Three.js's (intensity/π)×dot = 1×dot (matching OpenGL).
+// AmbientLight is NOT divided by π in Three.js → wsAmbient.intensity = 0.2 directly.
+//
+// All three are OFF by default (intensity 0); applyLighting() activates them and
 // deactivates the app-mode lights when settings.openscadLighting is true.
 const wsAmbient = new THREE.AmbientLight(0xffffff, 0.0);
 scene.add(wsAmbient);
 const wsPrimary = new THREE.DirectionalLight(0xffffff, 0.0);
-wsPrimary.position.set(0.5, 0.5, 1.0);   // L = normalize(0.5, 0.5, 1.0)
-scene.add(wsPrimary);
-scene.add(wsPrimary.target);              // target must be in scene for matrix updates
+wsPrimary.position.set(-1, 1, 1);   // GL_LIGHT0 eye-space direction: upper-left, toward viewer
+camera.add(wsPrimary);
+camera.add(wsPrimary.target);       // target at camera origin; both orbit with camera
 const wsFill = new THREE.DirectionalLight(0xffffff, 0.0);
-wsFill.position.set(-0.5, -0.5, -0.5);  // L = normalize(-0.5, -0.5, -0.5)
-scene.add(wsFill);
-scene.add(wsFill.target);
+wsFill.position.set(1, -1, -1);    // GL_LIGHT1 eye-space direction: lower-right, away from viewer
+camera.add(wsFill);
+camera.add(wsFill.target);
 
 // A camera's children only render when the camera itself is in the scene graph.
 scene.add(camera);
@@ -1259,15 +1261,16 @@ function applyBackgroundColor() {
 }
 // Switch between camera-relative app lighting and world-space OpenSCAD-matched lighting.
 // App mode:     camera-attached hemisphere + key directional (model always lit from viewer).
-// OpenSCAD mode: world-space primary (0.5,0.5,1.0) + fill (-0.5,-0.5,-0.5) + ambient 0.2,
-//                replicating GL_LIGHT0/GL_LIGHT1. DirectionalLight intensity = π (Three.js
-//                divides by π for physical lights); AmbientLight intensity = 0.2 (no π).
+// OpenSCAD mode: camera-relative primary (-1,+1,+1) + fill (+1,-1,-1) + ambient 0.2,
+//                matching GL_LIGHT0/GL_LIGHT1 from OpenSCAD's GLView.cc. Lights orbit
+//                with the camera (camera children). DirectionalLight intensity = π;
+//                AmbientLight intensity = 0.2 (no π — Three.js doesn't divide ambient).
 function applyLighting() {
   const os = !!settings.openscadLighting;
   // App-mode lights (camera children)
   hemi.intensity = os ? 0.0 : 0.15;
   key.intensity  = os ? 0.0 : 3.5;
-  // OpenSCAD-mode lights (world-space scene children)
+  // OpenSCAD-mode lights (camera children + scene ambient)
   wsAmbient.intensity = os ? 0.2  : 0.0;   // 0.2 — AmbientLight is NOT divided by π in Three.js
   wsPrimary.intensity = os ? 3.14 : 0.0;   // π × 1.0 — DirectionalLight IS divided by π
   wsFill.intensity    = os ? 3.14 : 0.0;   // π × 1.0
