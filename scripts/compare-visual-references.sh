@@ -26,9 +26,9 @@ RESULTS="$OUTPUT_DIR/compare-visual-references.txt"
 PROGRESS="$OUTPUT_DIR/compare-visual-references-progress.log"
 
 find_python() {
-    command -v python3 &>/dev/null && echo "python3" && return
-    command -v python  &>/dev/null && echo "python"  && return
-    command -v py      &>/dev/null && echo "py"       && return
+    command -v python3 &>/dev/null && python3 -c "import sys; sys.exit(0)" 2>/dev/null && echo "python3" && return
+    command -v python  &>/dev/null && python  -c "import sys; sys.exit(0)" 2>/dev/null && echo "python"  && return
+    command -v py      &>/dev/null && echo "py" && return
     echo ""
 }
 PYTHON="$(find_python)"
