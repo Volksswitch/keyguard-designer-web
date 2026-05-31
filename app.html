@@ -3737,6 +3737,19 @@ if (__fixturePath && __fixtureScad &&
   const __render = (__w > 0 || __h > 0 || __fov > 0)
     ? { width: __w || null, height: __h || null, fov: !isNaN(__fov) ? __fov : null }
     : null;
+  // Viewport appearance overrides — caller can pin exact rendering settings
+  // for consistent reference captures. Applied directly to the settings object
+  // (not via setSetting) so localStorage is never touched during test runs.
+  const __itemColor = __fixtureParams.get('itemColor');
+  const __bgColor   = __fixtureParams.get('backgroundColor');
+  const __osLight   = __fixtureParams.get('openscadLighting');
+  if (__itemColor) { settings.itemColor = __itemColor; applyItemColor(); }
+  if (__bgColor)   { settings.backgroundColor = __bgColor; applyBackgroundColor(); }
+  if (__osLight != null) {
+    settings.openscadLighting = (__osLight === '1' || __osLight === 'true');
+    applyLighting();
+  }
+
   loadFixture(
     __fixturePath,
     __fixtureScad,

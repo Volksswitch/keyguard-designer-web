@@ -65,6 +65,14 @@ const CAPTURE_WIDTH  = 2048;
 const CAPTURE_HEIGHT = 1536;
 const CAPTURE_FOV    = 22.5;
 
+// Viewport appearance settings pinned for all reference captures.
+// These are passed as URL params to the fixture loader so every capture
+// is consistent regardless of the local user's saved Settings preferences.
+// Update references (./scripts/test.sh --visual --update) whenever these change.
+const CAPTURE_ITEM_COLOR   = '#40E1D1';  // Teal
+const CAPTURE_BG_COLOR     = '#F8F8F8';  // White (OpenSCAD Tomorrow background)
+const CAPTURE_OS_LIGHTING  = '1';        // Mode 2 — OpenSCAD-matched camera-relative lighting
+
 // Camera fallbacks matching the .scad project's scripts/test.sh:
 //   DEFAULT_VPT="0,0,0", DEFAULT_VPR="55,0,25", DEFAULT_VPD="250".
 // Used when neither the step nor an openings file specifies a camera.
@@ -291,13 +299,16 @@ if (discoveryError || CASES.length === 0) {
       });
 
       const params = new URLSearchParams({
-        fixture: SCAD_SOURCE_URL_PREFIX,
-        scad:    SCAD_FILE,
-        preset:  c.preset,
-        oa:      `${SCAD_CASES_URL_PREFIX}/${encodeURIComponent(c.caseName)}/${encodeURIComponent(c.oaFile)}`,
-        width:   String(CAPTURE_WIDTH),
-        height:  String(CAPTURE_HEIGHT),
-        fov:     String(CAPTURE_FOV),
+        fixture:          SCAD_SOURCE_URL_PREFIX,
+        scad:             SCAD_FILE,
+        preset:           c.preset,
+        oa:               `${SCAD_CASES_URL_PREFIX}/${encodeURIComponent(c.caseName)}/${encodeURIComponent(c.oaFile)}`,
+        width:            String(CAPTURE_WIDTH),
+        height:           String(CAPTURE_HEIGHT),
+        fov:              String(CAPTURE_FOV),
+        itemColor:        CAPTURE_ITEM_COLOR,
+        backgroundColor:  CAPTURE_BG_COLOR,
+        openscadLighting: CAPTURE_OS_LIGHTING,
       });
       // Camera is always resolved during discovery (test.json → step-params
       // openings file → case openings file → DEFAULTs), so pass it always.

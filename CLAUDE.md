@@ -332,6 +332,22 @@ phrase is all Ken needs. Because CLAUDE.md is the only thing that syncs and is
 auto-loaded on both machines, a new phrase only works after OneDrive syncs this
 file AND the other machine's Claude session is restarted.
 
+## Trigger phrase — update web app visual references
+
+When Ken says **"update visual references"**, run in the **background**:
+```
+KEYGUARD_VISUAL_CASES=* bash scripts/test.sh --visual --update
+```
+from the web-app project root. This re-captures ALL Playwright reference PNGs using the
+pinned appearance settings in `tests/visual.spec.mjs` (`CAPTURE_ITEM_COLOR`, `CAPTURE_BG_COLOR`,
+`CAPTURE_OS_LIGHTING`) — currently Teal `#40E1D1`, White background `#F8F8F8`, Mode 2
+(OpenSCAD-matched) lighting. When done, commit the updated PNGs under
+`tests/visual.spec.mjs-snapshots/`.
+
+- **Progress log** (tail -f while running): `visual-update-progress.log`
+
+---
+
 ## Trigger phrase — cross-backend visual parity
 
 When Ken says **"compare visual references"**, run `bash scripts/compare-visual-references.sh`
