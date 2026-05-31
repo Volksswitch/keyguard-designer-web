@@ -362,7 +362,7 @@ KEYGUARD_VISUAL_CASES=* bash scripts/test.sh --visual --update
 ```
 from the web-app project root. This re-captures ALL Playwright reference PNGs using the
 pinned appearance settings in `tests/visual.spec.mjs` (`CAPTURE_ITEM_COLOR`, `CAPTURE_BG_COLOR`,
-`CAPTURE_OS_LIGHTING`) — currently Teal `#40E1D1`, White background `#F8F8F8`, Mode 2
+`CAPTURE_OS_LIGHTING`) — currently Turquoise `#40E0D0` (exact CSS "Turquoise" / OpenSCAD `color("Turquoise")`), White background `#F8F8F8`, Mode 2
 (OpenSCAD-matched) lighting. When done, commit the updated PNGs under
 `tests/visual.spec.mjs-snapshots/`.
 

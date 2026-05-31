@@ -69,7 +69,7 @@ const CAPTURE_FOV    = 22.5;
 // These are passed as URL params to the fixture loader so every capture
 // is consistent regardless of the local user's saved Settings preferences.
 // Update references (./scripts/test.sh --visual --update) whenever these change.
-const CAPTURE_ITEM_COLOR   = '#40E1D1';  // Teal
+const CAPTURE_ITEM_COLOR   = '#40E0D0';  // Turquoise (exact CSS "Turquoise" / OpenSCAD color("Turquoise"))
 const CAPTURE_BG_COLOR     = '#F8F8F8';  // White (OpenSCAD Tomorrow background)
 const CAPTURE_OS_LIGHTING  = '1';        // Mode 2 — OpenSCAD-matched camera-relative lighting
 
