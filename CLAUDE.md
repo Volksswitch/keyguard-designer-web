@@ -136,6 +136,12 @@ Both projects capture at 2048×1536. The camera model has been validated empiric
   single item colour. The ~20% is entirely colour mismatch; the geometry and shading are fine.
   Step 9 (vpr=200°, looking from below) scores ~6% because the inserts aren't visible from
   underneath. **Not fixable without multi-material STL or a separate colour-overlay render.**
+  → **ACTION on next `keyguard.scad` code change:** remove or gate the `color()` calls for
+  cell inserts (and audit for similar explicit colouring on other specialty output types —
+  laser-cut keyguards, frames, clips, etc. — removing any that cause the same mismatch), then
+  re-run `update visual references` and `compare visual references` to confirm TC22 improves.
+  The `color()` calls serve no functional purpose in STL/print output and only affect the
+  OpenSCAD preview/PNG render.
 
 - **TC5 steps 3/4 (~53%), TC12 step5 (~35%), TC47 step4 (~34%):** Complex chamfered/sloped
   surfaces viewed from angles where MeshPhong and OpenSCAD's flat-shaded CGAL renderer diverge
