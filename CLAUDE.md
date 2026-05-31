@@ -304,6 +304,23 @@ phrase is all Ken needs. Because CLAUDE.md is the only thing that syncs and is
 auto-loaded on both machines, a new phrase only works after OneDrive syncs this
 file AND the other machine's Claude session is restarted.
 
+## Trigger phrase — cross-backend visual parity
+
+When Ken says **"compare visual references"**, run `bash scripts/compare-visual-references.sh`
+in the **background** and report when it finishes. It compares every web-app Playwright
+viewport PNG against the matching .scad OpenSCAD CGAL reference PNG and produces a
+worst-to-best parity report.
+
+- **Progress log** (tail -f while running): `output/compare-visual-references-progress.log`  
+  One line per pair as processed: bucket, ratio, case name, step filename.
+- **Final sorted report**: `output/compare-visual-references.txt`  
+  Tab-separated, sorted worst-to-best, with summary buckets at the bottom.
+
+Requires Python 3 with `Pillow` and `numpy` on PATH. Derives the .scad project path as
+a sibling of the web-app root via OneDrive, so it works unchanged on both machines.
+
+---
+
 ## Trigger phrases — RTP CGAL golden regen (2-machine split)
 
 DISAMBIGUATION: "chunk N" alone is ambiguous — the .scad project's
