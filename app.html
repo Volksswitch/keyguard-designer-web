@@ -609,8 +609,9 @@ camera.add(key);
 // ── OpenSCAD-mode lighting (world-space fixed) ────────────────────────────────
 // Replicates OpenSCAD's two-light + ambient setup so cross-backend parity
 // comparisons are not confused by camera-angle-dependent brightness swings.
-// Intensities scaled by π to match Three.js physical units with OpenGL's 0-1
-// diffuse convention: Three.js irradiance = (intensity/π) × dot, OpenGL = 1.0 × dot.
+// DirectionalLight intensities = π so Three.js's (intensity/π)×dot reduces to
+// 1.0×dot, matching OpenGL. AmbientLight is NOT divided by π in Three.js, so
+// wsAmbient.intensity = 0.2 directly (= OpenGL global ambient).
 //
 //   GL_LIGHT0: direction from surface toward light = normalize(0.5, 0.5, 1.0)
 //              → primary upper-right light; strongly illuminates top (+Z) face.
@@ -1117,8 +1118,9 @@ const DEFAULT_PARAM_STYLE    = 'normal';
 // Eight saturated item colours; eight neutral backgrounds chosen to stay
 // distinct from the item set and keep good contrast for any pairing.
 const ITEM_COLORS = [
-  { name: 'Teal',   hex: '#40E1D1' },
-  { name: 'Blue',   hex: '#4682B4' },
+  { name: 'Teal',    hex: '#40E1D1' },
+  { name: 'OpenSCAD', hex: '#3E999F' },  // Tomorrow cgal-face-front — correct base for OpenSCAD lighting mode
+  { name: 'Blue',    hex: '#4682B4' },
   { name: 'Green',  hex: '#3CB371' },
   { name: 'Gold',   hex: '#DAA520' },
   { name: 'Coral',  hex: '#FF7F50' },
@@ -1258,17 +1260,17 @@ function applyBackgroundColor() {
 // Switch between camera-relative app lighting and world-space OpenSCAD-matched lighting.
 // App mode:     camera-attached hemisphere + key directional (model always lit from viewer).
 // OpenSCAD mode: world-space primary (0.5,0.5,1.0) + fill (-0.5,-0.5,-0.5) + ambient 0.2,
-//                replicating OpenSCAD's GL_LIGHT0/GL_LIGHT1 setup. Intensities = π × OpenGL
-//                to convert physical Three.js units to the 0–1 OpenGL diffuse scale.
+//                replicating GL_LIGHT0/GL_LIGHT1. DirectionalLight intensity = π (Three.js
+//                divides by π for physical lights); AmbientLight intensity = 0.2 (no π).
 function applyLighting() {
   const os = !!settings.openscadLighting;
   // App-mode lights (camera children)
   hemi.intensity = os ? 0.0 : 0.15;
   key.intensity  = os ? 0.0 : 3.5;
   // OpenSCAD-mode lights (world-space scene children)
-  wsAmbient.intensity = os ? 0.628 : 0.0;   // π × 0.2
-  wsPrimary.intensity = os ? 3.14  : 0.0;   // π × 1.0
-  wsFill.intensity    = os ? 3.14  : 0.0;   // π × 1.0
+  wsAmbient.intensity = os ? 0.2  : 0.0;   // 0.2 — AmbientLight is NOT divided by π in Three.js
+  wsPrimary.intensity = os ? 3.14 : 0.0;   // π × 1.0 — DirectionalLight IS divided by π
+  wsFill.intensity    = os ? 3.14 : 0.0;   // π × 1.0
 }
 // Recolour the already-rendered keyguard body in place so a colour change
 // is instant — no OpenSCAD re-render. New renders read settings.itemColor
