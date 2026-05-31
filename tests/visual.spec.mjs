@@ -200,10 +200,16 @@ function discoverCases() {
       // .scad reference PNG is intentionally meaningless to compare
       // against an empty 3D viewport, and the harness can still verify
       // the page didn't crash and no unexpected console errors fired.
+      //
+      // "render: true" marks a CGAL full-precision render step in the
+      // .scad test suite. The web app always uses Manifold for every
+      // action and has no concept of a separate CGAL step, so there is
+      // no web-app equivalent to capture or compare against.
       const consoleFile     = typeof step.console === 'string' ? step.console : null;
       const expectedExplicit = typeof step.expected === 'string';
       const geometryFalse   = step.geometry === false;
-      const consoleOnly     = (!!consoleFile && !expectedExplicit) || geometryFalse;
+      const renderTrue      = step.render === true;
+      const consoleOnly     = (!!consoleFile && !expectedExplicit) || geometryFalse || renderTrue;
       const nonStlGenerate  = geometryFalse;
       let consoleExpected = null;   // array of expected lines, or null
       let consoleRefMissing = null; // path string if the ref file is absent

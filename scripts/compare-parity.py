@@ -20,7 +20,7 @@ to --progress-log (default: <web-root>/output/compare-visual-references-progress
 """
 
 from __future__ import annotations
-import argparse, sys, re
+import argparse, sys, re, json
 from pathlib import Path
 from PIL import Image
 import numpy as np
@@ -110,15 +110,48 @@ def main() -> int:
     no_web = 0
     no_scad = 0
     pair_num = 0
+    skipped_render = 0
+
+    # Build a lookup: case_name -> {step_file -> render:true?}
+    # Reads test.json from the .scad cases directory.
+    def _render_true_steps(case_name: str) -> set[str]:
+        """Return the set of step*_expected.png filenames whose step has render:true."""
+        tj = scad_root / "tests" / "cases" / case_name / "test.json"
+        if not tj.exists():
+            return set()
+        try:
+            data = json.loads(tj.read_text(encoding="utf-8"))
+        except Exception:
+            return set()
+        result: set[str] = set()
+        steps = data.get("steps", [])
+        for i, step in enumerate(steps, start=1):
+            if step.get("render") is True:
+                expected = step.get("expected")
+                if isinstance(expected, str):
+                    result.add(expected)
+                else:
+                    # Fallback: infer filename from step index
+                    result.add(f"step{i}_expected.png")
+        return result
 
     # Iterate .scad references — they're the authoritative naming
     for case_dir in sorted(scad_snapshots.iterdir(),
                            key=lambda p: tuple(int(x) for x in re.findall(r"\d+", p.name) or [0])):
         if not case_dir.is_dir():
             continue
+        render_true = _render_true_steps(case_dir.name)
         for scad_ref in sorted(case_dir.glob("step*_expected.png")):
             case_name = case_dir.name
             step_file = scad_ref.name
+
+            # Skip steps where the .scad test is a CGAL "render: true" step —
+            # the web app has no equivalent step to compare against.
+            if step_file in render_true:
+                skipped_render += 1
+                plog.write(f"{'skipped':<10}  {'n/a':>6}  {case_name:<40}  {step_file}  (render:true step)\n")
+                continue
+
             pair_num += 1
 
             current = find_current_render(case_name, step_file, web_root, test_results)
@@ -147,13 +180,14 @@ def main() -> int:
     poor      = sum(1 for r in valid if 0.15 <= r[0] < 0.30)
     bad       = sum(1 for r in valid if r[0] >= 0.30)
 
-    plog.write(f"\n# {pair_num} pairs processed\n")
-    plog.write(f"# excellent (<1%):  {excellent}\n")
-    plog.write(f"# good      (1-5%): {good}\n")
-    plog.write(f"# fair     (5-15%): {fair}\n")
-    plog.write(f"# poor    (15-30%): {poor}\n")
-    plog.write(f"# bad      (>=30%): {bad}\n")
-    plog.write(f"# no web render:    {no_web}\n")
+    plog.write(f"\n# {pair_num} pairs processed ({skipped_render} render:true steps skipped)\n")
+    plog.write(f"# excellent (<1%):      {excellent}\n")
+    plog.write(f"# good      (1-5%):     {good}\n")
+    plog.write(f"# fair     (5-15%):     {fair}\n")
+    plog.write(f"# poor    (15-30%):     {poor}\n")
+    plog.write(f"# bad      (>=30%):     {bad}\n")
+    plog.write(f"# no web render:        {no_web}\n")
+    plog.write(f"# skipped (render:true):{skipped_render}\n")
     plog.close()
 
     # Sorted report to stdout
@@ -180,6 +214,7 @@ def main() -> int:
     print(f"#   poor       (15-30%):  {poor}")
     print(f"#   bad         (>=30%):  {bad}")
     print(f"#   no web render:        {no_web}")
+    print(f"#   skipped (render:true):{skipped_render}")
     return 0
 
 
