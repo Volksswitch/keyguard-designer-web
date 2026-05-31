@@ -118,13 +118,26 @@ if [[ $RUN_VISUAL -eq 1 ]]; then
         fail "Playwright not installed — run 'npm install' from project root"
     else
         VISUAL_ARGS=(--config=playwright.config.mjs tests/visual.spec.mjs)
+        # Progress log — update mode only. One clean line per test, no ANSI codes or
+        # WebServer noise. Mirrors the .scad project's capture-references-progress.log.
+        _visual_progress_log=""
         if [[ $UPDATE_SNAPSHOTS -eq 1 ]]; then
             info "Regenerating reference screenshots (--update)"
             VISUAL_ARGS+=(--update-snapshots)
+            _visual_progress_log="$PROJECT_ROOT/visual-update-progress.log"
+            : > "$_visual_progress_log"
+            info "Progress log: visual-update-progress.log (tail -f)"
         else
             info "Running tests/visual.spec.mjs"
         fi
-        if (cd "$PROJECT_ROOT" && KEYGUARD_TEST_MODE=visual npx playwright test "${VISUAL_ARGS[@]}"); then
+        _visual_exit=0
+        if [[ -n "$_visual_progress_log" ]]; then
+            (cd "$PROJECT_ROOT" && KEYGUARD_TEST_MODE=visual npx playwright test "${VISUAL_ARGS[@]}") 2>&1 | \
+                node "$SCRIPT_DIR/progress-filter.mjs" "$_visual_progress_log" || _visual_exit=$?
+        else
+            (cd "$PROJECT_ROOT" && KEYGUARD_TEST_MODE=visual npx playwright test "${VISUAL_ARGS[@]}") || _visual_exit=$?
+        fi
+        if [[ $_visual_exit -eq 0 ]]; then
             if [[ $UPDATE_SNAPSHOTS -eq 1 ]]; then
                 pass "Visual references updated — review tests/visual.spec.mjs-snapshots/ and commit"
             else
