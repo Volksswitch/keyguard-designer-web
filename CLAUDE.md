@@ -125,26 +125,42 @@ Both projects capture at 2048×1536. The camera model has been validated empiric
 - Camera placed at distance `vpd` from target (`vpt`) matches OpenSCAD's `dist` interpretation
 - Best-case evidence: TC40 step1 (`vpr=[30,0,0]`, `vpd=600`) achieves **0.86% parity** (excellent bucket)
 
-**Sources of remaining parity difference (for reference):**
-- **Background color** (~2–5% for well-framed models): OpenSCAD Tomorrow colorscheme uses dark
-  background (#1d1f21); web app uses cream. At `vpd=250` the model fills ~97% of the viewport so
-  only ~3% of pixels are background; at `vpd=700` the model is smaller and background contributes more.
-- **Model shading**: Three.js MeshPhong with directional key light vs OpenSCAD's OpenCSG shading.
-  Similar diffuse patterns on simple geometry (both renderers stay within threshold 30 per channel
-  for most keyguard faces), but complex chamfer/slope surfaces diverge more.
-- **Geometry (CGAL vs Manifold)**: steps with `"render": true` use full CGAL mesh in `.scad` and
-  Manifold in the web app. These have higher ratios (e.g. TC48 step3 at 36%).
-- **Screenshot SVGs**: cases with `"screenshot": "default.svg"` render the SVG as a Three.js
-  textured plane vs OpenSCAD's flat-slab SVG import. Poor parity expected (TC37 ~18%, TC41 ~34%).
-- **Complex back-views**: `vpr` with `rx > 90°` shows the underside of cut shapes; shading and
-  minor geometry differences compound (TC5 steps 3/4 at ~53%).
+**Baseline after Mode 2 lighting + White background (2026-05-31):**
+27 excellent / 81 good / 24 fair / 25 poor / 5 bad / 6 no-web (162 renderable pairs).
+
+**Sources of remaining parity difference — all considered structural/expected:**
+
+- **TC22 — Braille cell inserts (~20%, all 12 steps):** The `.scad` source uses explicit
+  `color()` calls to render the cell insert piece in a bright green distinct from the keyguard
+  body. The web app renders from STL, which carries no colour data, so everything uses the
+  single item colour. The ~20% is entirely colour mismatch; the geometry and shading are fine.
+  Step 9 (vpr=200°, looking from below) scores ~6% because the inserts aren't visible from
+  underneath. **Not fixable without multi-material STL or a separate colour-overlay render.**
+
+- **TC5 steps 3/4 (~53%), TC12 step5 (~35%), TC47 step4 (~34%):** Complex chamfered/sloped
+  surfaces viewed from angles where MeshPhong and OpenSCAD's flat-shaded CGAL renderer diverge
+  significantly. TC5 steps 3/4 add a back-view (`vpr` rx > 90°) which compounds the shading
+  difference. **Structural: same geometry, irreconcilable shading models on non-planar faces.**
+
+- **TC48 step3 (~36%):** `"render": true` step — full CGAL mesh in `.scad`, Manifold in the
+  web app. Geometry genuinely differs between backends. **Structural: CGAL vs Manifold.**
+  Ken is investigating this case separately.
+
+- **TC41 step1 (~29%), TC36 step1 (~27%), TC37 all steps (~19%):** Cases with screenshot SVGs
+  (`"screenshot": "default.svg"`). The `.scad` renderer imports the SVG as flat-slab geometry;
+  Three.js renders it as a textured plane. Fundamentally different visual results.
+  **Structural: different SVG rendering approaches.**
+
+- **TC44-2 (~19%), TC44-3 (~18%), TC15 step3 (~16%):** Heavy chamfering and/or complex slope
+  geometry at camera angles that maximise the shading divergence between MeshPhong and CGAL.
+  **Structural: same root cause as TC5/TC12/TC47 above.**
 
 **Expected parity ranges by case type:**
 - Excellent (<1%): simple geometry, moderate vpd, no screenshots
 - Good (1–5%): standard 3D keyguard, typical background fraction
 - Fair (5–15%): complex chamfers/slopes, larger vpd, or portrait models
-- Poor (15–30%): screenshot SVGs, back-views of complex surfaces
-- Bad (>30%): `render: true` CGAL steps, screenshot + lighting mismatch, extreme back-views
+- Poor (15–30%): explicit colour() in .scad, screenshot SVGs, back-views of complex surfaces
+- Bad (>30%): `render: true` CGAL steps, extreme back-views of chamfered geometry
 
 ### Pre-existing Manifold↔CGAL geometry-gate divergences (TC5/8/46/47/54) — KEN to investigate
 The geometry gate (`tests/geometry.spec.mjs`, Manifold vs the `.scad` CGAL golden manifest) fails
