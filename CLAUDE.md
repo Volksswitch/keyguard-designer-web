@@ -114,9 +114,37 @@ a big buffer is reserved per instance, so pre-sizing pairs best with single-inst
 likely eased once the per-cell extender (`extend_through_cuts`) is retired (see "Manifold
 workaround redundancy") — it inflates the heap most on dense "max rails" grids.
 
-### Image parity tuning
-Both projects capture at 2048×1536. Web uses FOV 22.5° to approximate OpenSCAD's CLI default.
-After Ken reviews side-by-side pairs, may need to nudge FOV or vpd interpretation.
+### Image parity — camera model confirmed (2026-05-31)
+
+Both projects capture at 2048×1536. The camera model has been validated empirically via the
+"compare visual references" parity audit (168 pairs):
+
+**Camera parameters — confirmed correct, no tuning needed:**
+- `fov=22.5°` (vertical) matches OpenSCAD's CLI default (`$vpf = 22.5`)
+- Rotation order ZXY extrinsic matches OpenSCAD's `--camera=tx,ty,tz,rx,ry,rz,dist` convention
+- Camera placed at distance `vpd` from target (`vpt`) matches OpenSCAD's `dist` interpretation
+- Best-case evidence: TC40 step1 (`vpr=[30,0,0]`, `vpd=600`) achieves **0.86% parity** (excellent bucket)
+
+**Sources of remaining parity difference (for reference):**
+- **Background color** (~2–5% for well-framed models): OpenSCAD Tomorrow colorscheme uses dark
+  background (#1d1f21); web app uses cream. At `vpd=250` the model fills ~97% of the viewport so
+  only ~3% of pixels are background; at `vpd=700` the model is smaller and background contributes more.
+- **Model shading**: Three.js MeshPhong with directional key light vs OpenSCAD's OpenCSG shading.
+  Similar diffuse patterns on simple geometry (both renderers stay within threshold 30 per channel
+  for most keyguard faces), but complex chamfer/slope surfaces diverge more.
+- **Geometry (CGAL vs Manifold)**: steps with `"render": true` use full CGAL mesh in `.scad` and
+  Manifold in the web app. These have higher ratios (e.g. TC48 step3 at 36%).
+- **Screenshot SVGs**: cases with `"screenshot": "default.svg"` render the SVG as a Three.js
+  textured plane vs OpenSCAD's flat-slab SVG import. Poor parity expected (TC37 ~18%, TC41 ~34%).
+- **Complex back-views**: `vpr` with `rx > 90°` shows the underside of cut shapes; shading and
+  minor geometry differences compound (TC5 steps 3/4 at ~53%).
+
+**Expected parity ranges by case type:**
+- Excellent (<1%): simple geometry, moderate vpd, no screenshots
+- Good (1–5%): standard 3D keyguard, typical background fraction
+- Fair (5–15%): complex chamfers/slopes, larger vpd, or portrait models
+- Poor (15–30%): screenshot SVGs, back-views of complex surfaces
+- Bad (>30%): `render: true` CGAL steps, screenshot + lighting mismatch, extreme back-views
 
 ### Pre-existing Manifold↔CGAL geometry-gate divergences (TC5/8/46/47/54) — KEN to investigate
 The geometry gate (`tests/geometry.spec.mjs`, Manifold vs the `.scad` CGAL golden manifest) fails
