@@ -552,9 +552,9 @@ const viewport = document.getElementById('viewport');
 const statusEl = document.getElementById('viewport-status');
 
 const scene = new THREE.Scene();
-// Pale cream — OpenSCAD's Cornfield-style default. applyAppearance() below
+// OpenSCAD Tomorrow background (#F8F8F8). applyAppearance() below
 // replaces this with the user's saved choice once settings have loaded.
-scene.background = new THREE.Color(0xffffe5);
+scene.background = new THREE.Color(0xf8f8f8);
 
 const camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
 camera.position.set(200, 200, 300);
@@ -566,6 +566,7 @@ camera.up.set(0, 0, 1);   // Z-up to match OpenSCAD convention
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 
+// ── App-mode lighting (camera-relative) ─────────────────────────────────────
 // Lights are children of the camera and orbit with the view, the way
 // OpenSCAD's native viewer works. The camera-facing face stays lit no
 // matter how the user rotates the model, and the rear face fades into
@@ -604,6 +605,31 @@ const key = new THREE.DirectionalLight(0xffffff, 3.5);
 key.position.set(1.0, 1.2, 0);
 key.target = lightTarget;
 camera.add(key);
+
+// ── OpenSCAD-mode lighting (world-space fixed) ────────────────────────────────
+// Replicates OpenSCAD's two-light + ambient setup so cross-backend parity
+// comparisons are not confused by camera-angle-dependent brightness swings.
+// Intensities scaled by π to match Three.js physical units with OpenGL's 0-1
+// diffuse convention: Three.js irradiance = (intensity/π) × dot, OpenGL = 1.0 × dot.
+//
+//   GL_LIGHT0: direction from surface toward light = normalize(0.5, 0.5, 1.0)
+//              → primary upper-right light; strongly illuminates top (+Z) face.
+//   GL_LIGHT1: direction from surface toward light = normalize(-0.5, -0.5, -0.5)
+//              → secondary fill; illuminates bottom and lower-front faces.
+//   Global ambient: 0.2 per channel.
+//
+// These are OFF by default (intensity 0); applyLighting() activates them and
+// deactivates the app-mode lights when settings.openscadLighting is true.
+const wsAmbient = new THREE.AmbientLight(0xffffff, 0.0);
+scene.add(wsAmbient);
+const wsPrimary = new THREE.DirectionalLight(0xffffff, 0.0);
+wsPrimary.position.set(0.5, 0.5, 1.0);   // L = normalize(0.5, 0.5, 1.0)
+scene.add(wsPrimary);
+scene.add(wsPrimary.target);              // target must be in scene for matrix updates
+const wsFill = new THREE.DirectionalLight(0xffffff, 0.0);
+wsFill.position.set(-0.5, -0.5, -0.5);  // L = normalize(-0.5, -0.5, -0.5)
+scene.add(wsFill);
+scene.add(wsFill.target);
 
 // A camera's children only render when the camera itself is in the scene graph.
 scene.add(camera);
@@ -1080,7 +1106,7 @@ function logScreenshotStatus() {
 // Default teal / cornfield are the long-standing viewport colours; the
 // Customizer text sizes mirror the CSS :root defaults.
 const DEFAULT_ITEM_COLOR = '#40E1D1';   // Turquoise — the default teal
-const DEFAULT_BG_COLOR   = '#FFFFE5';   // OpenSCAD Cornfield-style cream
+const DEFAULT_BG_COLOR   = '#F8F8F8';   // OpenSCAD Tomorrow background (matches .scad visual refs)
 const DEFAULT_SECTION_PT     = 14;
 const DEFAULT_SECTION_WEIGHT = 'bold';
 const DEFAULT_SECTION_STYLE  = 'normal';
@@ -1101,6 +1127,7 @@ const ITEM_COLORS = [
   { name: 'Red',    hex: '#DC143C' },
 ];
 const BG_COLORS = [
+  { name: 'OpenSCAD',   hex: '#F8F8F8' },  // Tomorrow colorscheme background (default)
   { name: 'Cornfield',  hex: '#FFFFE5' },
   { name: 'White',      hex: '#FFFFFF' },
   { name: 'Light gray', hex: '#E8E8E8' },
@@ -1126,6 +1153,7 @@ const SETTINGS_DEFAULTS = {
   orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
   orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
   orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.25 … 3.0
+  openscadLighting: false,               // true → world-space fixed lights matching OpenSCAD
   paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
   custPaneWidth: 280,                    // Customizer (right) pane width in px — restored across sessions
   consoleHeight: 180,                    // Console (bottom) pane height in px — restored across sessions
@@ -1207,6 +1235,7 @@ function onSettingsChanged(key) {
        'paramTextPt','paramTextWeight','paramTextStyle'].includes(key)) applyTextSizes();
   if (key === 'backgroundColor') applyBackgroundColor();
   if (key === 'itemColor') applyItemColor();
+  if (key === 'openscadLighting') applyLighting();
   if (key === 'paneTheme') applyPaneTheme();
   if (key === 'orbitScheme' || key === 'orbitSensitivity' || key === 'orbitZoom') syncOrbitFromSettings();
 }
@@ -1225,6 +1254,21 @@ function applyTextSizes() {
 }
 function applyBackgroundColor() {
   scene.background = new THREE.Color(settings.backgroundColor || DEFAULT_BG_COLOR);
+}
+// Switch between camera-relative app lighting and world-space OpenSCAD-matched lighting.
+// App mode:     camera-attached hemisphere + key directional (model always lit from viewer).
+// OpenSCAD mode: world-space primary (0.5,0.5,1.0) + fill (-0.5,-0.5,-0.5) + ambient 0.2,
+//                replicating OpenSCAD's GL_LIGHT0/GL_LIGHT1 setup. Intensities = π × OpenGL
+//                to convert physical Three.js units to the 0–1 OpenGL diffuse scale.
+function applyLighting() {
+  const os = !!settings.openscadLighting;
+  // App-mode lights (camera children)
+  hemi.intensity = os ? 0.0 : 0.15;
+  key.intensity  = os ? 0.0 : 3.5;
+  // OpenSCAD-mode lights (world-space scene children)
+  wsAmbient.intensity = os ? 0.628 : 0.0;   // π × 0.2
+  wsPrimary.intensity = os ? 3.14  : 0.0;   // π × 1.0
+  wsFill.intensity    = os ? 3.14  : 0.0;   // π × 1.0
 }
 // Recolour the already-rendered keyguard body in place so a colour change
 // is instant — no OpenSCAD re-render. New renders read settings.itemColor
@@ -1251,6 +1295,7 @@ function applyAppearance() {
   applyTextSizes();
   applyBackgroundColor();
   applyItemColor();
+  applyLighting();
   applyPaneTheme();
 }
 
@@ -4180,6 +4225,20 @@ const SETTINGS_PANELS = {
         <span style="color:#666;">Large</span>
       </div>
     </div>
+    <div class="setting">
+      <label>Lighting model</label>
+      <div style="color:#666; margin-bottom:8px;">
+        <b>App mode</b> keeps the model lit from the viewer's direction — the
+        top face is always bright as you orbit. <b>OpenSCAD mode</b> uses
+        world-space fixed lights that match OpenSCAD's CLI renderer exactly
+        (primary at 30° off vertical, fill from below), improving cross-backend
+        visual parity at the cost of darker side faces for some camera angles.
+      </div>
+      <label class="opt"><input type="radio" name="lightingMode" value="app"
+        ${!settings.openscadLighting ? 'checked' : ''}> <b>App mode</b> (camera-relative, always well-lit)</label>
+      <label class="opt"><input type="radio" name="lightingMode" value="openscad"
+        ${settings.openscadLighting ? 'checked' : ''}> <b>OpenSCAD mode</b> (world-space fixed, matches .scad renders)</label>
+    </div>
   `;
   },
   grid: () => `
@@ -4276,6 +4335,9 @@ function renderSettingsPanel(cat) {
   });
   settingsPanel.querySelectorAll('input[type=radio][name=orbitScheme]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('orbitScheme', r.value); });
+  });
+  settingsPanel.querySelectorAll('input[type=radio][name=lightingMode]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('openscadLighting', r.value === 'openscad'); });
   });
   const sens = settingsPanel.querySelector('#set-orbitSensitivity');
   if (sens) sens.addEventListener('input', () => {
