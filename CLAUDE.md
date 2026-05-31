@@ -125,48 +125,38 @@ Both projects capture at 2048×1536. The camera model has been validated empiric
 - Camera placed at distance `vpd` from target (`vpt`) matches OpenSCAD's `dist` interpretation
 - Best-case evidence: TC40 step1 (`vpr=[30,0,0]`, `vpd=600`) achieves **0.86% parity** (excellent bucket)
 
-**Baseline after Mode 2 lighting + White background (2026-05-31):**
-27 excellent / 81 good / 24 fair / 25 poor / 5 bad / 6 no-web (162 renderable pairs).
+**Baseline after Mode 2 lighting + White background + Turquoise colour (2026-05-31):**
+29 excellent / 86 good / 24 fair / 19 poor / 2 bad / 5 no-web / 3 skipped (render:true) (160 scored pairs).
+Previous (before Turquoise colour normalisation): 27 excellent / 81 good / 24 fair / 25 poor / 5 bad.
 
 **Sources of remaining parity difference — all considered structural/expected:**
 
-- **TC22 — Braille cell inserts (~20%, all 12 steps):** The `.scad` source uses explicit
-  `color()` calls to render the cell insert piece in a bright green distinct from the keyguard
-  body. The web app renders from STL, which carries no colour data, so everything uses the
-  single item colour. The ~20% is entirely colour mismatch; the geometry and shading are fine.
-  Step 9 (vpr=200°, looking from below) scores ~6% because the inserts aren't visible from
-  underneath. **Not fixable without multi-material STL or a separate colour-overlay render.**
-  → **ACTION on next `keyguard.scad` code change:** remove or gate the `color()` calls for
-  cell inserts (and audit for similar explicit colouring on other specialty output types —
-  laser-cut keyguards, frames, clips, etc. — removing any that cause the same mismatch), then
-  re-run `update visual references` and `compare visual references` to confirm TC22 improves.
-  The `color()` calls serve no functional purpose in STL/print output and only affect the
-  OpenSCAD preview/PNG render.
+- **TC5 steps 3/4 (~53%):** Back-view renders (vpr rx > 90°). The keyguard body is highly
+  chamfered/sloped; at this angle MeshPhong and OpenSCAD's CGAL renderer diverge maximally on
+  the shadowed faces. **Structural: same geometry, irreconcilable shading models on shadow-heavy
+  back-views. No fix needed — documented as expected.**
 
-- **TC5 steps 3/4 (~53%), TC12 step5 (~35%), TC47 step4 (~34%):** Complex chamfered/sloped
-  surfaces viewed from angles where MeshPhong and OpenSCAD's flat-shaded CGAL renderer diverge
-  significantly. TC5 steps 3/4 add a back-view (`vpr` rx > 90°) which compounds the shading
-  difference. **Structural: same geometry, irreconcilable shading models on non-planar faces.**
+- **TC22 — Braille cell inserts (~20%, all 12 steps):** Cell inserts were rendering grey in the
+  web app because the `.scad` cell insert code lacked an `only_oa_highlights != "yes"` guard.
+  The highlights-pass STL contained the full insert geometry, which was then overlaid as 45%
+  pink, blending with turquoise to produce grey. **Fixed in `keyguard.scad` (2026-05-31)** by
+  adding the guard. Re-capture references after fixing to confirm improvement.
 
-- **TC48 step3 (~36%):** `"render": true` step — full CGAL mesh in `.scad`, Manifold in the
-  web app. Geometry genuinely differs between backends. **Structural: CGAL vs Manifold.**
-  Ken is investigating this case separately.
-
-- **TC41 step1 (~29%), TC36 step1 (~27%), TC37 all steps (~19%):** Cases with screenshot SVGs
-  (`"screenshot": "default.svg"`). The `.scad` renderer imports the SVG as flat-slab geometry;
-  Three.js renders it as a textured plane. Fundamentally different visual results.
-  **Structural: different SVG rendering approaches.**
+- **TC41 (~29%), TC36 (~27%), TC37 all steps (~19%), TC42 (~17%):** Screenshot SVGs removed from
+  these test cases (2026-05-31). Re-capture references after fixing to confirm improvement.
 
 - **TC44-2 (~19%), TC44-3 (~18%), TC15 step3 (~16%):** Heavy chamfering and/or complex slope
-  geometry at camera angles that maximise the shading divergence between MeshPhong and CGAL.
-  **Structural: same root cause as TC5/TC12/TC47 above.**
+  geometry at camera angles that maximise shading divergence between MeshPhong and CGAL.
+  **Structural: same root cause as TC5 above.**
+
+- **TC48 step3:** `"render": true` step — skipped in both web capture and parity comparison.
 
 **Expected parity ranges by case type:**
 - Excellent (<1%): simple geometry, moderate vpd, no screenshots
 - Good (1–5%): standard 3D keyguard, typical background fraction
 - Fair (5–15%): complex chamfers/slopes, larger vpd, or portrait models
-- Poor (15–30%): explicit colour() in .scad, screenshot SVGs, back-views of complex surfaces
-- Bad (>30%): `render: true` CGAL steps, extreme back-views of chamfered geometry
+- Poor (15–30%): extreme back-views of chamfered/sloped geometry
+- Bad (>30%): back-views where shadow discrepancy is maximum (TC5 steps 3/4)
 
 ### Pre-existing Manifold↔CGAL geometry-gate divergences (TC5/8/46/47/54) — KEN to investigate
 The geometry gate (`tests/geometry.spec.mjs`, Manifold vs the `.scad` CGAL golden manifest) fails
