@@ -250,13 +250,15 @@
 
   /* ---------- Settings modal ---------- */
   #settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
-                      display: none; align-items: center; justify-content: center; z-index: 1000; }
-  #settings-overlay.open { display: flex; }
+                      display: none; z-index: 1000; }
+  #settings-overlay.open { display: block; }
   #settings-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
                     width: 560px; max-width: 90vw; height: 380px; max-height: 80vh;
-                    display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+                    display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+                    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
   #settings-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
-                       background: #e8e8e8; font-size: 14px; }
+                       background: #e8e8e8; font-size: 14px;
+                       cursor: move; user-select: none; }
   #settings-body { flex: 1; display: flex; min-height: 0; }
   #settings-cats { width: 140px; border-right: 1px solid #ccc; background: #f0f0f0; padding: 6px 0; }
   #settings-cats .cat { padding: 6px 14px; cursor: pointer; font-size: 12px; }
@@ -491,7 +493,7 @@
 <!-- ============ Settings modal ============ -->
 <div id="settings-overlay">
   <div id="settings-modal">
-    <h3>Settings</h3>
+    <h3>Settings <span style="float:right; opacity:0.4; font-size:11px; font-weight:normal; margin-top:1px;">drag to move</span></h3>
     <div id="settings-body">
       <div id="settings-cats">
         <div class="cat active" data-cat="general">General</div>
@@ -1131,9 +1133,8 @@ const ITEM_COLORS = [
   { name: 'Red',    hex: '#DC143C' },
 ];
 const BG_COLORS = [
-  { name: 'OpenSCAD',   hex: '#F8F8F8' },  // Tomorrow colorscheme background (default)
+  { name: 'White',      hex: '#F8F8F8' },  // OpenSCAD Tomorrow background (default)
   { name: 'Cornfield',  hex: '#FFFFE5' },
-  { name: 'White',      hex: '#FFFFFF' },
   { name: 'Light gray', hex: '#E8E8E8' },
   { name: 'Sky',        hex: '#DCEBF5' },
   { name: 'Sand',       hex: '#EAE0CC' },
@@ -1259,9 +1260,9 @@ function applyTextSizes() {
 function applyBackgroundColor() {
   scene.background = new THREE.Color(settings.backgroundColor || DEFAULT_BG_COLOR);
 }
-// Switch between camera-relative app lighting and world-space OpenSCAD-matched lighting.
-// App mode:     camera-attached hemisphere + key directional (model always lit from viewer).
-// OpenSCAD mode: camera-relative primary (-1,+1,+1) + fill (+1,-1,-1) + ambient 0.2,
+// Switch between Mode 1 (app) and Mode 2 (OpenSCAD-matched) lighting.
+// Mode 1: camera-attached hemisphere + key directional (model always lit from viewer).
+// Mode 2: camera-relative primary (-1,+1,+1) + fill (+1,-1,-1) + ambient 0.2,
 //                matching GL_LIGHT0/GL_LIGHT1 from OpenSCAD's GLView.cc. Lights orbit
 //                with the camera (camera children). DirectionalLight intensity = π;
 //                AmbientLight intensity = 0.2 (no π — Three.js doesn't divide ambient).
@@ -4233,16 +4234,16 @@ const SETTINGS_PANELS = {
     <div class="setting">
       <label>Lighting model</label>
       <div style="color:#666; margin-bottom:8px;">
-        <b>App mode</b> keeps the model lit from the viewer's direction — the
-        top face is always bright as you orbit. <b>OpenSCAD mode</b> uses
-        world-space fixed lights that match OpenSCAD's CLI renderer exactly
-        (primary at 30° off vertical, fill from below), improving cross-backend
-        visual parity at the cost of darker side faces for some camera angles.
+        <b>Mode 1</b> keeps the model lit from the viewer's direction — the
+        top face is always bright as you orbit. <b>Mode 2</b> replicates
+        OpenSCAD's camera-relative two-light setup (GL_LIGHT0/GL_LIGHT1),
+        improving cross-backend visual parity at the cost of darker faces
+        at some camera angles.
       </div>
       <label class="opt"><input type="radio" name="lightingMode" value="app"
-        ${!settings.openscadLighting ? 'checked' : ''}> <b>App mode</b> (camera-relative, always well-lit)</label>
+        ${!settings.openscadLighting ? 'checked' : ''}> <b>Mode 1</b> (camera-relative hemisphere + key, always well-lit)</label>
       <label class="opt"><input type="radio" name="lightingMode" value="openscad"
-        ${settings.openscadLighting ? 'checked' : ''}> <b>OpenSCAD mode</b> (world-space fixed, matches .scad renders)</label>
+        ${settings.openscadLighting ? 'checked' : ''}> <b>Mode 2</b> (OpenSCAD GL_LIGHT0/GL_LIGHT1 + ambient, matches .scad renders)</label>
     </div>
   `;
   },
@@ -4426,6 +4427,41 @@ function openSettings() {
   settingsOverlay.classList.add('open');
 }
 function closeSettings() { settingsOverlay.classList.remove('open'); }
+
+// ── Settings panel drag-to-move ───────────────────────────────────────────────
+// Dragging the title bar repositions the modal freely within the viewport.
+// The overlay still blocks all background interaction (modal behaviour intact).
+// Once dragged, position is remembered for the session; reopening resets it to
+// centred only if it has never been dragged.
+(function () {
+  const modal  = document.getElementById('settings-modal');
+  const handle = modal.querySelector('h3');
+  let dragging = false, ox = 0, oy = 0;
+
+  handle.addEventListener('mousedown', e => {
+    // On first drag, convert the CSS transform-based centering to pixel coords.
+    if (modal.style.transform !== 'none') {
+      const r = modal.getBoundingClientRect();
+      modal.style.transform = 'none';
+      modal.style.left = r.left + 'px';
+      modal.style.top  = r.top  + 'px';
+    }
+    dragging = true;
+    ox = e.clientX - modal.offsetLeft;
+    oy = e.clientY - modal.offsetTop;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const W = window.innerWidth,  H = window.innerHeight;
+    const mW = modal.offsetWidth, mH = modal.offsetHeight;
+    modal.style.left = Math.max(0, Math.min(e.clientX - ox, W - mW)) + 'px';
+    modal.style.top  = Math.max(0, Math.min(e.clientY - oy, H - mH)) + 'px';
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; });
+}());
 
 settingsBtn.addEventListener('click', openSettings);
 settingsCloseBtn.addEventListener('click', closeSettings);
