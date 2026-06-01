@@ -2740,6 +2740,10 @@ async function exportCurrent(fmt) {
       alert('Clips cannot be exported as SVG — they are 3D objects. To export a clip, use STL instead.');
       return;
     }
+    if (gen === 'cell insert') {
+      alert('Cell inserts cannot be exported as SVG — they are 3D objects. To export a cell insert, use STL instead.');
+      return;
+    }
     if (hasFrame && (gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame')) {
       alert('A keyguard frame cannot be exported as SVG — laser-cut frames are not supported. To export the frame, use STL instead.');
       return;
