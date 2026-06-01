@@ -2699,6 +2699,12 @@ async function exportCurrent(fmt) {
       return;
     }
   }
+  if (fmt === 'SVG') {
+    if (currentFormValues().have_a_keyguard_frame === 'yes') {
+      alert('A keyguard frame cannot be exported as SVG — laser-cut frames are not supported. To export the frame, use STL instead.');
+      return;
+    }
+  }
 
   // Pick the destination NOW, while this click's user gesture is still live.
   // showSaveFilePicker requires transient activation (~5 s in Chromium); a
