@@ -2744,6 +2744,10 @@ async function exportCurrent(fmt) {
       alert('Cell inserts cannot be exported as SVG — laser-cut cell inserts are not supported. To export a cell insert, use STL instead.');
       return;
     }
+    if (gen === 'first half of keyguard' || gen === 'second half of keyguard') {
+      alert('Splitting a keyguard is not supported for laser-cutting — SVG export produces a full keyguard outline. To export a keyguard half, switch to 3D-Printed and use STL instead.');
+      return;
+    }
     if (hasFrame && (gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame')) {
       alert('A keyguard frame cannot be exported as SVG — laser-cut frames are not supported. To export the frame, use STL instead.');
       return;
