@@ -2737,11 +2737,11 @@ async function exportCurrent(fmt) {
     const gen = vals.generate || '';
     const hasFrame = vals.have_a_keyguard_frame === 'yes';
     if (['horizontal clip', 'vertical clip', 'horizontal mini clip', 'vertical mini clip', 'horizontal micro clip', 'vertical micro clip'].includes(gen)) {
-      alert('Clips cannot be exported as SVG — they are 3D objects. To export a clip, use STL instead.');
+      alert('Clips cannot be exported as SVG — laser-cut clips are not supported. To export a clip, use STL instead.');
       return;
     }
     if (gen === 'cell insert') {
-      alert('Cell inserts cannot be exported as SVG — they are 3D objects. To export a cell insert, use STL instead.');
+      alert('Cell inserts cannot be exported as SVG — laser-cut cell inserts are not supported. To export a cell insert, use STL instead.');
       return;
     }
     if (hasFrame && (gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame')) {
