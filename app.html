@@ -2745,7 +2745,7 @@ async function exportCurrent(fmt) {
       return;
     }
     if (gen === 'first half of keyguard' || gen === 'second half of keyguard') {
-      alert('Splitting a keyguard is not supported for laser-cutting — SVG export produces a full keyguard outline. To export a keyguard half, switch to 3D-Printed and use STL instead.');
+      alert('Splitting a keyguard is not supported for laser-cutting — SVG export produces a full keyguard outline. To laser-cut a keyguard, set generate to "keyguard" before choosing SVG.');
       return;
     }
     if (hasFrame && (gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame')) {
