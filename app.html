@@ -2736,6 +2736,10 @@ async function exportCurrent(fmt) {
     const vals = currentFormValues();
     const gen = vals.generate || '';
     const hasFrame = vals.have_a_keyguard_frame === 'yes';
+    if (['horizontal clip', 'vertical clip', 'horizontal mini clip', 'vertical mini clip', 'horizontal micro clip', 'vertical micro clip'].includes(gen)) {
+      alert('Clips cannot be exported as SVG — they are 3D objects. To export a clip, use STL instead.');
+      return;
+    }
     if (hasFrame && (gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame')) {
       alert('A keyguard frame cannot be exported as SVG — laser-cut frames are not supported. To export the frame, use STL instead.');
       return;
