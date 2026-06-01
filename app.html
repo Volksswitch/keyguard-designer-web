@@ -2424,13 +2424,18 @@ const EXPORT_FORMATS = {
   // not enabled when building the application."
 };
 
-// Base filename for exported STL/SVG/PNG: the current preset name with any
-// characters invalid in a filename stripped. Falls back to "keyguard" when
-// no project/preset is loaded or the sanitised name is empty.
+// Base filename for exported STL/SVG/PNG: the current preset name plus the
+// generate value, with characters invalid in a filename stripped. Falls back
+// to "keyguard" when no project/preset is loaded or the sanitised name is empty.
+// Example: preset "Fintie - CoughDrop 60" + generate "keyguard frame"
+//   → "Fintie - CoughDrop 60 - keyguard frame"
 function exportBaseName() {
   const raw = (project && project.currentPreset) ? project.currentPreset : 'keyguard';
   const clean = raw.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
-  return clean || 'keyguard';
+  const base = clean || 'keyguard';
+  const gen = project ? (currentFormValues().generate || '') : '';
+  const genClean = gen.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  return genClean ? base + ' - ' + genClean : base;
 }
 
 // Captures the current viewport as a PNG blob. Renders one synchronous frame
