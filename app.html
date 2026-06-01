@@ -2023,12 +2023,38 @@ function buildSvgPlane(svgText) {
   });
 }
 
+// Returns a human-readable error message if the current settings describe a
+// combination that keyguard.scad explicitly does not support, or null if the
+// combination is valid. Used to show an alert before any render or export so
+// the user gets a clear pop-up instead of confusing console output.
+function incompatibleSettingsMessage(vals) {
+  const isLaserCut = vals.type_of_keyguard === 'Laser-Cut';
+  const gen = vals.generate || '';
+  const hasFrame = vals.have_a_keyguard_frame === 'yes';
+
+  if (isLaserCut && vals.add_sloped_keyguard_edge === 'yes')
+    return 'Laser-cut keyguards cannot have a sloped edge. Set "Add sloped keyguard edge" to "no", or switch to 3D-Printed.';
+  if (gen === 'keyguard frame' && !hasFrame)
+    return '"Generate" is set to "Keyguard Frame" but "Have a keyguard frame" is set to "no". Enable the keyguard frame or change "Generate".';
+  if ((gen === 'first half of keyguard' || gen === 'second half of keyguard') && isLaserCut)
+    return 'Laser-cut keyguards cannot be split. Change "Generate" to "keyguard", or switch to 3D-Printed.';
+  if ((gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame') && isLaserCut)
+    return 'Laser-cut keyguard frames are not supported. Switch to 3D-Printed, or choose a different "Generate" option.';
+  if (gen === 'keyguard' && isLaserCut && hasFrame)
+    return 'Laser-cut keyguards in a keyguard frame are not supported. Disable the keyguard frame, or switch to 3D-Printed.';
+  if (gen === 'cell insert' && isLaserCut)
+    return 'Cell inserts are not supported for laser-cut keyguards. Switch to 3D-Printed, or change "Generate".';
+  return null;
+}
+
 async function doRender() {
   if (!project) {
     setStatus('Open a project folder first.', 'error');
     return;
   }
   if (renderInProgress) { pendingRerender = true; return; }
+  const incompatMsg = incompatibleSettingsMessage(currentFormValues());
+  if (incompatMsg) { alert(incompatMsg); return; }
   renderInProgress = true;
   window.__renderState = 'rendering';
   setStatus('Rendering...', 'rendering');
@@ -2700,10 +2726,20 @@ async function exportCurrent(fmt) {
     }
   }
   if (fmt === 'SVG') {
-    if (currentFormValues().have_a_keyguard_frame === 'yes') {
+    // SVG export forces type_of_keyguard="Laser-Cut", so check for settings
+    // that are incompatible with laser-cut regardless of the form's current value.
+    const vals = currentFormValues();
+    if (vals.have_a_keyguard_frame === 'yes') {
       alert('A keyguard frame cannot be exported as SVG — laser-cut frames are not supported. To export the frame, use STL instead.');
       return;
     }
+    if (vals.add_sloped_keyguard_edge === 'yes') {
+      alert('SVG export requires a laser-cut keyguard, but laser-cut keyguards cannot have a sloped edge. Set "Add sloped keyguard edge" to "no" to export as SVG.');
+      return;
+    }
+  } else {
+    const incompatMsg = incompatibleSettingsMessage(currentFormValues());
+    if (incompatMsg) { alert(incompatMsg); return; }
   }
 
   // Pick the destination NOW, while this click's user gesture is still live.
