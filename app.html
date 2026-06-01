@@ -2729,8 +2729,14 @@ async function exportCurrent(fmt) {
     // SVG export forces type_of_keyguard="Laser-Cut", so check for settings
     // that are incompatible with laser-cut regardless of the form's current value.
     const vals = currentFormValues();
-    if (vals.have_a_keyguard_frame === 'yes') {
+    const gen = vals.generate || '';
+    const hasFrame = vals.have_a_keyguard_frame === 'yes';
+    if (hasFrame && (gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame')) {
       alert('A keyguard frame cannot be exported as SVG — laser-cut frames are not supported. To export the frame, use STL instead.');
+      return;
+    }
+    if (hasFrame) {
+      alert('A keyguard designed for a keyguard frame cannot be exported as SVG — laser-cut keyguards in a frame are not supported. Disable the keyguard frame to export as SVG, or switch to 3D-Printed.');
       return;
     }
     if (vals.add_sloped_keyguard_edge === 'yes') {
