@@ -10,6 +10,18 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 7
+
+### Improvements
+
+- **SVG/laser-cut export now shows clear error messages for unsupported combinations.** Trying to export an SVG for clips, cell inserts, split keyguards, or a keyguard with a frame now shows a plain-language alert explaining what the problem is and what to do instead, rather than producing no output or a confusing error.
+
+- **Exported filenames include what was generated.** The downloaded file is now named to include the *Generate* setting (for example, `…-frame.stl` or `…-cell-insert.stl`), making it easier to tell files apart when you have exported several things from the same design.
+
+- **3D preview appearance now matches OpenSCAD more closely.** A new OpenSCAD-style lighting mode uses camera-relative lighting that closely matches what you see in the desktop OpenSCAD application. Background colour and item colour have also been adjusted to match OpenSCAD's defaults.
+
+- **Settings panel is draggable and has clearer labels.** The settings panel can now be moved anywhere on screen by dragging. Colour and lighting option labels have been renamed to be more descriptive.
+
 ## Release 6
 
 ### New features

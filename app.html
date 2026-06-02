@@ -250,13 +250,15 @@
 
   /* ---------- Settings modal ---------- */
   #settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
-                      display: none; align-items: center; justify-content: center; z-index: 1000; }
-  #settings-overlay.open { display: flex; }
+                      display: none; z-index: 1000; }
+  #settings-overlay.open { display: block; }
   #settings-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
                     width: 560px; max-width: 90vw; height: 380px; max-height: 80vh;
-                    display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+                    display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+                    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
   #settings-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
-                       background: #e8e8e8; font-size: 14px; }
+                       background: #e8e8e8; font-size: 14px;
+                       cursor: move; user-select: none; }
   #settings-body { flex: 1; display: flex; min-height: 0; }
   #settings-cats { width: 140px; border-right: 1px solid #ccc; background: #f0f0f0; padding: 6px 0; }
   #settings-cats .cat { padding: 6px 14px; cursor: pointer; font-size: 12px; }
@@ -491,7 +493,7 @@
 <!-- ============ Settings modal ============ -->
 <div id="settings-overlay">
   <div id="settings-modal">
-    <h3>Settings</h3>
+    <h3>Settings <span style="float:right; opacity:0.4; font-size:11px; font-weight:normal; margin-top:1px;">drag to move</span></h3>
     <div id="settings-body">
       <div id="settings-cats">
         <div class="cat active" data-cat="general">General</div>
@@ -552,9 +554,9 @@ const viewport = document.getElementById('viewport');
 const statusEl = document.getElementById('viewport-status');
 
 const scene = new THREE.Scene();
-// Pale cream — OpenSCAD's Cornfield-style default. applyAppearance() below
+// OpenSCAD Tomorrow background (#F8F8F8). applyAppearance() below
 // replaces this with the user's saved choice once settings have loaded.
-scene.background = new THREE.Color(0xffffe5);
+scene.background = new THREE.Color(0xf8f8f8);
 
 const camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
 camera.position.set(200, 200, 300);
@@ -566,6 +568,7 @@ camera.up.set(0, 0, 1);   // Z-up to match OpenSCAD convention
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 
+// ── App-mode lighting (camera-relative) ─────────────────────────────────────
 // Lights are children of the camera and orbit with the view, the way
 // OpenSCAD's native viewer works. The camera-facing face stays lit no
 // matter how the user rotates the model, and the rear face fades into
@@ -604,6 +607,34 @@ const key = new THREE.DirectionalLight(0xffffff, 3.5);
 key.position.set(1.0, 1.2, 0);
 key.target = lightTarget;
 camera.add(key);
+
+// ── OpenSCAD-mode lighting (camera-relative, matching OpenSCAD's GL_LIGHT setup) ──────────
+// OpenSCAD sets GL_LIGHT0/GL_LIGHT1 positions in initializeGL() with the identity
+// modelview, storing them in eye-space. Because they are never re-set per frame,
+// the lighting dot-product resolves to dot(N_world, Camera⁻¹ × L_eye), which means
+// the lights ORBIT WITH THE CAMERA — they are effectively camera-relative.
+// We replicate this by attaching the lights as camera children in Three.js.
+//
+// Positions from OpenSCAD GLView.cc (eye-space, i.e. camera-local in Three.js):
+//   GL_LIGHT0: (-1, +1, +1, 0)  → upper-left, toward viewer
+//   GL_LIGHT1: (+1, -1, -1, 0)  → lower-right, away from viewer
+//   Global ambient: 0.2 per channel.
+//
+// DirectionalLight intensity = π so Three.js's (intensity/π)×dot = 1×dot (matching OpenGL).
+// AmbientLight is NOT divided by π in Three.js → wsAmbient.intensity = 0.2 directly.
+//
+// All three are OFF by default (intensity 0); applyLighting() activates them and
+// deactivates the app-mode lights when settings.openscadLighting is true.
+const wsAmbient = new THREE.AmbientLight(0xffffff, 0.0);
+scene.add(wsAmbient);
+const wsPrimary = new THREE.DirectionalLight(0xffffff, 0.0);
+wsPrimary.position.set(-1, 1, 1);   // GL_LIGHT0 eye-space direction: upper-left, toward viewer
+camera.add(wsPrimary);
+camera.add(wsPrimary.target);       // target at camera origin; both orbit with camera
+const wsFill = new THREE.DirectionalLight(0xffffff, 0.0);
+wsFill.position.set(1, -1, -1);    // GL_LIGHT1 eye-space direction: lower-right, away from viewer
+camera.add(wsFill);
+camera.add(wsFill.target);
 
 // A camera's children only render when the camera itself is in the scene graph.
 scene.add(camera);
@@ -1057,7 +1088,7 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
 // deployment cache key: it is NOT pre-bumped on dev, only at release, to match
 // this number. See RELEASING.md.
-const APP_RELEASE = 6;
+const APP_RELEASE = 7;
 
 // Two-line version banner: the running app release plus the loaded designer
 // file's version (read from its `keyguard_designer_version = NN;` line). Shown
@@ -1079,8 +1110,8 @@ function logScreenshotStatus() {
 }
 // Default teal / cornfield are the long-standing viewport colours; the
 // Customizer text sizes mirror the CSS :root defaults.
-const DEFAULT_ITEM_COLOR = '#40E1D1';   // Turquoise — the default teal
-const DEFAULT_BG_COLOR   = '#FFFFE5';   // OpenSCAD Cornfield-style cream
+const DEFAULT_ITEM_COLOR = '#40E0D0';   // Turquoise (exact CSS "Turquoise" / OpenSCAD color("Turquoise"))
+const DEFAULT_BG_COLOR   = '#F8F8F8';   // OpenSCAD Tomorrow background (matches .scad visual refs)
 const DEFAULT_SECTION_PT     = 14;
 const DEFAULT_SECTION_WEIGHT = 'bold';
 const DEFAULT_SECTION_STYLE  = 'normal';
@@ -1091,8 +1122,9 @@ const DEFAULT_PARAM_STYLE    = 'normal';
 // Eight saturated item colours; eight neutral backgrounds chosen to stay
 // distinct from the item set and keep good contrast for any pairing.
 const ITEM_COLORS = [
-  { name: 'Teal',   hex: '#40E1D1' },
-  { name: 'Blue',   hex: '#4682B4' },
+  { name: 'Turquoise', hex: '#40E0D0' },
+  { name: 'OpenSCAD', hex: '#3E999F' },  // Tomorrow cgal-face-front — correct base for OpenSCAD lighting mode
+  { name: 'Blue',    hex: '#4682B4' },
   { name: 'Green',  hex: '#3CB371' },
   { name: 'Gold',   hex: '#DAA520' },
   { name: 'Coral',  hex: '#FF7F50' },
@@ -1101,8 +1133,8 @@ const ITEM_COLORS = [
   { name: 'Red',    hex: '#DC143C' },
 ];
 const BG_COLORS = [
+  { name: 'White',      hex: '#F8F8F8' },  // OpenSCAD Tomorrow background (default)
   { name: 'Cornfield',  hex: '#FFFFE5' },
-  { name: 'White',      hex: '#FFFFFF' },
   { name: 'Light gray', hex: '#E8E8E8' },
   { name: 'Sky',        hex: '#DCEBF5' },
   { name: 'Sand',       hex: '#EAE0CC' },
@@ -1126,6 +1158,7 @@ const SETTINGS_DEFAULTS = {
   orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
   orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
   orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.25 … 3.0
+  openscadLighting: false,               // true → world-space fixed lights matching OpenSCAD
   paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
   custPaneWidth: 280,                    // Customizer (right) pane width in px — restored across sessions
   consoleHeight: 180,                    // Console (bottom) pane height in px — restored across sessions
@@ -1207,6 +1240,7 @@ function onSettingsChanged(key) {
        'paramTextPt','paramTextWeight','paramTextStyle'].includes(key)) applyTextSizes();
   if (key === 'backgroundColor') applyBackgroundColor();
   if (key === 'itemColor') applyItemColor();
+  if (key === 'openscadLighting') applyLighting();
   if (key === 'paneTheme') applyPaneTheme();
   if (key === 'orbitScheme' || key === 'orbitSensitivity' || key === 'orbitZoom') syncOrbitFromSettings();
 }
@@ -1225,6 +1259,22 @@ function applyTextSizes() {
 }
 function applyBackgroundColor() {
   scene.background = new THREE.Color(settings.backgroundColor || DEFAULT_BG_COLOR);
+}
+// Switch between Mode 1 (app) and Mode 2 (OpenSCAD-matched) lighting.
+// Mode 1: camera-attached hemisphere + key directional (model always lit from viewer).
+// Mode 2: camera-relative primary (-1,+1,+1) + fill (+1,-1,-1) + ambient 0.2,
+//                matching GL_LIGHT0/GL_LIGHT1 from OpenSCAD's GLView.cc. Lights orbit
+//                with the camera (camera children). DirectionalLight intensity = π;
+//                AmbientLight intensity = 0.2 (no π — Three.js doesn't divide ambient).
+function applyLighting() {
+  const os = !!settings.openscadLighting;
+  // App-mode lights (camera children)
+  hemi.intensity = os ? 0.0 : 0.15;
+  key.intensity  = os ? 0.0 : 3.5;
+  // OpenSCAD-mode lights (camera children + scene ambient)
+  wsAmbient.intensity = os ? 0.2  : 0.0;   // 0.2 — AmbientLight is NOT divided by π in Three.js
+  wsPrimary.intensity = os ? 3.14 : 0.0;   // π × 1.0 — DirectionalLight IS divided by π
+  wsFill.intensity    = os ? 3.14 : 0.0;   // π × 1.0
 }
 // Recolour the already-rendered keyguard body in place so a colour change
 // is instant — no OpenSCAD re-render. New renders read settings.itemColor
@@ -1251,6 +1301,7 @@ function applyAppearance() {
   applyTextSizes();
   applyBackgroundColor();
   applyItemColor();
+  applyLighting();
   applyPaneTheme();
 }
 
@@ -1972,12 +2023,38 @@ function buildSvgPlane(svgText) {
   });
 }
 
+// Returns a human-readable error message if the current settings describe a
+// combination that keyguard.scad explicitly does not support, or null if the
+// combination is valid. Used to show an alert before any render or export so
+// the user gets a clear pop-up instead of confusing console output.
+function incompatibleSettingsMessage(vals) {
+  const isLaserCut = vals.type_of_keyguard === 'Laser-Cut';
+  const gen = vals.generate || '';
+  const hasFrame = vals.have_a_keyguard_frame === 'yes';
+
+  if (isLaserCut && vals.add_sloped_keyguard_edge === 'yes')
+    return 'Laser-cut keyguards cannot have a sloped edge. Set "Add sloped keyguard edge" to "no", or switch to 3D-Printed.';
+  if (gen === 'keyguard frame' && !hasFrame)
+    return '"Generate" is set to "Keyguard Frame" but "Have a keyguard frame" is set to "no". Enable the keyguard frame or change "Generate".';
+  if ((gen === 'first half of keyguard' || gen === 'second half of keyguard') && isLaserCut)
+    return 'Laser-cut keyguards cannot be split. Change "Generate" to "keyguard", or switch to 3D-Printed.';
+  if ((gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame') && isLaserCut)
+    return 'Laser-cut keyguard frames are not supported. Switch to 3D-Printed, or choose a different "Generate" option.';
+  if (gen === 'keyguard' && isLaserCut && hasFrame)
+    return 'Laser-cut keyguards in a keyguard frame are not supported. Disable the keyguard frame, or switch to 3D-Printed.';
+  if (gen === 'cell insert' && isLaserCut)
+    return 'Cell inserts are not supported for laser-cut keyguards. Switch to 3D-Printed, or change "Generate".';
+  return null;
+}
+
 async function doRender() {
   if (!project) {
     setStatus('Open a project folder first.', 'error');
     return;
   }
   if (renderInProgress) { pendingRerender = true; return; }
+  const incompatMsg = incompatibleSettingsMessage(currentFormValues());
+  if (incompatMsg) { alert(incompatMsg); return; }
   renderInProgress = true;
   window.__renderState = 'rendering';
   setStatus('Rendering...', 'rendering');
@@ -2347,13 +2424,18 @@ const EXPORT_FORMATS = {
   // not enabled when building the application."
 };
 
-// Base filename for exported STL/SVG/PNG: the current preset name with any
-// characters invalid in a filename stripped. Falls back to "keyguard" when
-// no project/preset is loaded or the sanitised name is empty.
+// Base filename for exported STL/SVG/PNG: the current preset name plus the
+// generate value, with characters invalid in a filename stripped. Falls back
+// to "keyguard" when no project/preset is loaded or the sanitised name is empty.
+// Example: preset "Fintie - CoughDrop 60" + generate "keyguard frame"
+//   → "Fintie - CoughDrop 60 - keyguard frame"
 function exportBaseName() {
   const raw = (project && project.currentPreset) ? project.currentPreset : 'keyguard';
   const clean = raw.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
-  return clean || 'keyguard';
+  const base = clean || 'keyguard';
+  const gen = project ? (currentFormValues().generate || '') : '';
+  const genClean = gen.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  return genClean ? base + ' - ' + genClean : base;
 }
 
 // Captures the current viewport as a PNG blob. Renders one synchronous frame
@@ -2647,6 +2729,40 @@ async function exportCurrent(fmt) {
       alert('generate="Customizer settings" produces no geometry — it just echoes the current parameter values to the console. Change "generate" to a 3D option to export an STL.');
       return;
     }
+  }
+  if (fmt === 'SVG') {
+    // SVG export forces type_of_keyguard="Laser-Cut", so check for settings
+    // that are incompatible with laser-cut regardless of the form's current value.
+    const vals = currentFormValues();
+    const gen = vals.generate || '';
+    const hasFrame = vals.have_a_keyguard_frame === 'yes';
+    if (['horizontal clip', 'vertical clip', 'horizontal mini clip', 'vertical mini clip', 'horizontal micro clip', 'vertical micro clip'].includes(gen)) {
+      alert('Clips cannot be exported as SVG — laser-cut clips are not supported. To export a clip, use STL instead.');
+      return;
+    }
+    if (gen === 'cell insert') {
+      alert('Cell inserts cannot be exported as SVG — laser-cut cell inserts are not supported. To export a cell insert, use STL instead.');
+      return;
+    }
+    if (gen === 'first half of keyguard' || gen === 'second half of keyguard') {
+      alert('Splitting a keyguard is not supported for laser-cutting — SVG export produces a full keyguard outline. To laser-cut a keyguard, set generate to "keyguard" before choosing SVG.');
+      return;
+    }
+    if (hasFrame && (gen === 'keyguard frame' || gen === 'first half of keyguard frame' || gen === 'second half of keyguard frame')) {
+      alert('A keyguard frame cannot be exported as SVG — laser-cut frames are not supported. To export the frame, use STL instead.');
+      return;
+    }
+    if (hasFrame) {
+      alert('A keyguard designed for a keyguard frame cannot be exported as SVG — laser-cut keyguards in a frame are not supported. To export the keyguard, use STL instead.');
+      return;
+    }
+    if (vals.add_sloped_keyguard_edge === 'yes') {
+      alert('SVG export requires a laser-cut keyguard, but laser-cut keyguards cannot have a sloped edge. Set "Add sloped keyguard edge" to "no" to export as SVG.');
+      return;
+    }
+  } else {
+    const incompatMsg = incompatibleSettingsMessage(currentFormValues());
+    if (incompatMsg) { alert(incompatMsg); return; }
   }
 
   // Pick the destination NOW, while this click's user gesture is still live.
@@ -3686,6 +3802,19 @@ if (__fixturePath && __fixtureScad &&
   const __render = (__w > 0 || __h > 0 || __fov > 0)
     ? { width: __w || null, height: __h || null, fov: !isNaN(__fov) ? __fov : null }
     : null;
+  // Viewport appearance overrides — caller can pin exact rendering settings
+  // for consistent reference captures. Applied directly to the settings object
+  // (not via setSetting) so localStorage is never touched during test runs.
+  const __itemColor = __fixtureParams.get('itemColor');
+  const __bgColor   = __fixtureParams.get('backgroundColor');
+  const __osLight   = __fixtureParams.get('openscadLighting');
+  if (__itemColor) { settings.itemColor = __itemColor; applyItemColor(); }
+  if (__bgColor)   { settings.backgroundColor = __bgColor; applyBackgroundColor(); }
+  if (__osLight != null) {
+    settings.openscadLighting = (__osLight === '1' || __osLight === 'true');
+    applyLighting();
+  }
+
   loadFixture(
     __fixturePath,
     __fixtureScad,
@@ -4180,6 +4309,20 @@ const SETTINGS_PANELS = {
         <span style="color:#666;">Large</span>
       </div>
     </div>
+    <div class="setting">
+      <label>Lighting model</label>
+      <div style="color:#666; margin-bottom:8px;">
+        <b>Mode 1</b> keeps the model lit from the viewer's direction — the
+        top face is always bright as you orbit. <b>Mode 2</b> replicates
+        OpenSCAD's camera-relative two-light setup (GL_LIGHT0/GL_LIGHT1),
+        improving cross-backend visual parity at the cost of darker faces
+        at some camera angles.
+      </div>
+      <label class="opt"><input type="radio" name="lightingMode" value="app"
+        ${!settings.openscadLighting ? 'checked' : ''}> <b>Mode 1</b></label>
+      <label class="opt"><input type="radio" name="lightingMode" value="openscad"
+        ${settings.openscadLighting ? 'checked' : ''}> <b>Mode 2</b></label>
+    </div>
   `;
   },
   grid: () => `
@@ -4277,6 +4420,9 @@ function renderSettingsPanel(cat) {
   settingsPanel.querySelectorAll('input[type=radio][name=orbitScheme]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('orbitScheme', r.value); });
   });
+  settingsPanel.querySelectorAll('input[type=radio][name=lightingMode]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('openscadLighting', r.value === 'openscad'); });
+  });
   const sens = settingsPanel.querySelector('#set-orbitSensitivity');
   if (sens) sens.addEventListener('input', () => {
     setSetting('orbitSensitivity', Number(sens.value));
@@ -4359,6 +4505,41 @@ function openSettings() {
   settingsOverlay.classList.add('open');
 }
 function closeSettings() { settingsOverlay.classList.remove('open'); }
+
+// ── Settings panel drag-to-move ───────────────────────────────────────────────
+// Dragging the title bar repositions the modal freely within the viewport.
+// The overlay still blocks all background interaction (modal behaviour intact).
+// Once dragged, position is remembered for the session; reopening resets it to
+// centred only if it has never been dragged.
+(function () {
+  const modal  = document.getElementById('settings-modal');
+  const handle = modal.querySelector('h3');
+  let dragging = false, ox = 0, oy = 0;
+
+  handle.addEventListener('mousedown', e => {
+    // On first drag, convert the CSS transform-based centering to pixel coords.
+    if (modal.style.transform !== 'none') {
+      const r = modal.getBoundingClientRect();
+      modal.style.transform = 'none';
+      modal.style.left = r.left + 'px';
+      modal.style.top  = r.top  + 'px';
+    }
+    dragging = true;
+    ox = e.clientX - modal.offsetLeft;
+    oy = e.clientY - modal.offsetTop;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const W = window.innerWidth,  H = window.innerHeight;
+    const mW = modal.offsetWidth, mH = modal.offsetHeight;
+    modal.style.left = Math.max(0, Math.min(e.clientX - ox, W - mW)) + 'px';
+    modal.style.top  = Math.max(0, Math.min(e.clientY - oy, H - mH)) + 'px';
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; });
+}());
 
 settingsBtn.addEventListener('click', openSettings);
 settingsCloseBtn.addEventListener('click', closeSettings);

@@ -114,9 +114,54 @@ a big buffer is reserved per instance, so pre-sizing pairs best with single-inst
 likely eased once the per-cell extender (`extend_through_cuts`) is retired (see "Manifold
 workaround redundancy") — it inflates the heap most on dense "max rails" grids.
 
-### Image parity tuning
-Both projects capture at 2048×1536. Web uses FOV 22.5° to approximate OpenSCAD's CLI default.
-After Ken reviews side-by-side pairs, may need to nudge FOV or vpd interpretation.
+### Image parity — camera model confirmed (2026-05-31)
+
+Both projects capture at 2048×1536. The camera model has been validated empirically via the
+"compare visual references" parity audit (168 pairs):
+
+**Camera parameters — confirmed correct, no tuning needed:**
+- `fov=22.5°` (vertical) matches OpenSCAD's CLI default (`$vpf = 22.5`)
+- Rotation order ZXY extrinsic matches OpenSCAD's `--camera=tx,ty,tz,rx,ry,rz,dist` convention
+- Camera placed at distance `vpd` from target (`vpt`) matches OpenSCAD's `dist` interpretation
+- Best-case evidence: TC40 step1 (`vpr=[30,0,0]`, `vpd=600`) achieves **0.86% parity** (excellent bucket)
+
+**Baseline after Mode 2 lighting + White background + Turquoise colour (2026-05-31):**
+38 excellent / 89 good / 24 fair / 7 poor / 2 bad / 5 no-web / 3 skipped (render:true) (160 scored pairs).
+Previous (before Turquoise colour normalisation + cell insert fix + ghost keyguard fix): 27 excellent / 81 good / 24 fair / 25 poor / 5 bad.
+
+**Sources of remaining parity difference — all considered structural/expected:**
+
+- **TC5 steps 3/4 (~53%, bad bucket):** Back-view renders (vpr rx > 90°). The keyguard body is
+  highly chamfered/sloped; at this angle MeshPhong and OpenSCAD's CGAL renderer diverge maximally
+  on the shadowed faces. **Structural: same geometry, irreconcilable shading models on shadow-heavy
+  back-views. No fix needed — documented as expected.**
+
+- **TC36 step1 (~27%, poor):** `generate="keyguard frame"` with ghost keyguard overlay
+  (`show_keyguard_with_frame="yes"`). The ghost keyguard renders as a saturated highlight colour in
+  OpenSCAD's interactive preview and in the `.scad` CLI reference (via `show_oa_highlights="yes"`
+  in `params_override`), but the web app renders it as 45%-transparent pink in the highlights pass.
+  This colour/transparency difference is visible but accepted — the geometry aligns correctly.
+  **Structural: no fix needed.**
+
+- **TC37 all 5 steps (~19%, poor):** Has `cell_top_edge_slope=63` and `home_button_edge_slope=30`.
+  Same sloped-geometry shading divergence as TC5 — MeshPhong vs CGAL on chamfered/sloped faces.
+  **Structural: no fix needed.**
+
+- **TC41 step1 (~19%, poor):** Same cause as TC36 — ghost keyguard colour/transparency difference
+  between OpenSCAD and the web app's highlights pass. **Structural: no fix needed.**
+
+- **TC44-2 (~19%), TC44-3 (~18%), TC15 step3 (~16%):** Heavy chamfering and/or complex slope
+  geometry at camera angles that maximise shading divergence between MeshPhong and CGAL.
+  **Structural: same root cause as TC5 above.**
+
+- **TC48 step3:** `"render": true` step — skipped in both web capture and parity comparison.
+
+**Expected parity ranges by case type:**
+- Excellent (<1%): simple geometry, moderate vpd, no screenshots
+- Good (1–5%): standard 3D keyguard, typical background fraction
+- Fair (5–15%): complex chamfers/slopes, larger vpd, or portrait models
+- Poor (15–30%): extreme back-views of chamfered/sloped geometry
+- Bad (>30%): back-views where shadow discrepancy is maximum (TC5 steps 3/4)
 
 ### Pre-existing Manifold↔CGAL geometry-gate divergences (TC5/8/46/47/54) — KEN to investigate
 The geometry gate (`tests/geometry.spec.mjs`, Manifold vs the `.scad` CGAL golden manifest) fails
@@ -303,6 +348,39 @@ Scripts must run unchanged on either machine: derive paths from `$env:OneDrive`
 phrase is all Ken needs. Because CLAUDE.md is the only thing that syncs and is
 auto-loaded on both machines, a new phrase only works after OneDrive syncs this
 file AND the other machine's Claude session is restarted.
+
+## Trigger phrase — update web app visual references
+
+When Ken says **"update visual references"**, run in the **background**:
+```
+KEYGUARD_VISUAL_CASES=* bash scripts/test.sh --visual --update
+```
+from the web-app project root. This re-captures ALL Playwright reference PNGs using the
+pinned appearance settings in `tests/visual.spec.mjs` (`CAPTURE_ITEM_COLOR`, `CAPTURE_BG_COLOR`,
+`CAPTURE_OS_LIGHTING`) — currently Turquoise `#40E0D0` (exact CSS "Turquoise" / OpenSCAD `color("Turquoise")`), White background `#F8F8F8`, Mode 2
+(OpenSCAD-matched) lighting. When done, commit the updated PNGs under
+`tests/visual.spec.mjs-snapshots/`.
+
+- **Progress log** (tail -f while running): `visual-update-progress.log`
+
+---
+
+## Trigger phrase — cross-backend visual parity
+
+When Ken says **"compare visual references"**, run `bash scripts/compare-visual-references.sh`
+in the **background** and report when it finishes. It compares every web-app Playwright
+viewport PNG against the matching .scad OpenSCAD CGAL reference PNG and produces a
+worst-to-best parity report.
+
+- **Progress log** (tail -f while running): `output/compare-visual-references-progress.log`  
+  One line per pair as processed: bucket, ratio, case name, step filename.
+- **Final sorted report**: `output/compare-visual-references.txt`  
+  Tab-separated, sorted worst-to-best, with summary buckets at the bottom.
+
+Requires Python 3 with `Pillow` and `numpy` on PATH. Derives the .scad project path as
+a sibling of the web-app root via OneDrive, so it works unchanged on both machines.
+
+---
 
 ## Trigger phrases — RTP CGAL golden regen (2-machine split)
 

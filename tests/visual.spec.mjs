@@ -65,6 +65,14 @@ const CAPTURE_WIDTH  = 2048;
 const CAPTURE_HEIGHT = 1536;
 const CAPTURE_FOV    = 22.5;
 
+// Viewport appearance settings pinned for all reference captures.
+// These are passed as URL params to the fixture loader so every capture
+// is consistent regardless of the local user's saved Settings preferences.
+// Update references (./scripts/test.sh --visual --update) whenever these change.
+const CAPTURE_ITEM_COLOR   = '#40E0D0';  // Turquoise (exact CSS "Turquoise" / OpenSCAD color("Turquoise"))
+const CAPTURE_BG_COLOR     = '#F8F8F8';  // White (OpenSCAD Tomorrow background)
+const CAPTURE_OS_LIGHTING  = '1';        // Mode 2 — OpenSCAD-matched camera-relative lighting
+
 // Camera fallbacks matching the .scad project's scripts/test.sh:
 //   DEFAULT_VPT="0,0,0", DEFAULT_VPR="55,0,25", DEFAULT_VPD="250".
 // Used when neither the step nor an openings file specifies a camera.
@@ -192,10 +200,16 @@ function discoverCases() {
       // .scad reference PNG is intentionally meaningless to compare
       // against an empty 3D viewport, and the harness can still verify
       // the page didn't crash and no unexpected console errors fired.
+      //
+      // "render: true" marks a CGAL full-precision render step in the
+      // .scad test suite. The web app always uses Manifold for every
+      // action and has no concept of a separate CGAL step, so there is
+      // no web-app equivalent to capture or compare against.
       const consoleFile     = typeof step.console === 'string' ? step.console : null;
       const expectedExplicit = typeof step.expected === 'string';
       const geometryFalse   = step.geometry === false;
-      const consoleOnly     = (!!consoleFile && !expectedExplicit) || geometryFalse;
+      const renderTrue      = step.render === true;
+      const consoleOnly     = (!!consoleFile && !expectedExplicit) || geometryFalse || renderTrue;
       const nonStlGenerate  = geometryFalse;
       let consoleExpected = null;   // array of expected lines, or null
       let consoleRefMissing = null; // path string if the ref file is absent
@@ -291,13 +305,16 @@ if (discoveryError || CASES.length === 0) {
       });
 
       const params = new URLSearchParams({
-        fixture: SCAD_SOURCE_URL_PREFIX,
-        scad:    SCAD_FILE,
-        preset:  c.preset,
-        oa:      `${SCAD_CASES_URL_PREFIX}/${encodeURIComponent(c.caseName)}/${encodeURIComponent(c.oaFile)}`,
-        width:   String(CAPTURE_WIDTH),
-        height:  String(CAPTURE_HEIGHT),
-        fov:     String(CAPTURE_FOV),
+        fixture:          SCAD_SOURCE_URL_PREFIX,
+        scad:             SCAD_FILE,
+        preset:           c.preset,
+        oa:               `${SCAD_CASES_URL_PREFIX}/${encodeURIComponent(c.caseName)}/${encodeURIComponent(c.oaFile)}`,
+        width:            String(CAPTURE_WIDTH),
+        height:           String(CAPTURE_HEIGHT),
+        fov:              String(CAPTURE_FOV),
+        itemColor:        CAPTURE_ITEM_COLOR,
+        backgroundColor:  CAPTURE_BG_COLOR,
+        openscadLighting: CAPTURE_OS_LIGHTING,
       });
       // Camera is always resolved during discovery (test.json → step-params
       // openings file → case openings file → DEFAULTs), so pass it always.
