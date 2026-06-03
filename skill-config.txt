@@ -173,3 +173,14 @@ Raised Tabs                              = advanced
 ^Via                                     = intermediate
 ^GridPad                                 = intermediate
 .*                                       = advanced
+
+
+# ---------------------------------------------------------------
+# Hidden parameters
+# Parameters listed here are never shown in the web app,
+# regardless of skill level.  They remain available to desktop
+# OpenSCAD Customizer users.
+# ---------------------------------------------------------------
+
+[hidden]
+screenshot_filename

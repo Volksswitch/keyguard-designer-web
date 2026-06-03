@@ -1299,6 +1299,9 @@ const SKILL_CONFIG = {
       { pattern: '.*', level: 'advanced' },
     ],
   },
+  hiddenParams: new Set([
+    'screenshot_filename',
+  ]),
 };
 // @@SKILL_CONFIG_END@@
 
@@ -3137,6 +3140,7 @@ function buildCustomizerForm(sections) {
     if (!meetsSkill(secMin)) continue;
 
     const visibleParams = sec.params.filter(p => {
+      if (SKILL_CONFIG.hiddenParams.has(p.name)) return false;
       const pMin = SKILL_CONFIG.params[p.name] || secMin;
       return meetsSkill(pMin);
     });

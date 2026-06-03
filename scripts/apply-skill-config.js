@@ -20,8 +20,9 @@ const sections = {};      // { 'Section Name': 'level', ... }
 const params = {};        // { 'param_name': 'level', ... }
 const dropdownOptions = {};  // { 'param_name': { 'option': 'level', ... }, ... }
 const dropdownFilters = {};  // { 'param_name': [{ pattern, level }, ...], ... }
+const hiddenParams = [];     // ['param_name', ...]
 
-let currentBlock = 'top';   // 'top' | 'sections' | 'params' | 'dropdown:X' | 'filter:X'
+let currentBlock = 'top';   // 'top' | 'sections' | 'params' | 'dropdown:X' | 'filter:X' | 'hidden'
 
 for (const rawLine of lines) {
   const line = rawLine.trim();
@@ -31,7 +32,7 @@ for (const rawLine of lines) {
   const headerMatch = line.match(/^\[(.+)\]$/);
   if (headerMatch) {
     const hdr = headerMatch[1].trim();
-    if (hdr === 'sections' || hdr === 'params') {
+    if (hdr === 'sections' || hdr === 'params' || hdr === 'hidden') {
       currentBlock = hdr;
     } else {
       const ddMatch = hdr.match(/^dropdown:\s*(.+)$/i);
@@ -47,6 +48,12 @@ for (const rawLine of lines) {
         dropdownFilters[paramName] = dropdownFilters[paramName] || [];
       }
     }
+    continue;
+  }
+
+  // [hidden] entries are bare names with no "= value"
+  if (currentBlock === 'hidden') {
+    hiddenParams.push(line);
     continue;
   }
 
@@ -116,6 +123,8 @@ const dfEntries = Object.entries(dropdownFilters).map(([param, rules]) => {
   return `    ${jsStr(param)}: [\n${inner}\n    ],`;
 });
 
+const hiddenSet = hiddenParams.map(n => `    ${jsStr(n)},`);
+
 const configBlock = [
   '// @@SKILL_CONFIG_START@@',
   'const SKILL_CONFIG = {',
@@ -127,6 +136,9 @@ const configBlock = [
   '  dropdownFilters: {',
   ...dfEntries,
   '  },',
+  '  hiddenParams: new Set([',
+  ...hiddenSet,
+  '  ]),',
   '};',
   '// @@SKILL_CONFIG_END@@',
 ].join('\n');
