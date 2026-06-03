@@ -1247,6 +1247,12 @@ const SKILL_CONFIG = {
       'Raised Tabs': 'intermediate',
     },
   },
+  dropdownFilters: {
+    'type_of_tablet': [
+      { pattern: '^iPad', level: 'beginner' },
+      { pattern: '.*', level: 'intermediate' },
+    ],
+  },
 };
 // @@SKILL_CONFIG_END@@
 
@@ -1255,6 +1261,17 @@ function skillRank(level) {
 }
 function meetsSkill(minLevel) {
   return skillRank(settings.skillLevel) >= skillRank(minLevel || 'beginner');
+}
+
+// Minimum skill level required to see a given dropdown option value.
+// Checks exact dropdownOptions first, then ordered grep-regex dropdownFilters.
+function optionLevel(paramName, value) {
+  const exact = (SKILL_CONFIG.dropdownOptions[paramName] || {})[value];
+  if (exact) return exact;
+  for (const { pattern, level } of (SKILL_CONFIG.dropdownFilters[paramName] || [])) {
+    if (new RegExp(pattern, 'i').test(value)) return level;
+  }
+  return 'beginner';
 }
 
 // Adopt the persisted orbit scheme / sensitivity now that `settings`
@@ -3096,11 +3113,11 @@ function buildCustomizerForm(sections) {
     div.appendChild(header);
     div.appendChild(body);
     for (const p of visibleParams) {
-      // For dropdowns with per-option skill thresholds, pass a filtered copy.
-      const optFilter = SKILL_CONFIG.dropdownOptions[p.name];
-      if (optFilter && p.control.kind === 'dropdown') {
+      // For dropdowns with per-option thresholds (exact or glob), pass a filtered copy.
+      if (p.control.kind === 'dropdown' &&
+          (SKILL_CONFIG.dropdownOptions[p.name] || SKILL_CONFIG.dropdownFilters[p.name])) {
         const filtered = p.control.choices.filter(
-          c => meetsSkill(optFilter[c.value] || 'beginner')
+          c => meetsSkill(optionLevel(p.name, c.value))
         );
         body.appendChild(buildParamControl({ ...p, control: { ...p.control, choices: filtered } }));
       } else {

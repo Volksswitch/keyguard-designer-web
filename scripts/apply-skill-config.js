@@ -19,14 +19,15 @@ const descs = {};         // { beginner: '...', intermediate: '...', expert: '..
 const sections = {};      // { 'Section Name': 'level', ... }
 const params = {};        // { 'param_name': 'level', ... }
 const dropdownOptions = {};  // { 'param_name': { 'option': 'level', ... }, ... }
+const dropdownFilters = {};  // { 'param_name': [{ pattern, level }, ...], ... }
 
-let currentBlock = 'top';   // 'top' | 'sections' | 'params' | 'dropdown:param_name'
+let currentBlock = 'top';   // 'top' | 'sections' | 'params' | 'dropdown:X' | 'filter:X'
 
 for (const rawLine of lines) {
   const line = rawLine.trim();
   if (line === '' || line.startsWith('#')) continue;
 
-  // Section header: [sections], [params], [dropdown: param_name]
+  // Section header: [sections], [params], [dropdown: param_name], [filter: param_name]
   const headerMatch = line.match(/^\[(.+)\]$/);
   if (headerMatch) {
     const hdr = headerMatch[1].trim();
@@ -34,10 +35,17 @@ for (const rawLine of lines) {
       currentBlock = hdr;
     } else {
       const ddMatch = hdr.match(/^dropdown:\s*(.+)$/i);
-      if (!ddMatch) throw new Error(`Unrecognised section header: [${hdr}]`);
-      const paramName = ddMatch[1].trim();
-      currentBlock = `dropdown:${paramName}`;
-      dropdownOptions[paramName] = dropdownOptions[paramName] || {};
+      if (ddMatch) {
+        const paramName = ddMatch[1].trim();
+        currentBlock = `dropdown:${paramName}`;
+        dropdownOptions[paramName] = dropdownOptions[paramName] || {};
+      } else {
+        const fMatch = hdr.match(/^filter:\s*(.+)$/i);
+        if (!fMatch) throw new Error(`Unrecognised section header: [${hdr}]`);
+        const paramName = fMatch[1].trim();
+        currentBlock = `filter:${paramName}`;
+        dropdownFilters[paramName] = dropdownFilters[paramName] || [];
+      }
     }
     continue;
   }
@@ -57,9 +65,12 @@ for (const rawLine of lines) {
     sections[key] = value;
   } else if (currentBlock === 'params') {
     params[key] = value;
-  } else {
+  } else if (currentBlock.startsWith('dropdown:')) {
     const paramName = currentBlock.slice('dropdown:'.length);
     dropdownOptions[paramName][key] = value;
+  } else {
+    const paramName = currentBlock.slice('filter:'.length);
+    dropdownFilters[paramName].push({ pattern: key, level: value });
   }
 }
 
@@ -98,6 +109,13 @@ const ddEntries = Object.entries(dropdownOptions).map(([param, opts]) => {
   return `    ${jsStr(param)}: {\n${inner}\n    },`;
 });
 
+const dfEntries = Object.entries(dropdownFilters).map(([param, rules]) => {
+  const inner = rules.map(({ pattern, level }) =>
+    `      { pattern: ${jsStr(pattern)}, level: ${jsStr(level)} },`
+  ).join('\n');
+  return `    ${jsStr(param)}: [\n${inner}\n    ],`;
+});
+
 const configBlock = [
   '// @@SKILL_CONFIG_START@@',
   'const SKILL_CONFIG = {',
@@ -105,6 +123,9 @@ const configBlock = [
   '  params: '   + jsObj(params,   '  ') + ',',
   '  dropdownOptions: {',
   ...ddEntries,
+  '  },',
+  '  dropdownFilters: {',
+  ...dfEntries,
   '  },',
   '};',
   '// @@SKILL_CONFIG_END@@',

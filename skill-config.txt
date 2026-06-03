@@ -104,3 +104,20 @@ Posts                                    = intermediate
 Shelf                                    = intermediate
 Slide-in Tabs                            = intermediate
 Raised Tabs                              = intermediate
+
+
+# ---------------------------------------------------------------
+# Dropdown filters (grep regex patterns)
+# Like [dropdown:] but uses grep-style regular expressions.
+# Patterns are case-insensitive.  Rules are checked top-to-bottom;
+# the first match wins.  Common patterns:
+#   ^iPad       starts with "iPad"
+#   iPad        contains "iPad"
+#   ^iPad.*Pro  starts with "iPad" and contains "Pro"
+#   .*          catch-all — matches everything not matched above
+# Without a catch-all, unmatched options remain visible to all.
+# ---------------------------------------------------------------
+
+[filter: type_of_tablet]
+^iPad                                    = beginner
+.*                                       = intermediate
