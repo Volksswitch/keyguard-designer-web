@@ -1163,8 +1163,91 @@ const SETTINGS_DEFAULTS = {
   custPaneWidth: 280,                    // Customizer (right) pane width in px — restored across sessions
   consoleHeight: 180,                    // Console (bottom) pane height in px — restored across sessions
   customizerWheelStep: 3,                // entries advanced per mouse-wheel notch in the Customizer pane + dropdowns
+  skillLevel: 'beginner',               // 'beginner' | 'intermediate' | 'expert'
 };
 let settings = loadSettings();
+
+// ===== Skill-level filtering =====
+// Maps section names and parameter names to the minimum skill level required
+// to see them. 'expert' always sees everything. Sections/params not listed here
+// default to 'beginner' (always visible).
+const SKILL_LEVELS = ['beginner', 'intermediate', 'expert'];
+
+const SKILL_CONFIG = {
+  sections: {
+    'App Layout in px':                       'intermediate',
+    'App Layout in mm':                       'intermediate',
+    'Bar Info':                               'intermediate',
+    'Grid Special Settings':                  'intermediate',
+    'Velcro Info':                            'intermediate',
+    'Clip-on Straps Info':                    'intermediate',
+    'Posts Info':                             'intermediate',
+    'Shelf Info':                             'intermediate',
+    'Slide-in Tabs Info':                     'intermediate',
+    'Raised Tabs Info':                       'intermediate',
+    'Keyguard Frame Info':                    'intermediate',
+    'Engraved/Embossed Text':                 'intermediate',
+    'Cell Inserts':                           'intermediate',
+    'Split Keyguard Info':                    'expert',
+    'Sloped Keyguard Edge Info':              'expert',
+    'Free-form and Hybrid Keyguard Openings': 'expert',
+    'Special Actions and Settings':           'expert',
+  },
+  // Parameters whose visibility threshold differs from their parent section's.
+  // Only list overrides here; everything else inherits the section default.
+  params: {
+    'screen_area_thickness':                        'intermediate',
+    'home_button_edge_slope':                       'intermediate',
+    'rotate_tablet_180_degrees':                    'intermediate',
+    'add_symmetric_openings':                       'intermediate',
+    'expose_ambient_light_sensors':                 'intermediate',
+    'case_opening_corner_radius':                   'intermediate',
+    'case_height':                                  'intermediate',
+    'case_width':                                   'intermediate',
+    'case_thickness':                               'intermediate',
+    'case_corner_radius':                           'intermediate',
+    'top_edge_compensation_for_tight_cases':        'intermediate',
+    'bottom_edge_compensation_for_tight_cases':     'intermediate',
+    'left_edge_compensation_for_tight_cases':       'intermediate',
+    'right_edge_compensation_for_tight_cases':      'intermediate',
+    'cell_shape':                                   'intermediate',
+    'cell_height_in_px':                            'intermediate',
+    'cell_width_in_px':                             'intermediate',
+    'cell_diameter':                                'intermediate',
+  },
+  // Per-dropdown option thresholds. Options not listed are always visible.
+  dropdownOptions: {
+    'generate': {
+      'first half of keyguard':       'expert',
+      'second half of keyguard':      'expert',
+      'horizontal clip':              'intermediate',
+      'vertical clip':                'intermediate',
+      'horizontal mini clip':         'expert',
+      'vertical mini clip':           'expert',
+      'horizontal micro clip':        'expert',
+      'vertical micro clip':          'expert',
+      'keyguard frame':               'intermediate',
+      'first half of keyguard frame': 'expert',
+      'second half of keyguard frame':'expert',
+      'cell insert':                  'intermediate',
+      'Customizer settings':          'expert',
+    },
+    'mounting_method': {
+      'Clip-on Straps':               'intermediate',
+      'Posts':                        'intermediate',
+      'Shelf':                        'intermediate',
+      'Slide-in Tabs':                'intermediate',
+      'Raised Tabs':                  'intermediate',
+    },
+  },
+};
+
+function skillRank(level) {
+  return SKILL_LEVELS.indexOf(level);
+}
+function meetsSkill(minLevel) {
+  return skillRank(settings.skillLevel) >= skillRank(minLevel || 'beginner');
+}
 
 // Adopt the persisted orbit scheme / sensitivity now that `settings`
 // exists, rebuilding the controls only if the scheme actually changed.
@@ -1243,6 +1326,10 @@ function onSettingsChanged(key) {
   if (key === 'openscadLighting') applyLighting();
   if (key === 'paneTheme') applyPaneTheme();
   if (key === 'orbitScheme' || key === 'orbitSensitivity' || key === 'orbitZoom') syncOrbitFromSettings();
+  if (key === 'skillLevel' && project) {
+    buildCustomizerForm(project.customizer);
+    populateFormFromPreset(project.currentPreset);
+  }
 }
 
 // ----- Appearance application (text sizes + viewport colours) -----
@@ -2975,6 +3062,15 @@ const container = document.getElementById('cust-sections');
 function buildCustomizerForm(sections) {
   container.innerHTML = '';
   for (const sec of sections) {
+    const secMin = SKILL_CONFIG.sections[sec.name] || 'beginner';
+    if (!meetsSkill(secMin)) continue;
+
+    const visibleParams = sec.params.filter(p => {
+      const pMin = SKILL_CONFIG.params[p.name] || secMin;
+      return meetsSkill(pMin);
+    });
+    if (visibleParams.length === 0) continue;
+
     const div = document.createElement('div');
     div.className = 'section';
     div.dataset.section = sec.name;
@@ -2991,8 +3087,17 @@ function buildCustomizerForm(sections) {
     body.className = 'section-body';
     div.appendChild(header);
     div.appendChild(body);
-    for (const p of sec.params) {
-      body.appendChild(buildParamControl(p));
+    for (const p of visibleParams) {
+      // For dropdowns with per-option skill thresholds, pass a filtered copy.
+      const optFilter = SKILL_CONFIG.dropdownOptions[p.name];
+      if (optFilter && p.control.kind === 'dropdown') {
+        const filtered = p.control.choices.filter(
+          c => meetsSkill(optFilter[c.value] || 'beginner')
+        );
+        body.appendChild(buildParamControl({ ...p, control: { ...p.control, choices: filtered } }));
+      } else {
+        body.appendChild(buildParamControl(p));
+      }
     }
     container.appendChild(div);
   }
@@ -4244,6 +4349,22 @@ function swatchGridHTML(list, selectedHex, group) {
 const SETTINGS_PANELS = {
   general: () => `
     <div class="setting">
+      <label>Skill level</label>
+      <div style="color:#666; margin-bottom:8px;">
+        Controls which settings are shown in the Customizer. Choose the level
+        that matches your experience with keyguard design.
+      </div>
+      <label class="opt"><input type="radio" name="skillLevel" value="beginner"
+        ${settings.skillLevel === 'beginner' ? 'checked' : ''}> <b>Beginner</b>
+        — essential settings for a basic grid keyguard</label>
+      <label class="opt"><input type="radio" name="skillLevel" value="intermediate"
+        ${settings.skillLevel === 'intermediate' ? 'checked' : ''}> <b>Intermediate</b>
+        — adds layout bars, grid adjustments, mounting details, and frames</label>
+      <label class="opt"><input type="radio" name="skillLevel" value="expert"
+        ${settings.skillLevel === 'expert' ? 'checked' : ''}> <b>Expert</b>
+        — all settings, including split keyguards and free-form openings</label>
+    </div>
+    <div class="setting">
       <label>Preset list order</label>
       <label class="opt"><input type="radio" name="presetOrder" value="alphabetical"
         ${settings.presetOrder === 'alphabetical' ? 'checked' : ''}> Alphabetical</label>
@@ -4414,6 +4535,9 @@ const SETTINGS_PANELS = {
 
 function renderSettingsPanel(cat) {
   settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
+  settingsPanel.querySelectorAll('input[type=radio][name=skillLevel]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('skillLevel', r.value); });
+  });
   settingsPanel.querySelectorAll('input[type=radio][name=presetOrder]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('presetOrder', r.value); });
   });
