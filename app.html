@@ -648,7 +648,7 @@ scene.add(camera);
 // to cover the same drag distance).
 const ORBIT_BASE_ROTATE   = { turntable: 1.0, tumble: 4.0, guided: 1.0 };
 const ORBIT_SCHEME_DEFAULT = 'tumble';
-const ORBIT_SENS_DEFAULT   = 0.6;       // 0.2 (slow) … 2.0 (fast)
+const ORBIT_SENS_DEFAULT   = 0.6;       // 0.15 (slow) … 2.5 (fast)
 
 // Mouse-wheel zoom amount. turntable/tumble drive `zoomSpeed` (a linear
 // multiplier; three's defaults are 1.0 and 1.2). guided (ArcballControls)
@@ -658,7 +658,7 @@ const ORBIT_SENS_DEFAULT   = 0.6;       // 0.2 (slow) … 2.0 (fast)
 // zoom per notch") across all three schemes.
 const ORBIT_BASE_ZOOM     = { turntable: 1.0, tumble: 1.2, guided: 1.0 };
 const ARCBALL_BASE_STEP   = 0.1;        // guided scaleFactor = 1 + step·mult
-const ORBIT_ZOOM_DEFAULT  = 1.0;        // 0.25 (slow) … 3.0 (fast)
+const ORBIT_ZOOM_DEFAULT  = 1.0;        // 0.20 (slow) … 3.75 (fast)
 
 // Mirror the persisted settings so the early controls build (which runs
 // before `settings` is initialised) never has to touch it.
@@ -1157,7 +1157,7 @@ const SETTINGS_DEFAULTS = {
   backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
   orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
   orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
-  orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.25 … 3.0
+  orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.20 … 3.75
   openscadLighting: false,               // true → world-space fixed lights matching OpenSCAD
   paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
   custPaneWidth: 280,                    // Customizer (right) pane width in px — restored across sessions
@@ -1326,9 +1326,9 @@ function optionLevel(paramName, value) {
 // exists, rebuilding the controls only if the scheme actually changed.
 function syncOrbitFromSettings() {
   const v = Number(settings.orbitSensitivity);
-  orbitSens = Number.isFinite(v) ? Math.max(0.2, Math.min(2.0, v)) : ORBIT_SENS_DEFAULT;
+  orbitSens = Number.isFinite(v) ? Math.max(0.15, Math.min(2.5, v)) : ORBIT_SENS_DEFAULT;
   const z = Number(settings.orbitZoom);
-  orbitZoom = Number.isFinite(z) ? Math.max(0.25, Math.min(3.0, z)) : ORBIT_ZOOM_DEFAULT;
+  orbitZoom = Number.isFinite(z) ? Math.max(0.20, Math.min(3.75, z)) : ORBIT_ZOOM_DEFAULT;
   const want = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
                                                        : ORBIT_SCHEME_DEFAULT;
   if (want !== orbitScheme) { orbitScheme = want; buildOrbitControls(); }
@@ -4461,10 +4461,10 @@ const SETTINGS_PANELS = {
     const sch = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
                                                          : ORBIT_SCHEME_DEFAULT;
     const sens = Number.isFinite(Number(settings.orbitSensitivity))
-      ? Math.max(0.2, Math.min(2.0, Number(settings.orbitSensitivity)))
+      ? Math.max(0.15, Math.min(2.5, Number(settings.orbitSensitivity)))
       : ORBIT_SENS_DEFAULT;
     const zoom = Number.isFinite(Number(settings.orbitZoom))
-      ? Math.max(0.25, Math.min(3.0, Number(settings.orbitZoom)))
+      ? Math.max(0.20, Math.min(3.75, Number(settings.orbitZoom)))
       : ORBIT_ZOOM_DEFAULT;
     const opt = (v, name, desc) => `
       <label class="opt"><input type="radio" name="orbitScheme" value="${v}"
@@ -4487,7 +4487,7 @@ const SETTINGS_PANELS = {
       <label>Rotation sensitivity</label>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="color:#666;">Slow</span>
-        <input type="range" id="set-orbitSensitivity" min="0.2" max="2.0"
+        <input type="range" id="set-orbitSensitivity" min="0.15" max="2.5"
           step="0.05" value="${sens}" style="flex:1;">
         <span style="color:#666;">Fast</span>
       </div>
@@ -4499,7 +4499,7 @@ const SETTINGS_PANELS = {
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="color:#666;">Small</span>
-        <input type="range" id="set-orbitZoom" min="0.25" max="3.0"
+        <input type="range" id="set-orbitZoom" min="0.20" max="3.75"
           step="0.05" value="${zoom}" style="flex:1;">
         <span style="color:#666;">Large</span>
       </div>
