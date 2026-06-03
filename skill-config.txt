@@ -19,8 +19,8 @@
 # ---------------------------------------------------------------
 
 beginner     = essential settings for a basic grid keyguard
-intermediate = adds layout bars, grid adjustments, mounting details, and frames
-advanced       = all settings, including split keyguards and free-form openings
+intermediate = adds more grid opening, mounting, and split keyguard options
+advanced     = all settings, including split keyguards and free-form openings
 
 
 # ---------------------------------------------------------------
@@ -149,7 +149,6 @@ Screw-on Straps                          = advanced
 Clip-on Straps                           = intermediate
 Posts                                    = advanced
 Shelf                                    = intermediate
-Slide-in Tabs                            = intermediate
 Raised Tabs                              = advanced
 
 
