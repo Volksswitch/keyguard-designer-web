@@ -1171,76 +1171,84 @@ let settings = loadSettings();
 // Maps section names and parameter names to the minimum skill level required
 // to see them. 'expert' always sees everything. Sections/params not listed here
 // default to 'beginner' (always visible).
+// Edit skill-config.txt, then run: node scripts/apply-skill-config.js
 const SKILL_LEVELS = ['beginner', 'intermediate', 'expert'];
 
+// @@SKILL_LEVEL_DESCS_START@@
+const SKILL_LEVEL_DESCS = {
+  beginner:     'essential settings for a basic grid keyguard',
+  intermediate: 'adds layout bars, grid adjustments, mounting details, and frames',
+  expert:       'all settings, including split keyguards and free-form openings',
+};
+// @@SKILL_LEVEL_DESCS_END@@
+
+// @@SKILL_CONFIG_START@@
 const SKILL_CONFIG = {
   sections: {
-    'App Layout in px':                       'intermediate',
-    'App Layout in mm':                       'intermediate',
-    'Bar Info':                               'intermediate',
-    'Grid Special Settings':                  'intermediate',
-    'Velcro Info':                            'intermediate',
-    'Clip-on Straps Info':                    'intermediate',
-    'Posts Info':                             'intermediate',
-    'Shelf Info':                             'intermediate',
-    'Slide-in Tabs Info':                     'intermediate',
-    'Raised Tabs Info':                       'intermediate',
-    'Keyguard Frame Info':                    'intermediate',
-    'Engraved/Embossed Text':                 'intermediate',
-    'Cell Inserts':                           'intermediate',
-    'Split Keyguard Info':                    'expert',
-    'Sloped Keyguard Edge Info':              'expert',
+    'App Layout in px': 'intermediate',
+    'App Layout in mm': 'intermediate',
+    'Bar Info': 'intermediate',
+    'Grid Special Settings': 'intermediate',
+    'Velcro Info': 'intermediate',
+    'Clip-on Straps Info': 'intermediate',
+    'Posts Info': 'intermediate',
+    'Shelf Info': 'intermediate',
+    'Slide-in Tabs Info': 'intermediate',
+    'Raised Tabs Info': 'intermediate',
+    'Keyguard Frame Info': 'intermediate',
+    'Engraved/Embossed Text': 'intermediate',
+    'Cell Inserts': 'intermediate',
+    'Split Keyguard Info': 'expert',
+    'Sloped Keyguard Edge Info': 'expert',
     'Free-form and Hybrid Keyguard Openings': 'expert',
-    'Special Actions and Settings':           'expert',
+    'Special Actions and Settings': 'expert',
   },
-  // Parameters whose visibility threshold differs from their parent section's.
-  // Only list overrides here; everything else inherits the section default.
   params: {
-    'screen_area_thickness':                        'intermediate',
-    'home_button_edge_slope':                       'intermediate',
-    'rotate_tablet_180_degrees':                    'intermediate',
-    'add_symmetric_openings':                       'intermediate',
-    'expose_ambient_light_sensors':                 'intermediate',
-    'case_opening_corner_radius':                   'intermediate',
-    'case_height':                                  'intermediate',
-    'case_width':                                   'intermediate',
-    'case_thickness':                               'intermediate',
-    'case_corner_radius':                           'intermediate',
-    'top_edge_compensation_for_tight_cases':        'intermediate',
-    'bottom_edge_compensation_for_tight_cases':     'intermediate',
-    'left_edge_compensation_for_tight_cases':       'intermediate',
-    'right_edge_compensation_for_tight_cases':      'intermediate',
-    'cell_shape':                                   'intermediate',
-    'cell_height_in_px':                            'intermediate',
-    'cell_width_in_px':                             'intermediate',
-    'cell_diameter':                                'intermediate',
+    'screen_area_thickness': 'intermediate',
+    'home_button_edge_slope': 'intermediate',
+    'rotate_tablet_180_degrees': 'intermediate',
+    'add_symmetric_openings': 'intermediate',
+    'expose_ambient_light_sensors': 'intermediate',
+    'case_opening_corner_radius': 'intermediate',
+    'case_height': 'intermediate',
+    'case_width': 'intermediate',
+    'case_thickness': 'intermediate',
+    'case_corner_radius': 'intermediate',
+    'top_edge_compensation_for_tight_cases': 'intermediate',
+    'bottom_edge_compensation_for_tight_cases': 'intermediate',
+    'left_edge_compensation_for_tight_cases': 'intermediate',
+    'right_edge_compensation_for_tight_cases': 'intermediate',
+    'cell_shape': 'intermediate',
+    'cell_height_in_px': 'intermediate',
+    'cell_width_in_px': 'intermediate',
+    'cell_diameter': 'intermediate',
   },
-  // Per-dropdown option thresholds. Options not listed are always visible.
   dropdownOptions: {
     'generate': {
-      'first half of keyguard':       'expert',
-      'second half of keyguard':      'expert',
-      'horizontal clip':              'intermediate',
-      'vertical clip':                'intermediate',
-      'horizontal mini clip':         'expert',
-      'vertical mini clip':           'expert',
-      'horizontal micro clip':        'expert',
-      'vertical micro clip':          'expert',
-      'keyguard frame':               'intermediate',
+      'first half of keyguard': 'expert',
+      'second half of keyguard': 'expert',
+      'horizontal clip': 'intermediate',
+      'vertical clip': 'intermediate',
+      'horizontal mini clip': 'expert',
+      'vertical mini clip': 'expert',
+      'horizontal micro clip': 'expert',
+      'vertical micro clip': 'expert',
+      'keyguard frame': 'intermediate',
       'first half of keyguard frame': 'expert',
-      'second half of keyguard frame':'expert',
-      'cell insert':                  'intermediate',
-      'Customizer settings':          'expert',
+      'second half of keyguard frame': 'expert',
+      'cell insert': 'intermediate',
+      'Customizer settings': 'expert',
     },
     'mounting_method': {
-      'Clip-on Straps':               'intermediate',
-      'Posts':                        'intermediate',
-      'Shelf':                        'intermediate',
-      'Slide-in Tabs':                'intermediate',
-      'Raised Tabs':                  'intermediate',
+      'Clip-on Straps': 'intermediate',
+      'Posts': 'intermediate',
+      'Shelf': 'intermediate',
+      'Slide-in Tabs': 'intermediate',
+      'Raised Tabs': 'intermediate',
     },
   },
 };
+// @@SKILL_CONFIG_END@@
 
 function skillRank(level) {
   return SKILL_LEVELS.indexOf(level);
@@ -4356,13 +4364,13 @@ const SETTINGS_PANELS = {
       </div>
       <label class="opt"><input type="radio" name="skillLevel" value="beginner"
         ${settings.skillLevel === 'beginner' ? 'checked' : ''}> <b>Beginner</b>
-        — essential settings for a basic grid keyguard</label>
+        — ${SKILL_LEVEL_DESCS.beginner}</label>
       <label class="opt"><input type="radio" name="skillLevel" value="intermediate"
         ${settings.skillLevel === 'intermediate' ? 'checked' : ''}> <b>Intermediate</b>
-        — adds layout bars, grid adjustments, mounting details, and frames</label>
+        — ${SKILL_LEVEL_DESCS.intermediate}</label>
       <label class="opt"><input type="radio" name="skillLevel" value="expert"
         ${settings.skillLevel === 'expert' ? 'checked' : ''}> <b>Expert</b>
-        — all settings, including split keyguards and free-form openings</label>
+        — ${SKILL_LEVEL_DESCS.expert}</label>
     </div>
     <div class="setting">
       <label>Preset list order</label>

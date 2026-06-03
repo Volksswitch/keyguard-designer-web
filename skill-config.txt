@@ -1,0 +1,106 @@
+# ================================================================
+# Keyguard Designer — Skill Level Configuration
+# ================================================================
+# Edit this file to control which Customizer settings are visible
+# at each experience level.  After saving, run:
+#   node scripts/apply-skill-config.js
+# ================================================================
+
+# Valid levels (from least to most experience):
+#   beginner   intermediate   expert
+#
+# A setting assigned to level X is visible to X and above.
+# Settings not listed are always visible (beginner default).
+
+
+# ---------------------------------------------------------------
+# Skill level descriptions
+# Shown in Settings > General next to each radio button.
+# ---------------------------------------------------------------
+
+beginner     = essential settings for a basic grid keyguard
+intermediate = adds layout bars, grid adjustments, mounting details, and frames
+expert       = all settings, including split keyguards and free-form openings
+
+
+# ---------------------------------------------------------------
+# Sections
+# Minimum skill level required to show each Customizer section.
+# Sections not listed here are always visible (beginner).
+# ---------------------------------------------------------------
+
+[sections]
+App Layout in px                         = intermediate
+App Layout in mm                         = intermediate
+Bar Info                                 = intermediate
+Grid Special Settings                    = intermediate
+Velcro Info                              = intermediate
+Clip-on Straps Info                      = intermediate
+Posts Info                               = intermediate
+Shelf Info                               = intermediate
+Slide-in Tabs Info                       = intermediate
+Raised Tabs Info                         = intermediate
+Keyguard Frame Info                      = intermediate
+Engraved/Embossed Text                   = intermediate
+Cell Inserts                             = intermediate
+Split Keyguard Info                      = expert
+Sloped Keyguard Edge Info                = expert
+Free-form and Hybrid Keyguard Openings   = expert
+Special Actions and Settings             = expert
+
+
+# ---------------------------------------------------------------
+# Individual parameters
+# Only list parameters whose threshold differs from their parent
+# section's level.  Uses the OpenSCAD variable name (underscores).
+# ---------------------------------------------------------------
+
+[params]
+screen_area_thickness                    = intermediate
+home_button_edge_slope                   = intermediate
+rotate_tablet_180_degrees                = intermediate
+add_symmetric_openings                   = intermediate
+expose_ambient_light_sensors             = intermediate
+case_opening_corner_radius               = intermediate
+case_height                              = intermediate
+case_width                               = intermediate
+case_thickness                           = intermediate
+case_corner_radius                       = intermediate
+top_edge_compensation_for_tight_cases    = intermediate
+bottom_edge_compensation_for_tight_cases = intermediate
+left_edge_compensation_for_tight_cases   = intermediate
+right_edge_compensation_for_tight_cases  = intermediate
+cell_shape                               = intermediate
+cell_height_in_px                        = intermediate
+cell_width_in_px                         = intermediate
+cell_diameter                            = intermediate
+
+
+# ---------------------------------------------------------------
+# Dropdown options
+# Options to hide at lower skill levels.
+# Each [dropdown: param_name] block covers one pull-down list.
+# Options not listed are always visible.
+# ---------------------------------------------------------------
+
+[dropdown: generate]
+first half of keyguard                   = expert
+second half of keyguard                  = expert
+horizontal clip                          = intermediate
+vertical clip                            = intermediate
+horizontal mini clip                     = expert
+vertical mini clip                       = expert
+horizontal micro clip                    = expert
+vertical micro clip                      = expert
+keyguard frame                           = intermediate
+first half of keyguard frame             = expert
+second half of keyguard frame            = expert
+cell insert                              = intermediate
+Customizer settings                      = expert
+
+[dropdown: mounting_method]
+Clip-on Straps                           = intermediate
+Posts                                    = intermediate
+Shelf                                    = intermediate
+Slide-in Tabs                            = intermediate
+Raised Tabs                              = intermediate
