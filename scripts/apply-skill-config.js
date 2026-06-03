@@ -15,7 +15,7 @@ const appPath    = join(root, 'app.html');
 const raw = readFileSync(configPath, 'utf8');
 const lines = raw.split('\n');
 
-const descs = {};         // { beginner: '...', intermediate: '...', expert: '...' }
+const descs = {};         // { beginner: '...', intermediate: '...', advanced: '...' }
 const sections = {};      // { 'Section Name': 'level', ... }
 const params = {};        // { 'param_name': 'level', ... }
 const dropdownOptions = {};  // { 'param_name': { 'option': 'level', ... }, ... }
@@ -57,8 +57,8 @@ for (const rawLine of lines) {
   const value = line.slice(eqIdx + 1).trim();
 
   if (currentBlock === 'top') {
-    if (!['beginner', 'intermediate', 'expert'].includes(key)) {
-      throw new Error(`Unknown description key "${key}". Expected beginner, intermediate, or expert.`);
+    if (!['beginner', 'intermediate', 'advanced'].includes(key)) {
+      throw new Error(`Unknown description key "${key}". Expected beginner, intermediate, or advanced.`);
     }
     descs[key] = value;
   } else if (currentBlock === 'sections') {
@@ -74,7 +74,7 @@ for (const rawLine of lines) {
   }
 }
 
-const REQUIRED_DESCS = ['beginner', 'intermediate', 'expert'];
+const REQUIRED_DESCS = ['beginner', 'intermediate', 'advanced'];
 for (const k of REQUIRED_DESCS) {
   if (!descs[k]) throw new Error(`Missing description for skill level "${k}"`);
 }
@@ -97,7 +97,7 @@ const descBlock = [
   'const SKILL_LEVEL_DESCS = {',
   `  beginner:     ${jsStr(descs.beginner)},`,
   `  intermediate: ${jsStr(descs.intermediate)},`,
-  `  expert:       ${jsStr(descs.expert)},`,
+  `  advanced:     ${jsStr(descs.advanced)},`,
   '};',
   '// @@SKILL_LEVEL_DESCS_END@@',
 ].join('\n');
