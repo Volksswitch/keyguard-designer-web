@@ -4456,13 +4456,13 @@ const SETTINGS_PANELS = {
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
     <div class="setting">
-      <label>Customizer mouse-wheel step</label>
+      <label>Customizer scroll step</label>
       <div style="color:#666; margin-bottom:8px;">
-        How many entries each notch of the mouse wheel scrolls the
-        Customizer panel. Pull-downs are not changed by wheel scrolling —
+        How many entries each scroll step advances the Customizer panel.
+        Pull-downs are not changed by scrolling —
         open the dropdown first to scroll its list.
       </div>
-      <label class="opt">Entries per notch
+      <label class="opt">Entries per step
         <input type="number" id="set-customizerWheelStep" min="1" max="10" step="1"
           value="${clampWheelStep(settings.customizerWheelStep)}" style="width:60px;"></label>
     </div>
@@ -4503,9 +4503,9 @@ const SETTINGS_PANELS = {
       </div>
     </div>
     <div class="setting">
-      <label>Mouse-wheel zoom amount</label>
+      <label>Zoom sensitivity</label>
       <div style="color:#666; margin-bottom:8px;">
-        How far each wheel notch zooms the view in or out.
+        How far each scroll step or pinch zooms the view in or out.
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="color:#666;">Small</span>
