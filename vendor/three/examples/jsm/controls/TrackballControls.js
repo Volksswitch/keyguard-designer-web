@@ -732,7 +732,10 @@ function onMouseWheel( event ) {
 
 		default:
 			// undefined, 0, assume pixels
-			this._zoomStart.y -= event.deltaY * 0.00025;
+			// macOS pinch gestures arrive as deltaMode=0 + ctrlKey=true with small
+			// deltaY values (~3-10); boost them 10× so pinch feels comparable to
+			// the mouse-wheel line-mode scale.
+			this._zoomStart.y -= event.deltaY * ( event.ctrlKey ? 0.0025 : 0.00025 );
 			break;
 
 	}

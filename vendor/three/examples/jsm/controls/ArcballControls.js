@@ -3079,7 +3079,9 @@ function onWheel( event ) {
 			event.preventDefault();
 			this.dispatchEvent( _startEvent );
 
-			const notchDeltaY = 125; //distance of one notch of mouse wheel
+			// macOS pinch arrives as ctrlKey=true + deltaMode=0 with small deltaY
+			// (~3-10); use a 10× smaller notch size so pinch produces perceptible zoom.
+			const notchDeltaY = ( event.ctrlKey || event.metaKey ) ? 12.5 : 125;
 			let sgn = event.deltaY / notchDeltaY;
 
 			let size = 1;
