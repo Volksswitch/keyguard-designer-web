@@ -1088,7 +1088,7 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
 // deployment cache key: it is NOT pre-bumped on dev, only at release, to match
 // this number. See RELEASING.md.
-const APP_RELEASE = 8;
+const APP_RELEASE = 9;
 
 // Two-line version banner: the running app release plus the loaded designer
 // file's version (read from its `keyguard_designer_version = NN;` line). Shown
@@ -3335,11 +3335,19 @@ container.addEventListener('click', e => {
 // - On a <select>: change selectedIndex by N (instead of the browser's default 1).
 // - Elsewhere in the panel: scroll by N row-heights so long sections turn at a
 //   pace the user can read; default 3 per notch, configurable in General settings.
+// - deltaMode 0 (pixel mode) means a trackpad/smooth-scroll device. Those send
+//   many small events per gesture, so treating each one as a full notch scrolls
+//   far too fast. Pass deltaY through directly for pixel-mode devices instead.
 container.addEventListener('wheel', e => {
   if (e.ctrlKey) return;  // leave browser zoom alone
-  const n = clampWheelStep(settings.customizerWheelStep);
-  const dir = Math.sign(e.deltaY);
-  if (!dir) return;
+  if (!e.deltaY) return;
+  e.preventDefault();
+
+  // Trackpad and other pixel-mode devices: use deltaY as-is.
+  if (e.deltaMode === 0) {
+    container.scrollTop += e.deltaY;
+    return;
+  }
 
   // Closed selects are deliberately NOT intercepted — wheeling over one
   // would otherwise change the selection (and kick off a render) without
@@ -3347,9 +3355,12 @@ container.addEventListener('wheel', e => {
   // The user must open the dropdown first; the popup is browser-managed,
   // so the wheel scrolls the option list there.
 
-  // Panel scroll: estimate a row height from a visible param (preferred) or
-  // the always-rendered section header. .param elements inside a collapsed
+  // Mouse wheel (line/page mode): snap to N rows per notch.
+  // Estimate a row height from a visible param (preferred) or the
+  // always-rendered section header. .param elements inside a collapsed
   // .section-body have offsetHeight == 0, so guard against picking one.
+  const n = clampWheelStep(settings.customizerWheelStep);
+  const dir = Math.sign(e.deltaY);
   let rowH = 0;
   for (const p of container.querySelectorAll('.param')) {
     if (p.offsetHeight > 0) { rowH = p.offsetHeight; break; }
@@ -3358,7 +3369,6 @@ container.addEventListener('wheel', e => {
     const h = container.querySelector('.section-header');
     rowH = h ? h.offsetHeight : 30;
   }
-  e.preventDefault();
   container.scrollTop += dir * n * rowH;
 }, { passive: false });
 
@@ -4446,13 +4456,13 @@ const SETTINGS_PANELS = {
         ${settings.presetOrder === 'creation' ? 'checked' : ''}> Creation order (newest at the end)</label>
     </div>
     <div class="setting">
-      <label>Customizer mouse-wheel step</label>
+      <label>Customizer scroll step</label>
       <div style="color:#666; margin-bottom:8px;">
-        How many entries each notch of the mouse wheel scrolls the
-        Customizer panel. Pull-downs are not changed by wheel scrolling —
+        How many entries each scroll step advances the Customizer panel.
+        Pull-downs are not changed by scrolling —
         open the dropdown first to scroll its list.
       </div>
-      <label class="opt">Entries per notch
+      <label class="opt">Entries per step
         <input type="number" id="set-customizerWheelStep" min="1" max="10" step="1"
           value="${clampWheelStep(settings.customizerWheelStep)}" style="width:60px;"></label>
     </div>
@@ -4493,9 +4503,9 @@ const SETTINGS_PANELS = {
       </div>
     </div>
     <div class="setting">
-      <label>Mouse-wheel zoom amount</label>
+      <label>Zoom sensitivity</label>
       <div style="color:#666; margin-bottom:8px;">
-        How far each wheel notch zooms the view in or out.
+        How far each scroll step or pinch zooms the view in or out.
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="color:#666;">Small</span>

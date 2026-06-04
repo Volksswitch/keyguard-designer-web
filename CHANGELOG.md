@@ -10,6 +10,18 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 9
+
+### Bug fixes
+
+- **Trackpad scrolling in the Customizer panel now feels natural.** On devices with a trackpad (such as a MacBook), scrolling the settings list previously jumped too far with each gesture. It now scrolls smoothly and proportionally, matching the feel of any other scrollable panel.
+
+- **Pinch-to-zoom now works in the 3D viewport.** Pinching or spreading on a trackpad to zoom the 3D view previously produced almost no movement, even with zoom sensitivity set to maximum. Pinch and spread now zoom in and out at a natural pace.
+
+### Improvements
+
+- **Scroll and zoom setting names are now input-device neutral.** "Customizer mouse-wheel step" is now **Customizer scroll step** and "Mouse-wheel zoom amount" is now **Zoom sensitivity**. The descriptions confirm that these settings apply to all pointing devices, not just a mouse wheel.
+
 ## Release 8
 
 ### New features
