@@ -10,6 +10,16 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 8
+
+### New features
+
+- **Skill level setting.** A new **Skill level** option in **Settings → General** filters the Customizer to show only the settings relevant to your experience. **Beginner** shows the essentials for a basic grid keyguard. **Intermediate** adds grid opening, mounting, and split-keyguard options. **Advanced** shows everything, including pixel measurements, frames, and engraved text.
+
+### Improvements
+
+- **Wider rotation and zoom slider ranges.** The rotation sensitivity and zoom speed sliders in **Settings → Viewport** now reach further in both directions, making it easier to dial in very slow or very fast viewport controls.
+
 ## Release 7
 
 ### Improvements

@@ -349,6 +349,16 @@ phrase is all Ken needs. Because CLAUDE.md is the only thing that syncs and is
 auto-loaded on both machines, a new phrase only works after OneDrive syncs this
 file AND the other machine's Claude session is restarted.
 
+## Trigger phrase — apply skill config
+
+When Ken says **"apply skill config"**, run from the web-app project root:
+```
+node scripts/apply-skill-config.js
+```
+This reads `skill-config.txt` and injects the updated `SKILL_LEVEL_DESCS` and `SKILL_CONFIG`
+into `app.html` between the `@@…_START@@` / `@@…_END@@` markers. No OpenSCAD or build step
+required. Takes under a second; run it in the foreground and report whether it succeeded.
+
 ## Trigger phrase — update web app visual references
 
 When Ken says **"update visual references"**, run in the **background**:

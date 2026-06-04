@@ -648,7 +648,7 @@ scene.add(camera);
 // to cover the same drag distance).
 const ORBIT_BASE_ROTATE   = { turntable: 1.0, tumble: 4.0, guided: 1.0 };
 const ORBIT_SCHEME_DEFAULT = 'tumble';
-const ORBIT_SENS_DEFAULT   = 0.6;       // 0.2 (slow) … 2.0 (fast)
+const ORBIT_SENS_DEFAULT   = 0.6;       // 0.15 (slow) … 2.5 (fast)
 
 // Mouse-wheel zoom amount. turntable/tumble drive `zoomSpeed` (a linear
 // multiplier; three's defaults are 1.0 and 1.2). guided (ArcballControls)
@@ -658,7 +658,7 @@ const ORBIT_SENS_DEFAULT   = 0.6;       // 0.2 (slow) … 2.0 (fast)
 // zoom per notch") across all three schemes.
 const ORBIT_BASE_ZOOM     = { turntable: 1.0, tumble: 1.2, guided: 1.0 };
 const ARCBALL_BASE_STEP   = 0.1;        // guided scaleFactor = 1 + step·mult
-const ORBIT_ZOOM_DEFAULT  = 1.0;        // 0.25 (slow) … 3.0 (fast)
+const ORBIT_ZOOM_DEFAULT  = 1.0;        // 0.20 (slow) … 3.75 (fast)
 
 // Mirror the persisted settings so the early controls build (which runs
 // before `settings` is initialised) never has to touch it.
@@ -1088,7 +1088,7 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
 // deployment cache key: it is NOT pre-bumped on dev, only at release, to match
 // this number. See RELEASING.md.
-const APP_RELEASE = 7;
+const APP_RELEASE = 8;
 
 // Two-line version banner: the running app release plus the loaded designer
 // file's version (read from its `keyguard_designer_version = NN;` line). Shown
@@ -1157,22 +1157,178 @@ const SETTINGS_DEFAULTS = {
   backgroundColor: DEFAULT_BG_COLOR,     // viewport background colour
   orbitScheme: ORBIT_SCHEME_DEFAULT,     // 'turntable' | 'tumble' | 'guided'
   orbitSensitivity: ORBIT_SENS_DEFAULT,  // rotate speed multiplier, 0.2 … 2.0
-  orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.25 … 3.0
+  orbitZoom: ORBIT_ZOOM_DEFAULT,         // wheel-zoom multiplier, 0.20 … 3.75
   openscadLighting: false,               // true → world-space fixed lights matching OpenSCAD
   paneTheme: 'light',                    // Customizer + Console theme: 'light' | 'dark'
   custPaneWidth: 280,                    // Customizer (right) pane width in px — restored across sessions
   consoleHeight: 180,                    // Console (bottom) pane height in px — restored across sessions
   customizerWheelStep: 3,                // entries advanced per mouse-wheel notch in the Customizer pane + dropdowns
+  skillLevel: 'beginner',               // 'beginner' | 'intermediate' | 'advanced'
 };
 let settings = loadSettings();
+
+// ===== Skill-level filtering =====
+// Maps section names and parameter names to the minimum skill level required
+// to see them. 'advanced' always sees everything. Sections/params not listed here
+// default to 'beginner' (always visible).
+// Edit skill-config.txt, then run: node scripts/apply-skill-config.js
+const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced'];
+
+// @@SKILL_LEVEL_DESCS_START@@
+const SKILL_LEVEL_DESCS = {
+  beginner:     'essential settings for a basic grid keyguard',
+  intermediate: 'adds grid opening, mounting, and split-keyguard options',
+  advanced:     'all settings, including pixel measurements, frames, and engraved text',
+};
+// @@SKILL_LEVEL_DESCS_END@@
+
+// @@SKILL_CONFIG_START@@
+const SKILL_CONFIG = {
+  sections: {
+    'Keyguard Basics': 'beginner',
+    'Tablet': 'beginner',
+    'Tablet Case': 'beginner',
+    'App Layout in px': 'advanced',
+    'App Layout in mm': 'beginner',
+    'Bar Info': 'beginner',
+    'Grid Info': 'beginner',
+    'Grid Special Settings': 'intermediate',
+    'Mounting Method': 'beginner',
+    'Velcro Info': 'advanced',
+    'Clip-on Straps Info': 'intermediate',
+    'Posts Info': 'advanced',
+    'Shelf Info': 'intermediate',
+    'Slide-in Tabs Info': 'beginner',
+    'Raised Tabs Info': 'advanced',
+    'Keyguard Frame Info': 'advanced',
+    'Split Keyguard Info': 'intermediate',
+    'Sloped Keyguard Edge Info': 'advanced',
+    'Engraved/Embossed Text': 'advanced',
+    'Cell Inserts': 'advanced',
+    'Free-form and Hybrid Keyguard Openings': 'intermediate',
+    'Special Actions and Settings': 'intermediate',
+  },
+  params: {
+    'type_of_keyguard': 'intermediate',
+    'orientation': 'intermediate',
+    'screen_area_thickness': 'intermediate',
+    'home_button_edge_slope': 'intermediate',
+    'rotate_tablet_180_degrees': 'intermediate',
+    'add_symmetric_openings': 'advanced',
+    'expose_ambient_light_sensors': 'intermediate',
+    'have_a_case': 'intermediate',
+    'case_height': 'intermediate',
+    'case_width': 'intermediate',
+    'case_thickness': 'intermediate',
+    'case_corner_radius': 'intermediate',
+    'case_to_screen_depth': 'intermediate',
+    'top_edge_compensation_for_tight_cases': 'intermediate',
+    'bottom_edge_compensation_for_tight_cases': 'intermediate',
+    'left_edge_compensation_for_tight_cases': 'intermediate',
+    'right_edge_compensation_for_tight_cases': 'intermediate',
+    'bar_edge_slope': 'intermediate',
+    'bar_corner_radius': 'intermediate',
+    'cell_shape': 'intermediate',
+    'cell_height_in_px': 'advanced',
+    'cell_width_in_px': 'advanced',
+    'cell_diameter': 'intermediate',
+    'cell_edge_slope': 'advanced',
+    'cell_top_edge_slope': 'advanced',
+    'cell_bottom_edge_slope': 'advanced',
+    'top_padding': 'advanced',
+    'bottom_padding': 'advanced',
+    'left_padding': 'advanced',
+    'right_padding': 'advanced',
+    'hide_grid_region': 'advanced',
+    'preferred_slide_in_tab_thickness': 'intermediate',
+    'horizontal_slide_in_tab_length': 'intermediate',
+    'vertical_slide_in_tab_length': 'intermediate',
+    'distance_between_horizontal_slide_in_tabs': 'intermediate',
+    'distance_between_vertical_slide_in_tabs': 'intermediate',
+    'unequal_left_side_of_case_opening': 'advanced',
+    'unequal_bottom_side_of_case_opening': 'advanced',
+    'unequal_left_side_of_case': 'advanced',
+    'unequal_bottom_side_of_case': 'advanced',
+    'move_screenshot_horizontally': 'advanced',
+    'move_screenshot_vertically': 'advanced',
+    'hide_screen_region': 'advanced',
+    'trim_to_rectangle_lower_left': 'advanced',
+    'trim_to_rectangle_upper_right': 'advanced',
+    'use_Laser_Cutting_best_practices': 'advanced',
+    'other_tablet_general_sizes': 'advanced',
+    'other_tablet_pixel_sizes': 'advanced',
+    'my_screen_openings': 'advanced',
+    'my_case_openings': 'advanced',
+    'my_case_additions': 'advanced',
+    'my_tablet_openings': 'advanced',
+  },
+  dropdownOptions: {
+    'generate': {
+      'first half of keyguard': 'intermediate',
+      'second half of keyguard': 'intermediate',
+      'horizontal clip': 'intermediate',
+      'vertical clip': 'intermediate',
+      'horizontal mini clip': 'advanced',
+      'vertical mini clip': 'advanced',
+      'horizontal micro clip': 'advanced',
+      'vertical micro clip': 'advanced',
+      'keyguard frame': 'advanced',
+      'first half of keyguard frame': 'advanced',
+      'second half of keyguard frame': 'advanced',
+      'cell insert': 'advanced',
+    },
+    'mounting_method': {
+      'Suction Cups': 'advanced',
+      'Velcro': 'advanced',
+      'Screw-on Straps': 'advanced',
+      'Clip-on Straps': 'intermediate',
+      'Posts': 'advanced',
+      'Shelf': 'intermediate',
+      'Raised Tabs': 'advanced',
+    },
+  },
+  dropdownFilters: {
+    'type_of_tablet': [
+      { pattern: '^iPad', level: 'beginner' },
+      { pattern: '^Dynavox', level: 'intermediate' },
+      { pattern: '^NovaChat', level: 'intermediate' },
+      { pattern: '^Accent', level: 'intermediate' },
+      { pattern: '^Via', level: 'intermediate' },
+      { pattern: '^GridPad', level: 'intermediate' },
+      { pattern: '.*', level: 'advanced' },
+    ],
+  },
+  hiddenParams: new Set([
+    'screenshot_filename',
+  ]),
+};
+// @@SKILL_CONFIG_END@@
+
+function skillRank(level) {
+  return SKILL_LEVELS.indexOf(level);
+}
+function meetsSkill(minLevel) {
+  return skillRank(settings.skillLevel) >= skillRank(minLevel || 'beginner');
+}
+
+// Minimum skill level required to see a given dropdown option value.
+// Checks exact dropdownOptions first, then ordered grep-regex dropdownFilters.
+function optionLevel(paramName, value) {
+  const exact = (SKILL_CONFIG.dropdownOptions[paramName] || {})[value];
+  if (exact) return exact;
+  for (const { pattern, level } of (SKILL_CONFIG.dropdownFilters[paramName] || [])) {
+    if (new RegExp(pattern, 'i').test(value)) return level;
+  }
+  return 'beginner';
+}
 
 // Adopt the persisted orbit scheme / sensitivity now that `settings`
 // exists, rebuilding the controls only if the scheme actually changed.
 function syncOrbitFromSettings() {
   const v = Number(settings.orbitSensitivity);
-  orbitSens = Number.isFinite(v) ? Math.max(0.2, Math.min(2.0, v)) : ORBIT_SENS_DEFAULT;
+  orbitSens = Number.isFinite(v) ? Math.max(0.15, Math.min(2.5, v)) : ORBIT_SENS_DEFAULT;
   const z = Number(settings.orbitZoom);
-  orbitZoom = Number.isFinite(z) ? Math.max(0.25, Math.min(3.0, z)) : ORBIT_ZOOM_DEFAULT;
+  orbitZoom = Number.isFinite(z) ? Math.max(0.20, Math.min(3.75, z)) : ORBIT_ZOOM_DEFAULT;
   const want = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
                                                        : ORBIT_SCHEME_DEFAULT;
   if (want !== orbitScheme) { orbitScheme = want; buildOrbitControls(); }
@@ -1243,6 +1399,10 @@ function onSettingsChanged(key) {
   if (key === 'openscadLighting') applyLighting();
   if (key === 'paneTheme') applyPaneTheme();
   if (key === 'orbitScheme' || key === 'orbitSensitivity' || key === 'orbitZoom') syncOrbitFromSettings();
+  if (key === 'skillLevel' && project) {
+    buildCustomizerForm(project.customizer);
+    populateFormFromPreset(project.currentPreset);
+  }
 }
 
 // ----- Appearance application (text sizes + viewport colours) -----
@@ -2975,6 +3135,16 @@ const container = document.getElementById('cust-sections');
 function buildCustomizerForm(sections) {
   container.innerHTML = '';
   for (const sec of sections) {
+    const secMin = SKILL_CONFIG.sections[sec.name] || 'beginner';
+    if (!meetsSkill(secMin)) continue;
+
+    const visibleParams = sec.params.filter(p => {
+      if (SKILL_CONFIG.hiddenParams.has(p.name)) return false;
+      const pMin = SKILL_CONFIG.params[p.name] || secMin;
+      return meetsSkill(pMin);
+    });
+    if (visibleParams.length === 0) continue;
+
     const div = document.createElement('div');
     div.className = 'section';
     div.dataset.section = sec.name;
@@ -2991,8 +3161,17 @@ function buildCustomizerForm(sections) {
     body.className = 'section-body';
     div.appendChild(header);
     div.appendChild(body);
-    for (const p of sec.params) {
-      body.appendChild(buildParamControl(p));
+    for (const p of visibleParams) {
+      // For dropdowns with per-option thresholds (exact or glob), pass a filtered copy.
+      if (p.control.kind === 'dropdown' &&
+          (SKILL_CONFIG.dropdownOptions[p.name] || SKILL_CONFIG.dropdownFilters[p.name])) {
+        const filtered = p.control.choices.filter(
+          c => meetsSkill(optionLevel(p.name, c.value))
+        );
+        body.appendChild(buildParamControl({ ...p, control: { ...p.control, choices: filtered } }));
+      } else {
+        body.appendChild(buildParamControl(p));
+      }
     }
     container.appendChild(div);
   }
@@ -4244,6 +4423,22 @@ function swatchGridHTML(list, selectedHex, group) {
 const SETTINGS_PANELS = {
   general: () => `
     <div class="setting">
+      <label>Skill level</label>
+      <div style="color:#666; margin-bottom:8px;">
+        Controls which settings are shown in the Customizer. Choose the level
+        that matches your experience with keyguard design.
+      </div>
+      <label class="opt"><input type="radio" name="skillLevel" value="beginner"
+        ${settings.skillLevel === 'beginner' ? 'checked' : ''}> <b>Beginner</b>
+        — ${SKILL_LEVEL_DESCS.beginner}</label>
+      <label class="opt"><input type="radio" name="skillLevel" value="intermediate"
+        ${settings.skillLevel === 'intermediate' ? 'checked' : ''}> <b>Intermediate</b>
+        — ${SKILL_LEVEL_DESCS.intermediate}</label>
+      <label class="opt"><input type="radio" name="skillLevel" value="advanced"
+        ${settings.skillLevel === 'advanced' ? 'checked' : ''}> <b>Advanced</b>
+        — ${SKILL_LEVEL_DESCS.advanced}</label>
+    </div>
+    <div class="setting">
       <label>Preset list order</label>
       <label class="opt"><input type="radio" name="presetOrder" value="alphabetical"
         ${settings.presetOrder === 'alphabetical' ? 'checked' : ''}> Alphabetical</label>
@@ -4266,10 +4461,10 @@ const SETTINGS_PANELS = {
     const sch = ORBIT_BASE_ROTATE[settings.orbitScheme] ? settings.orbitScheme
                                                          : ORBIT_SCHEME_DEFAULT;
     const sens = Number.isFinite(Number(settings.orbitSensitivity))
-      ? Math.max(0.2, Math.min(2.0, Number(settings.orbitSensitivity)))
+      ? Math.max(0.15, Math.min(2.5, Number(settings.orbitSensitivity)))
       : ORBIT_SENS_DEFAULT;
     const zoom = Number.isFinite(Number(settings.orbitZoom))
-      ? Math.max(0.25, Math.min(3.0, Number(settings.orbitZoom)))
+      ? Math.max(0.20, Math.min(3.75, Number(settings.orbitZoom)))
       : ORBIT_ZOOM_DEFAULT;
     const opt = (v, name, desc) => `
       <label class="opt"><input type="radio" name="orbitScheme" value="${v}"
@@ -4292,7 +4487,7 @@ const SETTINGS_PANELS = {
       <label>Rotation sensitivity</label>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="color:#666;">Slow</span>
-        <input type="range" id="set-orbitSensitivity" min="0.2" max="2.0"
+        <input type="range" id="set-orbitSensitivity" min="0.15" max="2.5"
           step="0.05" value="${sens}" style="flex:1;">
         <span style="color:#666;">Fast</span>
       </div>
@@ -4304,7 +4499,7 @@ const SETTINGS_PANELS = {
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="color:#666;">Small</span>
-        <input type="range" id="set-orbitZoom" min="0.25" max="3.0"
+        <input type="range" id="set-orbitZoom" min="0.20" max="3.75"
           step="0.05" value="${zoom}" style="flex:1;">
         <span style="color:#666;">Large</span>
       </div>
@@ -4414,6 +4609,9 @@ const SETTINGS_PANELS = {
 
 function renderSettingsPanel(cat) {
   settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
+  settingsPanel.querySelectorAll('input[type=radio][name=skillLevel]').forEach(r => {
+    r.addEventListener('change', () => { if (r.checked) setSetting('skillLevel', r.value); });
+  });
   settingsPanel.querySelectorAll('input[type=radio][name=presetOrder]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('presetOrder', r.value); });
   });
