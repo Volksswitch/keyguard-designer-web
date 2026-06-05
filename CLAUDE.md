@@ -54,15 +54,6 @@ the upstream .scad repo. This removes the vendoring problem entirely.
 
 ## Open bugs / improvements
 
-### Numeric input debounce
-Numeric Customizer parameters currently re-render on each keystroke / blur. Should re-render
-only when Enter is pressed or focus leaves the field after a real change.
-
-### App-layout-in-mm cell-cut bug
-When the sum of any "App layout in mm" parameters exceeds 5 mm, cell openings stop cutting all
-the way through. May be resolved by the Manifold thin-floor fix — re-test against current main
-before digging in.
-
 ### Manifold workaround redundancy (after the hole_cutter prism fix)
 The cell-floor "membrane" root cause turned out to be Manifold snapping the cell cutter's
 degenerate thin-slab `hull()` (the flat all-90 body) at exact round `cell_edge_chamfer` /
