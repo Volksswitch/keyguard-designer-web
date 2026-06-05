@@ -54,56 +54,35 @@ the upstream .scad repo. This removes the vendoring problem entirely.
 
 ## Open bugs / improvements
 
-### Manifold workaround redundancy (after the hole_cutter prism fix)
-The cell-floor "membrane" root cause turned out to be Manifold snapping the cell cutter's
-degenerate thin-slab `hull()` (the flat all-90 body) at exact round `cell_edge_chamfer` /
-`screen_area_thickness` values. `keyguard.scad`'s `hole_cutter` now builds that flat body as a
-single `linear_extrude` prism (CGAL-identical solid, no thin-slab hull), eliminating the snap at
-the source — same single-solid treatment already applied to the recess cutter (`hole_cutter2`).
-Once that `.scad` fix is in the upstream `keyguard.scad`, re-evaluate whether the two
-membrane-era workarounds in `app.html` are still doing anything:
-  - the `fudge` / `ff` = 0.05 bump (vs the `.scad` native 0.01), and
-  - `extend_through_cuts="yes"` (passed on both the preview and export paths).
-Test: render the round-value sweep (cec 0.5/1.0/1.5, sat 3.5) with `extend_through_cuts="no"`
-and `fudge=0.01`; if it stays clean (genus ~117, no membranes), those two are redundant for the
-membrane and can be simplified. This does NOT replace the CGAL "precision" export, which still
-handles the separate Manifold-vs-CGAL parts/bbox/area divergences (TC53, TC8, TC54, …). Treat any
-removal as its own change with its own geometry-gate run.
+### Manifold workaround redundancy — informational only (do not pursue unless a field problem)
+`app.html` injects `fudge=0.05`, `ff=0.05`, and `extend_through_cuts="yes"` as membrane-era
+workarounds. The root cause was fixed in `keyguard.scad` (`hole_cutter` prism refactor). These
+overrides may now be redundant for membranes, but removing them would require a geometry-gate run
+to confirm no regressions, and the risk/reward is low. Do not pursue unless membranes re-appear
+in the field or `extend_through_cuts` is retired for another reason.
 
-### WASM crash clusters (identified 2026-05-15 full-suite run)
+### WASM crash clusters — needs verification (identified 2026-05-15; may be resolved)
 - **Cluster 1 — zero/negative `cell_corner_radius` + all-90 slopes** (WASM frame
   `wasm-function[3256]:0x1d30f9`): TC19 step 2 (cr=−10), TC23 step 2 (cr=−5),
   TC28 step 1 (cr=0, sat>kt), TC29 step 2 (cr=0, sat>kt).
-- **Cluster 2 — Mount-related (TC18)**: step 1 ("No Mount") and step 5 ("Velcro") still crash;
-  step 2 (suction cups) and step 3 (screw-on straps) now pass.
-- **Cluster 3 — Test-spec mismatches, not WASM crashes**: TC0 step 1 (near-blank),
-  TC10 steps 3–4 (SVG generation), TC13 step 3 (`geometry: false`), TC46 step 4 (SVG).
-  These need the visual harness to learn about non-STL output kinds.
+  This is likely a geometry issue in `keyguard.scad` that manifests as a WASM crash. If still
+  reproducible, investigate in `keyguard.scad` first before treating as a WASM problem.
+- **Cluster 2 — Mount-related (TC18)**: step 1 ("No Mount") and step 5 ("Velcro") crashed as
+  of 2026-05-15. The `mounting_method` rename to `"- none -"` (2026-06-03) may have resolved
+  the "No Mount" crash. **Needs verification** — run TC18 steps 1 and 5 to confirm.
+- ~~**Cluster 3**~~ — **Resolved** (2026-05-xx): the visual harness now handles `geometry:false`
+  and `render:true` steps correctly (commits `d9cd710`, `6634299`); TC0/TC10/TC13/TC46 non-STL
+  steps are skipped for PNG diff as intended.
 
-### WASM OOM on heavy / no-recess (sat==kt) designs ("memory access out of bounds") — intermittent
-Heavy designs (dense grids — e.g. "…Grid Super Core 30 max rails" renders at ≈2× the geometry
-of the plain variant) and no-recess configs (`sat == kt` — note `sat = min(kt, sata)` clamps it
-to ≤ kt, so a user reaches this by setting `screen_area_thickness ≥ kt`) can crash a *live* render with
-`Render failed: memory access out of bounds` — an openscad-wasm OOM trap. The build has
-`ALLOW_MEMORY_GROWTH`, so the trap is a memory-*growth failure*, not a fixed ceiling: wasm32
-linear memory is a single contiguous ArrayBuffer, and because the app spins up a fresh wasm
-instance per render, a long-lived tab fragments its address space until a large contiguous grow
-can't be satisfied — even with free RAM. That's why it's intermittent: `Ctrl-Shift-R` (fresh
-tab) clears the fragmentation and the same design renders. Confirmed it is NOT a geometry bug and
-NOT membrane-related — the geometry/RTP gates, which get fresh memory per test, render these exact
-designs cleanly (e.g. "Fintie - Grid Super Core 30 max rails" passed in the RTP gate). Leads:
-reuse a single wasm instance instead of tearing down/recreating per render (less fragmentation);
-verify torn-down instances' ArrayBuffers are actually released; and/or pre-size the heap so growth
-never fires. NOTE pre-sizing needs a *rebuild* — it cannot be set from the web app with the
-current bundle: `openscad.js` creates its own internal memory (`wasmMemory = wasmExports["Vb"]`,
-exported, NOT imported) and has no `Module["INITIAL_MEMORY"]` / `wasmMemory` override hook, so
-`INITIAL_MEMORY` and the growth ceiling are baked into the `.wasm` at build time. To change it,
-rebuild openscad-wasm with `-sINITIAL_MEMORY=<large>` (optionally `-sALLOW_MEMORY_GROWTH=0` for a
-fixed buffer), or with `-sIMPORTED_MEMORY` so `app.html` can supply a pre-sized
-`WebAssembly.Memory({initial, maximum})` per instance at runtime. Caveat: wasm32 caps at 4 GB and
-a big buffer is reserved per instance, so pre-sizing pairs best with single-instance reuse. Also
-likely eased once the per-cell extender (`extend_through_cuts`) is retired (see "Manifold
-workaround redundancy") — it inflates the heap most on dense "max rails" grids.
+### WASM OOM on heavy / no-recess designs — deferred to future WASM release
+Intermittent `Render failed: memory access out of bounds` on dense grids and no-recess configs
+(`sat == kt`). Root cause: wasm32 address-space fragmentation from per-render instance teardown.
+`callMain` triggers `exitJS()`, which tears down the runtime — single-instance reuse is not
+possible with the current build. Fixing it requires rebuilding openscad-wasm with
+`-sIMPORTED_MEMORY` (so `app.html` can supply a pre-sized `WebAssembly.Memory` per instance) or
+`-sINITIAL_MEMORY=<large>` with `-sALLOW_MEMORY_GROWTH=0`. Workaround for users: `Ctrl-Shift-R`
+(fresh tab) clears fragmentation. **Deferred until a new openscad-wasm release provides the
+necessary build flags.**
 
 ### Image parity — camera model confirmed (2026-05-31)
 
@@ -154,31 +133,23 @@ Previous (before Turquoise colour normalisation + cell insert fix + ghost keygua
 - Poor (15–30%): extreme back-views of chamfered/sloped geometry
 - Bad (>30%): back-views where shadow discrepancy is maximum (TC5 steps 3/4)
 
-### Pre-existing Manifold↔CGAL geometry-gate divergences (TC5/8/46/47/54) — KEN to investigate
-The geometry gate (`tests/geometry.spec.mjs`, Manifold vs the `.scad` CGAL golden manifest) fails
-13 steps across Test Cases 5, 8, 46, 47, 53, 54. Confirmed **identical on `.scad` main** (baseline
-run 2026-05-24) → pre-existing Manifold-backend divergences, NOT caused by the v78 membrane fix.
-Volume matches the golden in nearly all; the divergences are in:
-- parts count — TC5 1≠3, TC47 16≠1 (embossed text @ depth +2), TC54 4≠1, TC8 1≠2;
-- bbox ~1 mm shifts — TC8, TC46;
-- surface area — TC8 up to 3.67%, TC53 3.8%.
-This is the class the CGAL "precision" export exists for. TC53 is separately documented in the
-`.scad` CLAUDE.md (non-manifold, 7 parts). Note the v78 fix *improved* several toward the golden
-(TC46 s3 laser-cut vol Δ16%→0.03%; TC53 vol/parts), but TC5 s1 gained ~32k reversed facets
-(non-gated / slicer-tolerated; TC5 already routes to CGAL precision).
-**ACTION (Ken):** investigate why Manifold diverges from CGAL on TC5/8/46/47/54 and whether each
-should auto-fall back to the CGAL precision export; report findings back.
+### Manifold↔CGAL geometry-gate divergences — mostly waivered; TC8 needs verification
+TC5, TC46a/b, TC47a, TC54 are explicitly waivered in `TOLERATED_DIVERGENCES` in
+`tests/geometry.spec.mjs` (parts-count and sub-mm bbox differences; same mesh content). TC53 is
+excluded from the geometry gate via `"geometry": false` in its `test.json`.
+**TC8 is the only case not waivered** — divergences: parts count 1≠2, bbox ~1 mm shifts, surface
+area up to 3.67%. **Needs verification**: run the geometry gate on TC8 to confirm whether it
+still fails and whether it warrants a `TOLERATED_DIVERGENCES` entry or auto-fallback to CGAL
+precision export.
 
-### RTP gate "golden" is the downloaded-website snapshot, not a current CGAL golden — KEN to clarify
-`tests/ready-to-print.spec.mjs` passed 292/292 (2026-05-24), but the deltas it prints are measured
-against `golden-rtp-stats.json` = the **downloaded-website** reference (a different design/version
-snapshot), so large deltas (e.g. `Δvol=+89.76%` on "Grid Super Core 30 max rails") are
-informational, not pass/fail. An RTP "pass" therefore confirms the design *renders* via Manifold,
-not that it *matches CGAL*. The meaningful Manifold-vs-CGAL RTP check is the separate "run the
-membrane comparison" (`compare-rtp-membranes.py` vs `golden-rtp-cgal-stats.json`) and/or
-regenerating the RTP CGAL golden.
-**ACTION (Ken):** decide whether the RTP gate should compare against the CGAL golden (a meaningful
-pass/fail) rather than/in addition to the website snapshot; report findings back.
+### RTP gate — architecture is intentional; CGAL golden captured 2026-05-25
+`tests/ready-to-print.spec.mjs` confirms all 292+ clinical designs *render* via Manifold (pass =
+no crash). It compares against `golden-rtp-stats.json` (website snapshot) for informational
+deltas only — large deltas are expected and are not pass/fail. This is intentional: the RTP spec
+is a render-health check, not a geometry-accuracy gate.
+The meaningful Manifold-vs-CGAL accuracy check is the separate **membrane comparison workflow**:
+`compare-rtp-membranes.py` vs `golden-rtp-cgal-stats.json` (captured 2026-05-25, in
+`tests/rtp/golden-stl/`). Run via trigger phrase "run the membrane comparison".
 
 ---
 
