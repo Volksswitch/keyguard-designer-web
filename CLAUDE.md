@@ -61,18 +61,13 @@ overrides may now be redundant for membranes, but removing them would require a 
 to confirm no regressions, and the risk/reward is low. Do not pursue unless membranes re-appear
 in the field or `extend_through_cuts` is retired for another reason.
 
-### WASM crash clusters — needs verification (identified 2026-05-15; may be resolved)
-- **Cluster 1 — zero/negative `cell_corner_radius` + all-90 slopes** (WASM frame
-  `wasm-function[3256]:0x1d30f9`): TC19 step 2 (cr=−10), TC23 step 2 (cr=−5),
-  TC28 step 1 (cr=0, sat>kt), TC29 step 2 (cr=0, sat>kt).
-  This is likely a geometry issue in `keyguard.scad` that manifests as a WASM crash. If still
-  reproducible, investigate in `keyguard.scad` first before treating as a WASM problem.
-- **Cluster 2 — Mount-related (TC18)**: step 1 ("No Mount") and step 5 ("Velcro") crashed as
-  of 2026-05-15. The `mounting_method` rename to `"- none -"` (2026-06-03) may have resolved
-  the "No Mount" crash. **Needs verification** — run TC18 steps 1 and 5 to confirm.
-- ~~**Cluster 3**~~ — **Resolved** (2026-05-xx): the visual harness now handles `geometry:false`
-  and `render:true` steps correctly (commits `d9cd710`, `6634299`); TC0/TC10/TC13/TC46 non-STL
-  steps are skipped for PNG diff as intended.
+### ~~WASM crash clusters~~ — **All resolved** (verified 2026-06-04)
+- **Cluster 1** (TC19/23/28/29 — zero/negative `cell_corner_radius`): all pass. Fixed by
+  `keyguard.scad` geometry changes since 2026-05-15.
+- **Cluster 2** (TC18 — "No Mount" step 1, "Velcro" step 5): both pass. Fixed by the
+  `mounting_method` rename to `"- none -"` (2026-06-03).
+- **Cluster 3** (TC0/10/13/46 — non-STL steps): resolved by harness changes `d9cd710`,
+  `6634299` (geometry:false / render:true steps correctly skipped).
 
 ### WASM OOM on heavy / no-recess designs — deferred to future WASM release
 Intermittent `Render failed: memory access out of bounds` on dense grids and no-recess configs
@@ -133,14 +128,12 @@ Previous (before Turquoise colour normalisation + cell insert fix + ghost keygua
 - Poor (15–30%): extreme back-views of chamfered/sloped geometry
 - Bad (>30%): back-views where shadow discrepancy is maximum (TC5 steps 3/4)
 
-### Manifold↔CGAL geometry-gate divergences — mostly waivered; TC8 needs verification
+### Manifold↔CGAL geometry-gate divergences — all resolved or waivered (verified 2026-06-04)
 TC5, TC46a/b, TC47a, TC54 are explicitly waivered in `TOLERATED_DIVERGENCES` in
 `tests/geometry.spec.mjs` (parts-count and sub-mm bbox differences; same mesh content). TC53 is
 excluded from the geometry gate via `"geometry": false` in its `test.json`.
-**TC8 is the only case not waivered** — divergences: parts count 1≠2, bbox ~1 mm shifts, surface
-area up to 3.67%. **Needs verification**: run the geometry gate on TC8 to confirm whether it
-still fails and whether it warrants a `TOLERATED_DIVERGENCES` entry or auto-fallback to CGAL
-precision export.
+**TC8** — previously showed parts 1≠2, bbox shifts, surface area up to 3.67%. Verified
+2026-06-04: all 6 steps pass at Δ0.000% volume and area, parts match. No waiver needed.
 
 ### RTP gate — architecture is intentional; CGAL golden captured 2026-05-25
 `tests/ready-to-print.spec.mjs` confirms all 292+ clinical designs *render* via Manifold (pass =
