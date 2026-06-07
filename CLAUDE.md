@@ -90,8 +90,10 @@ Both projects capture at 2048×1536. The camera model has been validated empiric
 - Camera placed at distance `vpd` from target (`vpt`) matches OpenSCAD's `dist` interpretation
 - Best-case evidence: TC40 step1 (`vpr=[30,0,0]`, `vpd=600`) achieves **0.86% parity** (excellent bucket)
 
-**Baseline after Mode 2 lighting + White background + Turquoise colour (2026-05-31):**
-38 excellent / 89 good / 24 fair / 7 poor / 2 bad / 5 no-web / 3 skipped (render:true) (160 scored pairs).
+**Baseline after merged-cell ridge work + TC59 add (2026-06-06):**
+38 excellent / 89 good / 36 fair / 2 poor / 3 bad / 5 no-web / 3 skipped (render:true) (168 scored pairs).
+New/changed cases (TC43 step1/2/3 ≈0.055–0.059, TC59 step1 ≈0.053) all land in the **fair** bucket — same parity range as TC43's siblings, no regression. The shift from the prior baseline (24 fair / 7 poor / 2 bad) is dominated by ridge-geometry recapture across the merged-cell suite, not a backend change.
+Previous (2026-05-31, Mode 2 + White bg + Turquoise): 38 excellent / 89 good / 24 fair / 7 poor / 2 bad / 5 no-web / 3 skipped (160 scored pairs).
 Previous (before Turquoise colour normalisation + cell insert fix + ghost keyguard fix): 27 excellent / 81 good / 24 fair / 25 poor / 5 bad.
 
 **Sources of remaining parity difference — all considered structural/expected:**
