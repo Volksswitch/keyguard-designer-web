@@ -289,6 +289,16 @@ keyguard-designer-web/
   follow it exactly; it is the source of truth for the release process.
 - Run `scripts/test.sh` (all layers) after any change. Scope visual tests to affected cases
   during iteration; run the full suite before declaring a feature complete.
+- **Progress logging (mandatory).** For ANY multi-step or long-running task, continuously
+  append progress to a single human-readable `progress.log` at this project root (derive the
+  path from `$env:OneDrive`, never hardcode a user path). It is the minimum bar — progress
+  must be discoverable there even when also tracked in the task list, chat, or a per-job log.
+  When work happens in a worktree, still write to the MAIN project root so Ken and the other
+  machine can `tail -f` it regardless of which worktree is active. Append timestamped lines as
+  steps start/finish (what, status, key result — render stats, PASS/FAIL counts, commit SHA);
+  do not overwrite. `progress.log` is gitignored — git is the code history, `progress.log` is
+  the work history. Per-job logs (e.g. `visual-update-progress.log`) may coexist, but a
+  one-line summary of each must still land in `progress.log`.
 
 ## Working by trigger phrase (no manual shell commands)
 
