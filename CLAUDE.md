@@ -294,11 +294,14 @@ keyguard-designer-web/
   path from `$env:OneDrive`, never hardcode a user path). It is the minimum bar — progress
   must be discoverable there even when also tracked in the task list, chat, or a per-job log.
   When work happens in a worktree, still write to the MAIN project root so Ken and the other
-  machine can `tail -f` it regardless of which worktree is active. Append timestamped lines as
-  steps start/finish (what, status, key result — render stats, PASS/FAIL counts, commit SHA);
-  do not overwrite. `progress.log` is gitignored — git is the code history, `progress.log` is
-  the work history. Per-job logs (e.g. `visual-update-progress.log`) may coexist, but a
-  one-line summary of each must still land in `progress.log`.
+  machine can `tail -f` it regardless of which worktree is active. **Every record MUST begin
+  with a wall-clock timestamp** in `[YYYY-MM-DD HH:MM:SS]` form (local time) — no exceptions;
+  when mirroring a background job's output, prepend the timestamp as you write each line.
+  Append timestamped lines as steps start/finish (what, status, key result — render stats,
+  PASS/FAIL counts, commit SHA); do not overwrite. `progress.log` is gitignored — git is the
+  code history, `progress.log` is the work history. Per-job logs (e.g.
+  `visual-update-progress.log`) may coexist, but their progress must flow into `progress.log`
+  LIVE (redirect/tee from the start, or a follower that mirrors new lines).
 
 ## Working by trigger phrase (no manual shell commands)
 
