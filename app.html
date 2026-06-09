@@ -114,7 +114,8 @@
   #viewport-status.error { color: #c00; background: rgba(255,220,220,0.9); }
   #viewport-status.ok { color: #060; background: rgba(220,250,220,0.9); }
   #viewport-toolbar { height: 32px; background: #e8e8e8; border-top: 1px solid #ccc;
-                      display: flex; align-items: center; gap: 4px; padding: 0 6px; flex-shrink: 0; }
+                      display: flex; align-items: center; gap: 4px; padding: 0 6px; flex-shrink: 0;
+                      overflow: hidden; }
   .vp-btn { background: none; border: 1px solid transparent; padding: 4px 6px; cursor: pointer;
             font-size: 14px; border-radius: 2px; color: #333; min-width: 26px; }
   .vp-btn:hover { background: #d8d8d8; border-color: #aaa; }
@@ -126,7 +127,7 @@
      the accent (#06c) / default (#333) button colour flow into the glyph. */
   .vp-btn svg { width: 16px; height: 16px; display: inline-block;
                 vertical-align: -3px; pointer-events: none; }
-  .vp-btn.split-main svg { margin-right: 5px; }
+  .export-group .vp-btn { white-space: nowrap; }
   .vp-sep { width: 1px; background: #bbb; height: 18px; margin: 0 4px; }
 
   /* ---------- console pane ---------- */
@@ -161,6 +162,9 @@
   #cust-header button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
   #cust-header .preset-btns { display: flex; gap: 4px; }
   #cust-header .preset-btns button { flex: 1; }
+  #cust-header .preset-btns #open-json-btn { flex: 0 0 32px; padding: 0; }
+  #cust-header .preset-btns #import-preset-btn { flex: 0 0 36px; padding: 0; }
+  #cust-header .preset-btns #import-preset-btn sup { font-size: 9px; margin-left: -2px; }
   #cust-header .preset-btns #export-preset-btn { flex: 0 0 32px; padding: 0; }
   #cust-sections { flex: 1; overflow-y: auto; }
   .section { border-bottom: 1px solid var(--kg-pane-border-soft); }
@@ -193,20 +197,9 @@
   .dragging, .dragging * { user-select: none !important; cursor: col-resize !important; }
   .dragging.row, .dragging.row * { cursor: row-resize !important; }
 
-  /* ---------- split button ---------- */
-  .split-btn { position: relative; display: inline-flex; }
-  .split-btn .split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; margin-right: 0; }
-  .split-btn .split-arrow { border-top-left-radius: 0; border-bottom-left-radius: 0;
-                             border-left: 1px solid #ccc; padding-left: 4px; padding-right: 4px;
-                             min-width: 18px; }
-  .split-menu { display: none; position: absolute; bottom: 100%; right: 0; background: #fff;
-                border: 1px solid #aaa; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 10;
-                min-width: 220px; padding: 3px 0; }
-  .split-menu.open { display: block; }
-  .split-item { padding: 5px 12px; cursor: pointer; font-size: 12px; display: flex;
-                justify-content: space-between; align-items: center; gap: 12px; }
-  .split-item:hover { background: #e8f0fc; }
-  .split-item .hint { color: #888; font-size: 11px; font-weight: normal; }
+  /* ---------- export text buttons ---------- */
+  .export-group { display: inline-flex; gap: 2px; }
+  .export-group .vp-btn { font-weight: bold; color: #06c; font-size: 11px; padding: 4px 5px; }
 
   /* ---------- dirty indicator: OpenSCAD-style "*" to the right (no text styling) ---------- */
   #dirty-marker { color: #a33; font-weight: bold; margin-left: 4px; display: none; }
@@ -413,16 +406,11 @@
             </svg>
           </button>
           <div class="vp-sep"></div>
-          <span class="split-btn">
-            <button class="vp-btn split-main" id="export-main" title="Export current design"
-                    style="font-weight:bold;color:#06c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M12 3V14"/><path d="M8 10.5 12 14.5 16 10.5"/><path d="M5 17V20H19V17"/></svg><span id="export-label">Export as STL</span></button><button class="vp-btn split-arrow" id="export-arrow"
-                    title="Choose export format" style="color:#06c">▾</button>
-            <div class="split-menu" id="export-menu">
-              <div class="split-item" data-fmt="STL">Export as STL <span class="hint">3D print</span></div>
-              <div class="split-item" data-fmt="STL-CGAL">Export as STL (precision) <span class="hint">slower &mdash; cleaner output</span></div>
-              <div class="split-item" data-fmt="SVG">Export as SVG <span class="hint">laser-cut</span></div>
-              <div class="split-item" data-fmt="PNG">Export as PNG <span class="hint">current view</span></div>
-            </div>
+          <span class="export-group">
+            <button class="vp-btn" id="export-stl" title="Export as STL (3D print)">STL</button>
+            <button class="vp-btn" id="export-stl-cgal" title="Export as STL — precision (slower, cleaner output)">STL*</button>
+            <button class="vp-btn" id="export-svg" title="Export as SVG (laser-cut)">SVG</button>
+            <button class="vp-btn" id="export-png" title="Export as PNG (current view)">PNG</button>
           </span>
           <div class="vp-sep" style="margin-left:auto;"></div>
           <button class="vp-btn" id="settings-btn" title="Settings">
@@ -477,6 +465,8 @@
           <button id="del-preset-btn" title="Delete current preset">−</button>
           <button id="save-preset-btn" title="Save current parameters to current preset" disabled>Save preset</button>
           <button id="reset-btn" title="Revert parameters to current preset baseline" disabled>Reset</button>
+          <button id="open-json-btn" title="Open a different preset JSON file…" disabled>📂</button>
+          <button id="import-preset-btn" title="Import presets from a JSON file into current file…" disabled>📂<sup>+</sup></button>
           <button id="export-preset-btn" title="Save current preset to a JSON file…" disabled>💾</button>
         </div>
       </div>
@@ -904,6 +894,14 @@ function clampGridDim(v) {
   return isFinite(n) ? Math.min(2000, Math.max(20, n)) : 256;
 }
 
+function gridColorsForBg(bgHex) {
+  const c = new THREE.Color(bgHex || DEFAULT_BG_COLOR);
+  const lum = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
+  if (lum > 0.55) return { minor: 0xc8c8c8, major: 0x888888, border: 0x606060 };
+  if (lum > 0.35) return { minor: 0x808080, major: 0x505050, border: 0x383838 };
+  return { minor: 0x484848, major: 0x787878, border: 0xa0a0a0 };
+}
+
 function buildGridGroup(gx, gy) {
   const hx = clampGridDim(gx) / 2;
   const hy = clampGridDim(gy) / 2;
@@ -928,16 +926,29 @@ function buildGridGroup(gx, gy) {
      hx,  hy, 0, -hx,  hy, 0,
     -hx,  hy, 0, -hx, -hy, 0,
   ];
+  const O = 0.15;
+  const majorThick = [];
+  for (let k = 0; k < major.length; k += 6) {
+    const x0 = major[k], y0 = major[k+1], z0 = major[k+2];
+    const x1 = major[k+3], y1 = major[k+4], z1 = major[k+5];
+    const dx = x1 - x0, dy = y1 - y0;
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const nx = -dy/len * O, ny = dx/len * O;
+    majorThick.push(x0+nx, y0+ny, z0, x1+nx, y1+ny, z1);
+    majorThick.push(x0-nx, y0-ny, z0, x1-nx, y1-ny, z1);
+  }
   const seg = (pts, color) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
   };
+  const gc = gridColorsForBg(settings.backgroundColor);
   const group = new THREE.Group();
-  group.add(seg(minor,  0xdedede));
-  group.add(seg(major,  0xa8a8a8));
-  group.add(seg(border, 0x707070));
-  return group;   // already in the XY plane; no rotation needed
+  group.add(seg(minor,  gc.minor));
+  group.add(seg(major,  gc.major));
+  group.add(seg(majorThick, gc.major));
+  group.add(seg(border, gc.border));
+  return group;
 }
 
 // Clearance between the model's lowest point and the grid plane, so the
@@ -1088,7 +1099,7 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
 // deployment cache key: it is NOT pre-bumped on dev, only at release, to match
 // this number. See RELEASING.md.
-const APP_RELEASE = 10;
+const APP_RELEASE = 11;
 
 // Two-line version banner: the running app release plus the loaded designer
 // file's version (read from its `keyguard_designer_version = NN;` line). Shown
@@ -1394,7 +1405,7 @@ function onSettingsChanged(key) {
   if (key === 'gridX' || key === 'gridY') rebuildGridIfVisible();
   if (['sectionHeadingPt','sectionHeadingWeight','sectionHeadingStyle',
        'paramTextPt','paramTextWeight','paramTextStyle'].includes(key)) applyTextSizes();
-  if (key === 'backgroundColor') applyBackgroundColor();
+  if (key === 'backgroundColor') { applyBackgroundColor(); rebuildGridIfVisible(); }
   if (key === 'itemColor') applyItemColor();
   if (key === 'openscadLighting') applyLighting();
   if (key === 'paneTheme') applyPaneTheme();
@@ -1715,7 +1726,7 @@ async function resetToNoProject() {
   document.getElementById('preset-input').value = '';
   document.getElementById('preset-list').innerHTML = '';
   document.getElementById('dirty-marker').classList.remove('visible');
-  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn', 'export-preset-btn']) {
+  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn', 'open-json-btn', 'import-preset-btn', 'export-preset-btn']) {
     const b = document.getElementById(id);
     if (b) b.disabled = true;
   }
@@ -1833,6 +1844,7 @@ async function openProject(presetHandle = null) {
 
   // Enumerate root-level files
   const files = {};         // name → Uint8Array
+  const fileHandles = {};  // name → FileSystemFileHandle
   let scadName = null;
   let jsonName = null;
   let oaText = '';
@@ -1845,6 +1857,7 @@ async function openProject(presetHandle = null) {
       const file = await handle.getFile();
       const buf = new Uint8Array(await file.arrayBuffer());
       files[name] = buf;
+      fileHandles[name] = handle;
       if (name === 'openings_and_additions.txt') oaMtime = file.lastModified;
       if (name.toLowerCase().endsWith('.scad')) {
         if (scadName) {
@@ -1923,7 +1936,8 @@ async function openProject(presetHandle = null) {
   const totalParams = customizer.reduce((n, s) => n + s.params.length, 0);
   logLine(`  parsed Customizer: ${customizer.length} sections, ${totalParams} parameters`);
 
-  project = { dirHandle, scadName, scadText, jsonName, jsonText, oaText, oaMtime, oaHash, files,
+  const jsonFileHandle = jsonName ? (fileHandles[jsonName] || null) : null;
+  project = { dirHandle, scadName, scadText, jsonName, jsonText, jsonFileHandle, oaText, oaMtime, oaHash, files,
               rawPresetNames, presetNames, currentPreset: presetNames[0], customizer, baselineParams: {},
               screenshotName: null, screenshotBytes: null, screenshotTexture: null,
               imageNames: [], selectedScreenshot: null, imgListSig: null,
@@ -3396,6 +3410,13 @@ function populateFormFromPreset(presetName) {
       } else {
         input.value = val;
       }
+      if (input.tagName === 'SELECT' && input.value !== String(val)) {
+        const hold = document.createElement('option');
+        hold.value = val; hold.textContent = val + ' ●';
+        hold.hidden = true;
+        input.prepend(hold);
+        input.value = val;
+      }
     }
   }
   // Mirror each range slider to its just-populated canonical number box
@@ -3416,6 +3437,22 @@ function currentFormValues() {
   for (const el of container.querySelectorAll('input,select')) {
     if (!el.dataset.paramName) continue;
     out[el.dataset.paramName] = el.value;
+  }
+  return out;
+}
+
+function allParamValues() {
+  if (!project || !project.customizer) return currentFormValues();
+  const dom = currentFormValues();
+  const presets = project.jsonText ? (JSON.parse(project.jsonText).parameterSets || {}) : {};
+  const saved = presets[project.currentPreset] || {};
+  const out = {};
+  for (const sec of project.customizer) {
+    for (const p of sec.params) {
+      if (p.name in dom) { out[p.name] = dom[p.name]; continue; }
+      if (p.name in saved) { out[p.name] = saved[p.name]; continue; }
+      out[p.name] = p.default.replace(/^"|"$/g, '');
+    }
   }
   return out;
 }
@@ -3752,7 +3789,9 @@ function updateDirty() {
   document.getElementById('dirty-marker').classList.toggle('visible', dirty);
   document.getElementById('save-preset-btn').disabled = !dirty;
   document.getElementById('reset-btn').disabled = !dirty;
-  document.getElementById('export-preset-btn').disabled = dirty || !project.currentPreset || project.currentPreset === 'design default values';
+  document.getElementById('open-json-btn').disabled = false;
+  document.getElementById('import-preset-btn').disabled = false;
+  document.getElementById('export-preset-btn').disabled = !project.currentPreset || project.currentPreset === 'design default values';
 }
 
 container.addEventListener('input', e => {
@@ -4038,39 +4077,11 @@ if (__fixturePath && __fixtureScad &&
   })();
 }
 
-// ---------- split button: Export ----------
-const exportMain = document.getElementById('export-main');
-const exportArrow = document.getElementById('export-arrow');
-const exportMenu = document.getElementById('export-menu');
-let currentExportFormat = 'STL';
-
-exportMain.addEventListener('click', () => exportCurrent(currentExportFormat));
-exportArrow.addEventListener('click', e => {
-  e.stopPropagation();
-  exportMenu.classList.toggle('open');
-});
-document.addEventListener('click', () => exportMenu.classList.remove('open'));
-// Label / tooltip differ for "STL-CGAL" (the precision escape hatch) — that
-// synthetic key isn't user-readable, and clinicians shouldn't see it in the
-// main-button label. Map known formats to clean display strings; everything
-// else falls back to "Export as <fmt>".
-const EXPORT_LABELS = {
-  'STL':      { label: 'Export as STL',             title: 'Export current design as STL' },
-  'STL-CGAL': { label: 'Export as STL (precision)', title: 'Export current design as STL — slower, cleaner output' },
-  'SVG':      { label: 'Export as SVG',             title: 'Export current design as SVG' },
-  'PNG':      { label: 'Export as PNG',             title: 'Export current design as PNG' },
-};
-exportMenu.addEventListener('click', e => {
-  const item = e.target.closest('.split-item');
-  if (!item) return;
-  currentExportFormat = item.dataset.fmt;
-  const meta = EXPORT_LABELS[currentExportFormat]
-    || { label: `Export as ${currentExportFormat}`, title: `Export current design as ${currentExportFormat}` };
-  document.getElementById('export-label').textContent = meta.label;
-  exportMain.title = meta.title;
-  exportMenu.classList.remove('open');
-  exportCurrent(currentExportFormat);
-});
+// ---------- export icon buttons ----------
+document.getElementById('export-stl').addEventListener('click', () => exportCurrent('STL'));
+document.getElementById('export-stl-cgal').addEventListener('click', () => exportCurrent('STL-CGAL'));
+document.getElementById('export-svg').addEventListener('click', () => exportCurrent('SVG'));
+document.getElementById('export-png').addEventListener('click', () => exportCurrent('PNG'));
 
 // ---------- preset select + dirty state ----------
 const dirtyMarker = document.getElementById('dirty-marker');
@@ -4219,7 +4230,7 @@ resetBtn.addEventListener('click', () => {
 document.getElementById('export-preset-btn').addEventListener('click', async () => {
   if (!project) return;
   const name = project.currentPreset;
-  const cur = currentFormValues();
+  const cur = allParamValues();
   const asStrings = {};
   for (const [k, v] of Object.entries(cur)) asStrings[k] = String(v);
   const text = buildPresetJson({ [name]: asStrings });
@@ -4256,8 +4267,129 @@ document.getElementById('export-preset-btn').addEventListener('click', async () 
   }
 });
 
+// ===== Pick a JSON preset file (shared by Open and Import) =====
+async function pickJsonFile() {
+  const pickerOpts = {
+    types: [{ description: 'JSON preset file', accept: { 'application/json': ['.json'] } }],
+    multiple: false,
+  };
+  if (project && project.dirHandle) pickerOpts.startIn = project.dirHandle;
+  if (window.showOpenFilePicker) {
+    const [handle] = await window.showOpenFilePicker(pickerOpts);
+    const file = await handle.getFile();
+    return { text: await file.text(), name: handle.name, handle };
+  }
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  const file = await new Promise((resolve, reject) => {
+    input.onchange = () => input.files.length ? resolve(input.files[0]) : reject(new Error('No file selected'));
+    input.click();
+  });
+  return { text: await file.text(), name: file.name };
+}
+
+function parseJsonPresets(text) {
+  let j;
+  try { j = JSON.parse(text); } catch { throw new Error('File is not valid JSON'); }
+  const sets = j.parameterSets;
+  if (!sets || typeof sets !== 'object') throw new Error('No parameterSets found in file');
+  return sets;
+}
+
+// ===== Open JSON: switch the active preset file =====
+document.getElementById('open-json-btn').addEventListener('click', async () => {
+  if (!project) return;
+  if (isDirty()) {
+    const proceed = await confirmDiscard(
+      `You have unsaved changes to "${project.currentPreset}". Opening a different JSON file will discard them.`);
+    if (!proceed) return;
+  }
+  try {
+    const { text, name, handle } = await pickJsonFile();
+    const sets = parseJsonPresets(text);
+    const rawPresetNames = ['design default values', ...Object.keys(sets)];
+    const presetNames = orderedPresetNames(rawPresetNames);
+    project.jsonText = text;
+    project.jsonName = name;
+    project.jsonFileHandle = handle || null;
+    project.rawPresetNames = rawPresetNames;
+    project.presetNames = presetNames;
+    project.currentPreset = presetNames[0];
+    rebuildPresetDropdown();
+    populateFormFromPreset(project.currentPreset);
+    updateDelPresetButton();
+    logLine(`Switched to preset file "${name}" — ${Object.keys(sets).length} preset(s)`);
+    scheduleRender();
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    logLine('Open JSON failed: ' + e.message);
+    console.error(e);
+  }
+});
+
+// ===== Import preset: merge presets from a JSON file into the current file =====
+document.getElementById('import-preset-btn').addEventListener('click', async () => {
+  if (!project) return;
+  // Request write permission BEFORE the file picker — the picker consumes the
+  // user gesture, so requestPermission() would fail if called afterwards.
+  if (project.dirHandle && !(await ensureWritePermission())) {
+    logLine('Import: write permission was not granted.');
+    return;
+  }
+  try {
+    const { text, name, handle } = await pickJsonFile();
+    if (handle && project.jsonFileHandle) {
+      if (await handle.isSameEntry(project.jsonFileHandle)) {
+        logLine(`"${name}" is already the active preset file — nothing to import.`);
+        return;
+      }
+    }
+    const sets = parseJsonPresets(text);
+    if (!Object.keys(sets).length) throw new Error('No presets found in file');
+    const existing = project.jsonText ? JSON.parse(project.jsonText) : { parameterSets: {} };
+    const merged = existing.parameterSets || {};
+    const importedNames = [];
+    for (const [pName, params] of Object.entries(sets)) {
+      let finalName = pName;
+      if (finalName in merged) {
+        let n = 1;
+        while (`${pName} (${n})` in merged) n++;
+        finalName = `${pName} (${n})`;
+      }
+      merged[finalName] = params;
+      if (!project.rawPresetNames.includes(finalName)) project.rawPresetNames.push(finalName);
+      importedNames.push(finalName);
+    }
+    project.presetNames = orderedPresetNames(project.rawPresetNames);
+    const newText = buildPresetJson(merged);
+    project.jsonText = newText;
+    // Flush to disk immediately — write to the active JSON file handle if
+    // available (may be outside the project folder), else the project folder.
+    const jsonName = project.jsonName || project.scadName.replace(/\.scad$/i, '') + '.json';
+    const fh = project.jsonFileHandle
+      || await project.dirHandle.getFileHandle(jsonName, { create: true });
+    const writable = await fh.createWritable();
+    await writable.write(newText);
+    await writable.close();
+    project.jsonName = jsonName;
+    if (!project.jsonFileHandle) project.jsonFileHandle = fh;
+    logLine(`Wrote ${importedNames.length} imported preset(s) to ${jsonName}`);
+    rebuildPresetDropdown();
+    await selectPreset(importedNames[0]);
+    logLine(`Imported ${importedNames.length} preset(s) from "${name}": ${importedNames.join(', ')}`);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    logLine('Import preset failed: ' + e.message);
+    console.error(e);
+  }
+});
+
 // ===== Save preset: write current form values back to the project's .json =====
 async function ensureWritePermission() {
+  if (project.jsonFileHandle) {
+    if ((await project.jsonFileHandle.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
+    return (await project.jsonFileHandle.requestPermission({ mode: 'readwrite' })) === 'granted';
+  }
   const h = project.dirHandle;
   if ((await h.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
   return (await h.requestPermission({ mode: 'readwrite' })) === 'granted';
@@ -4288,20 +4420,22 @@ async function writePresetToDisk(presetName) {
   const existing = project.jsonText ? JSON.parse(project.jsonText) : { parameterSets: {} };
   const parameterSets = existing.parameterSets || {};
 
-  const cur = currentFormValues();
+  const cur = allParamValues();
   const asStrings = {};
   for (const [k, v] of Object.entries(cur)) asStrings[k] = String(v);
   parameterSets[presetName] = asStrings;
 
   const newText = buildPresetJson(parameterSets);
   const jsonName = project.jsonName || project.scadName.replace(/\.scad$/i, '') + '.json';
-  const fileHandle = await project.dirHandle.getFileHandle(jsonName, { create: true });
+  const fileHandle = project.jsonFileHandle
+    || await project.dirHandle.getFileHandle(jsonName, { create: true });
   const writable = await fileHandle.createWritable();
   await writable.write(newText);
   await writable.close();
 
   project.jsonText = newText;
   project.jsonName = jsonName;
+  if (!project.jsonFileHandle) project.jsonFileHandle = fileHandle;
   if (!project.rawPresetNames.includes(presetName)) {
     project.rawPresetNames.push(presetName);
     project.presetNames = orderedPresetNames(project.rawPresetNames);
