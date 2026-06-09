@@ -10,6 +10,28 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 11
+
+### New features
+
+- **Open and import preset files.** Two new buttons next to the preset save (💾) button let you work with preset JSON files from anywhere on your computer. The **📂 Open** button switches to a different preset file — all add, delete, save, and reset actions then apply to that file. The **📂⁺ Import** button merges presets from another file into the current one; duplicate names are automatically renamed with a "(1)" suffix.
+
+- **Export preset button always available.** The 💾 export button is now enabled as soon as you make a change, without needing to save first.
+
+### Improvements
+
+- **Export buttons are now text labels.** The export toolbar shows **STL**, **STL\***, **SVG**, and **PNG** as compact text buttons instead of icons, making them easier to identify and leaving room for future formats.
+
+- **Grid adapts to background colour.** The reference grid now uses colours that contrast with whatever background you've chosen — lighter lines on dark backgrounds, darker lines on light ones. Major (50 mm) lines are drawn visibly thicker than minor (10 mm) lines.
+
+- **Toolbar no longer overflows into the Customizer.** When the browser window is narrow, the viewport toolbar clips cleanly instead of the export control sliding over the settings panel.
+
+### Bug fixes
+
+- **Saving a preset no longer drops hidden parameters.** Presets saved at Beginner or Intermediate skill level previously lost any parameter values that were hidden by the skill filter (such as "App Layout in px" settings). All parameter values are now preserved regardless of skill level.
+
+- **Imported advanced presets keep their values at lower skill levels.** Dropdown values from an advanced preset that aren't visible at the current skill level (such as specific mounting methods or tablet types) are now held in place so they round-trip correctly through save and reload.
+
 ## Release 9
 
 ### Bug fixes
