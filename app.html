@@ -558,6 +558,17 @@ camera.up.set(0, 0, 1);   // Z-up to match OpenSCAD convention
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  console.warn('WebGL context lost — will restore when the browser recovers.');
+});
+canvas.addEventListener('webglcontextrestored', () => {
+  console.warn('WebGL context restored — re-rendering.');
+  renderer.setPixelRatio(window.devicePixelRatio);
+  resize();
+  renderer.render(scene, camera);
+});
+
 // ── App-mode lighting (camera-relative) ─────────────────────────────────────
 // Lights are children of the camera and orbit with the view, the way
 // OpenSCAD's native viewer works. The camera-facing face stays lit no
