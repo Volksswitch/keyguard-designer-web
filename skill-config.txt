@@ -19,8 +19,8 @@
 # ---------------------------------------------------------------
 
 beginner     = essential settings for a basic grid keyguard
-intermediate = adds grid opening, mounting, and split-keyguard options
-advanced     = all settings, including pixel measurements, frames, and engraved text
+intermediate = adds pixel measurements, more grid, mounting, and split-keyguard options
+advanced     = all settings, frames, cell inserts, and engraved text
 
 
 # ---------------------------------------------------------------
@@ -33,7 +33,7 @@ advanced     = all settings, including pixel measurements, frames, and engraved 
 Keyguard Basics                          = beginner
 Tablet                                   = beginner
 Tablet Case                              = beginner
-App Layout in px                         = advanced
+App Layout in px                         = intermediate
 App Layout in mm                         = beginner
 Bar Info                                 = beginner
 Grid Info                                = beginner
@@ -84,17 +84,17 @@ bar_edge_slope                           = intermediate
 bar_corner_radius                        = intermediate
 
 cell_shape                               = intermediate
-cell_height_in_px                        = advanced
-cell_width_in_px                         = advanced
+cell_height_in_px                        = intermediate
+cell_width_in_px                         = intermediate
 cell_diameter                            = intermediate
 
 cell_edge_slope                          = advanced
 cell_top_edge_slope                      = advanced
 cell_bottom_edge_slope                   = advanced
-top_padding                              = advanced
-bottom_padding                           = advanced
-left_padding                             = advanced
-right_padding                            = advanced
+top_padding                              = intermediate
+bottom_padding                           = intermediate
+left_padding                             = intermediate
+right_padding                            = intermediate
 hide_grid_region                         = advanced
 
 preferred_slide_in_tab_thickness         = intermediate
