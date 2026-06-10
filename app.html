@@ -166,6 +166,14 @@
   #cust-header .preset-btns #import-preset-btn { flex: 0 0 36px; padding: 0; }
   #cust-header .preset-btns #import-preset-btn sup { font-size: 9px; margin-left: -2px; }
   #cust-header .preset-btns #export-preset-btn { flex: 0 0 32px; padding: 0; }
+  #skill-row { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+  #skill-row label { font-size: 11px; color: var(--kg-pane-text-dim); white-space: nowrap; }
+  #cust-header #skill-select { font-size: 11px; padding: 1px 3px; flex: 0 0 auto; }
+  .skill-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+               vertical-align: middle; margin-right: 1px; }
+  .skill-dot.beginner { background: #3a3; }
+  .skill-dot.intermediate { background: #da0; }
+  .skill-dot.advanced { background: #c33; }
   #cust-sections { flex: 1; overflow-y: auto; }
   .section { border-bottom: 1px solid var(--kg-pane-border-soft); }
   .section-header { padding: 7px 10px; cursor: pointer; user-select: none;
@@ -222,6 +230,7 @@
      picker: the action buttons and dirty marker are nonsensical, so hide them.
      The combo itself is hidden when there are no recents to offer. */
   #cust-header.no-project .preset-btns { display: none; }
+  #cust-header.no-project #skill-row { display: none; }
   #cust-header.no-project #dirty-marker { display: none; }
   #cust-header.no-project.no-recents .preset-row { display: none; }
 
@@ -468,6 +477,14 @@
           <button id="open-json-btn" title="Open a different preset JSON file…" disabled>📂</button>
           <button id="import-preset-btn" title="Import presets from a JSON file into current file…" disabled>📂<sup>+</sup></button>
           <button id="export-preset-btn" title="Save current preset to a JSON file…" disabled>💾</button>
+        </div>
+        <div id="skill-row">
+          <label for="skill-select">Skill level:</label>
+          <select id="skill-select">
+            <option value="beginner">🟢 Beginner</option>
+            <option value="intermediate">🟡 Intermediate</option>
+            <option value="advanced">🔴 Advanced</option>
+          </select>
         </div>
       </div>
 
@@ -1421,9 +1438,12 @@ function onSettingsChanged(key) {
   if (key === 'openscadLighting') applyLighting();
   if (key === 'paneTheme') applyPaneTheme();
   if (key === 'orbitScheme' || key === 'orbitSensitivity' || key === 'orbitZoom') syncOrbitFromSettings();
-  if (key === 'skillLevel' && project) {
-    buildCustomizerForm(project.customizer);
-    populateFormFromPreset(project.currentPreset);
+  if (key === 'skillLevel') {
+    document.getElementById('skill-select').value = settings.skillLevel;
+    if (project) {
+      buildCustomizerForm(project.customizer);
+      populateFormFromPreset(project.currentPreset);
+    }
   }
 }
 
@@ -4516,6 +4536,11 @@ document.getElementById('del-preset-btn').addEventListener('click', async () => 
     console.error(e);
   }
 });
+
+// ===== Skill-level header dropdown =====
+const skillSelect = document.getElementById('skill-select');
+skillSelect.value = settings.skillLevel;
+skillSelect.addEventListener('change', () => setSetting('skillLevel', skillSelect.value));
 
 document.getElementById('add-preset-btn').addEventListener('click', async () => {
   if (!project) return;
