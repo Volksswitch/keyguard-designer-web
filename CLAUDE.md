@@ -414,8 +414,13 @@ When Ken says **"publish scad version"**, run in the foreground:
 node scripts/publish-scad-version.mjs
 ```
 Reads `keyguard_designer_version` from the .scad repo's `keyguard.scad` and rewrites
-`latest_scad_version.json` (version, `keyguard_vNN.scad` filename, fixed raw URL; preserves any
-hand-written `notes`). Report the version it wrote. Ken still commits & pushes that file to
+`latest_scad_version.json` (version, `keyguard_vNN.scad` filename, fixed raw URL). The `notes`
+array — the **clinician-visible "What's new" list shown in the update dialog** — is sourced
+VERBATIM from the .scad project's `CHANGELOG.md` `## Version N` section, so the dialog always
+lists exactly the changelog's clinician-facing bullets for that version. **The script errors if
+that section is missing**, so a version is never advertised without its clinician notes — keep
+`CHANGELOG.md`'s `## Version N` bullets clinician-visible (dev-internal detail does not belong
+there). Report the version it wrote. Ken still commits & pushes that file to
 `Volksswitch/keyguard` (main) to go live — until pushed, the app's check 404s and silently
 no-ops.
 

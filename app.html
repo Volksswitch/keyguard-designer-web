@@ -4070,11 +4070,23 @@ function showUpdateModal({ loaded, latest, notes, oldScad, newScad }) {
     p1.append('Your project uses Keyguard Designer ', a, '. Version ', b, ' is now available.');
     msg.appendChild(p1);
 
-    if (notes) {
-      const pn = document.createElement('div');
-      pn.style.cssText = 'margin-top:8px; color:#555;';
-      pn.textContent = notes;
-      msg.appendChild(pn);
+    // Clinician-visible changes for the new version. Array → bulleted list;
+    // a bare string is still accepted for back-compat.
+    const noteItems = Array.isArray(notes) ? notes.filter(Boolean) : (notes ? [notes] : []);
+    if (noteItems.length) {
+      const intro = document.createElement('div');
+      intro.style.cssText = 'margin-top:10px; color:#555;';
+      intro.textContent = noteItems.length > 1 ? 'What’s new in this version:' : 'What’s new:';
+      msg.appendChild(intro);
+      const ul = document.createElement('ul');
+      ul.style.cssText = 'margin:4px 0 0; padding-left:20px; color:#555;';
+      for (const it of noteItems) {
+        const li = document.createElement('li');
+        li.style.marginBottom = '3px';
+        li.textContent = String(it);
+        ul.appendChild(li);
+      }
+      msg.appendChild(ul);
     }
 
     const p2 = document.createElement('div');
