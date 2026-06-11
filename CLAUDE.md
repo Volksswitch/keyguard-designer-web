@@ -398,3 +398,33 @@ export. Writes `output\ready-to-print\membrane-comparison.csv`. Then run
 severity with STL paths, a pattern breakdown, and a few passed designs to spot-check.
 NOTE: the results files come from the `ready-to-print.spec.mjs` Playwright run — if they're
 stale, re-run that spec first so the comparison reflects the current app/.scad.
+
+---
+
+## Trigger phrases — publish the version manifests (auto-update feature)
+
+The web app checks two tiny JSON manifests to offer updates: `latest_scad_version.json`
+(in the **.scad** repo) drives the in-app "Keyguard update available" modal at project open;
+`latest_app_version.json` (in **this** repo) lets a stale app force-refresh itself through the
+service worker (killing the Ctrl-Shift-R dance). Each has a regenerator script so the
+per-release edit is one command.
+
+When Ken says **"publish scad version"**, run in the foreground:
+```
+node scripts/publish-scad-version.mjs
+```
+Reads `keyguard_designer_version` from the .scad repo's `keyguard.scad` and rewrites
+`latest_scad_version.json` (version, `keyguard_vNN.scad` filename, fixed raw URL; preserves any
+hand-written `notes`). Report the version it wrote. Ken still commits & pushes that file to
+`Volksswitch/keyguard` (main) to go live — until pushed, the app's check 404s and silently
+no-ops.
+
+When Ken says **"publish app version"**, run in the foreground:
+```
+node scripts/publish-app-version.mjs
+```
+**RELEASE-TIME ONLY.** Reads `APP_RELEASE` from `app.html` and rewrites `latest_app_version.json`.
+Because `APP_RELEASE` is pre-bumped on `dev`, this manifest must move ONLY at release (like
+`CACHE_NAME`) — it belongs in the release merge to `main`, never on `dev`. The script prints the
+value and the current `CACHE_NAME` as a sanity check. See `RELEASING.md`, which folds this into
+the release ritual.
