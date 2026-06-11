@@ -10,6 +10,14 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 13
+
+### New features
+
+- **The app keeps your keyguard program up to date.** When you open a project, if a newer version of `keyguard.scad` has been published, the app offers to download it for you — replacing your old file and carrying your saved presets forward. You can update now, be reminded in a week, or skip. The notice lists what changed in the new version so you can decide whether you need it.
+
+- **The app updates itself automatically.** You no longer need to hard-refresh (Ctrl+Shift+R) to get the newest version of the app. When a new version is published, the app refreshes to it on its own the next time you open it or open a project.
+
 ## Release 12
 
 ### Improvements

@@ -298,6 +298,23 @@
   #confirm-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; margin-left: 8px; }
   #confirm-ok { font-weight: bold; color: #a33; }
 
+  /* ---------- Designer update modal ---------- */
+  #update-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+                    display: none; align-items: center; justify-content: center; z-index: 1150; }
+  #update-overlay.open { display: flex; }
+  #update-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                  width: 470px; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  #update-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
+                     background: #e8e8e8; font-size: 14px; }
+  #update-msg { padding: 16px 14px; font-size: 12px; line-height: 1.5; }
+  #update-msg b { color: #06c; }
+  #update-msg code { background: #eee; border: 1px solid #ddd; border-radius: 3px;
+                     padding: 0 3px; font-size: 11px; }
+  #update-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right;
+                   background: #f0f0f0; }
+  #update-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; margin-left: 8px; }
+  #update-now { font-weight: bold; color: #185; }
+
   /* ---------- export progress modal ---------- */
   #export-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
                     display: none; align-items: center; justify-content: center; z-index: 1200; }
@@ -528,6 +545,19 @@
     <div id="confirm-footer">
       <button id="confirm-cancel">Cancel</button>
       <button id="confirm-ok">Discard changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Designer update modal ============ -->
+<div id="update-overlay">
+  <div id="update-modal">
+    <h3>Keyguard update available</h3>
+    <div id="update-msg"></div>
+    <div id="update-footer">
+      <button id="update-skip">Skip</button>
+      <button id="update-snooze">Remind me in a week</button>
+      <button id="update-now">Update now</button>
     </div>
   </div>
 </div>
@@ -1127,18 +1157,46 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
 // deployment cache key: it is NOT pre-bumped on dev, only at release, to match
 // this number. See RELEASING.md.
-const APP_RELEASE = 12;
+const APP_RELEASE = 13;
 
 // Two-line version banner: the running app release plus the loaded designer
 // file's version (read from its `keyguard_designer_version = NN;` line). Shown
 // on project open, on project change, and on each on-demand render (the
 // view-render button) so a clinician always has both numbers near the top of
 // the console to copy into a support email.
-function logVersionBanner(scadName, scadText) {
+function parseDesignerVersion(scadText) {
   const m = (scadText || '').match(/keyguard_designer_version\s*=\s*(\d+)/);
-  logLine(`Keyguard Designer web app — release ${APP_RELEASE}`);
-  logLine(`Designer file "${scadName}" — version ${m ? m[1] : 'unknown'}`);
+  return m ? parseInt(m[1], 10) : null;
 }
+function logVersionBanner(scadName, scadText) {
+  const v = parseDesignerVersion(scadText);
+  logLine(`Keyguard Designer web app — release ${APP_RELEASE}`);
+  logLine(`Designer file "${scadName}" — version ${v != null ? v : 'unknown'}`);
+}
+
+// --- Auto-update: how the app learns the current keyguard.scad version ---
+// A tiny manifest in the .scad source repo (Volksswitch/keyguard), served with
+// CORS by raw.githubusercontent.com. Expected shape:
+//   { "version": 78,
+//     "scad_filename": "keyguard_v78.scad",
+//     "scad_url": "https://raw.githubusercontent.com/Volksswitch/keyguard/main/keyguard.scad",
+//     "notes": "optional one-line summary shown in the update prompt" }
+// `version` MUST equal the keyguard_designer_version inside the .scad it points
+// at (the app re-reads the version from the downloaded bytes and refuses a
+// mismatch). On ANY fetch failure (offline, or a managed network that blocks
+// github.com) the check is a silent no-op — a clinician is never blocked from
+// working with the file they already have.
+const DESIGNER_MANIFEST_URL = 'https://raw.githubusercontent.com/Volksswitch/keyguard/main/latest_scad_version.json';
+const UPDATE_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;   // "Remind me in a week"
+
+// Companion manifest for the WEB APP itself (parallel to the .scad one), living
+// in the web-app repo. `app_release` is the latest DEPLOYED release — it moves
+// only at release, in lockstep with sw.js's CACHE_NAME (NOT pre-bumped on dev
+// the way the APP_RELEASE constant is). When the running app is behind it, the
+// app force-refreshes through the service worker so clinicians stop needing the
+// manual Ctrl-Shift-R. Checked only at app load and project load (see
+// checkForAppUpdate), where there can be no unsaved edits to disturb.
+const APP_MANIFEST_URL = 'https://raw.githubusercontent.com/Volksswitch/keyguard-designer-web/main/latest_app_version.json';
 
 // Reports the currently loaded screenshot image, matching rescanScreenshot's
 // existing wording. Logged with the version banner on an on-demand render.
@@ -2004,6 +2062,189 @@ async function openProject(presetHandle = null) {
   logLine(`Project ready — auto-rendering "${project.currentPreset}"...`);
   await doRender();
   startWatcher();
+  // Non-blocking: check whether a newer keyguard.scad has been published and,
+  // if so, offer to update. Never awaited — a slow or blocked fetch must not
+  // hold up the viewport, and any failure is swallowed silently.
+  checkForDesignerUpdate().catch(() => {});
+  // Same here for the web app itself: a stale shell force-refreshes now, while
+  // the just-loaded project has no unsaved edits to lose.
+  checkForAppUpdate(swRegistration).catch(() => {});
+}
+
+// Fetches the version manifest from the .scad source repo and, when it reports
+// a version newer than the loaded file, prompts the clinician to update (with a
+// one-week snooze). No-ops silently on any fetch failure so offline / locked-
+// down networks degrade cleanly to "keep working with the current file".
+async function checkForDesignerUpdate() {
+  if (!project || !project.dirHandle) return;     // only real, writable folder projects (not test fixtures)
+  const loaded = parseDesignerVersion(project.scadText);
+  if (loaded == null) return;                      // can't read a version — don't nag
+
+  let manifest;
+  try {
+    const resp = await fetch(DESIGNER_MANIFEST_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!resp.ok) return;
+    manifest = await resp.json();
+  } catch {
+    return;   // offline, or github.com blocked on this network — silent no-op
+  }
+
+  const latest = Number(manifest && manifest.version);
+  if (!Number.isFinite(latest) || latest <= loaded) return;   // already current
+
+  // Honour an active "remind me in a week" — but a version newer than the one
+  // the clinician postponed re-prompts immediately.
+  const sn = settings.updateSnooze;
+  if (sn && sn.until > Date.now() && sn.forVersion >= latest) return;
+
+  const oldScad = project.scadName;
+  const newScad = manifest.scad_filename || oldScad;
+  const choice = await showUpdateModal({ loaded, latest, notes: manifest.notes, oldScad, newScad });
+
+  if (choice === 'update') {
+    await applyDesignerUpdate(manifest);
+  } else if (choice === 'snooze') {
+    setSetting('updateSnooze', { until: Date.now() + UPDATE_SNOOZE_MS, forVersion: latest });
+    logLine(`Update to v${latest} postponed for one week.`);
+  } else {
+    logLine(`Update to v${latest} skipped — you'll be reminded next time you open this project.`);
+  }
+}
+
+// Performs the swap: download → write-new → rename presets → delete-old →
+// restart. Write-before-delete ordering means an interrupted update never
+// leaves the folder empty — the worst case is a harmless extra file, which the
+// restart's "exactly one .scad" scan surfaces.
+async function applyDesignerUpdate(manifest) {
+  const dir = project.dirHandle;
+  const oldScad = project.scadName;
+  const oldJson = project.jsonName;                       // may be null (no presets file)
+  const newScad = manifest.scad_filename || oldScad;
+  const newBase = newScad.replace(/\.scad$/i, '');
+  const newJson = oldJson ? newBase + '.json' : null;     // carry presets forward under the new name
+
+  setStatus('Updating keyguard…', 'rendering');
+  logLine(`Updating designer "${oldScad}" → "${newScad}" (v${manifest.version})…`);
+
+  // 1. Download the replacement FIRST — before touching the folder. Any failure
+  //    here leaves the clinician's files completely untouched.
+  let scadBytes;
+  try {
+    const resp = await fetch(manifest.scad_url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    scadBytes = new Uint8Array(await resp.arrayBuffer());
+  } catch (e) {
+    logLine(`  ERROR downloading update: ${e.message} — no changes made.`);
+    setStatus('Update failed (download error) — your files are unchanged.', 'error');
+    return;
+  }
+  // Guard against a stale/mispointed manifest: the bytes must carry the exact
+  // version the manifest promised, or we abort without changing anything.
+  const dl = parseDesignerVersion(new TextDecoder().decode(scadBytes));
+  if (dl !== Number(manifest.version)) {
+    logLine(`  ERROR: downloaded file is v${dl}, manifest promised v${manifest.version} — aborting, no changes made.`);
+    setStatus('Update failed (version mismatch) — your files are unchanged.', 'error');
+    return;
+  }
+
+  // 2. Suspend the folder watcher: during the swap the folder briefly holds two
+  //    .scad files (or, mid-write, an inconsistent set) and a poll would either
+  //    error or kick off a stray re-render.
+  stopWatcher();
+
+  try {
+    // 3. WRITE the new files before deleting the old ones.
+    const scadHandle = await dir.getFileHandle(newScad, { create: true });
+    const sw = await scadHandle.createWritable();
+    await sw.write(scadBytes);
+    await sw.close();
+    if ((await scadHandle.getFile()).size === 0) throw new Error('written .scad is empty');
+
+    if (oldJson && newJson && newJson !== oldJson) {
+      const jsonBytes = new Uint8Array(await (await (await dir.getFileHandle(oldJson)).getFile()).arrayBuffer());
+      const newJsonHandle = await dir.getFileHandle(newJson, { create: true });
+      const jw = await newJsonHandle.createWritable();
+      await jw.write(jsonBytes);
+      await jw.close();
+    }
+
+    // 4. New files are safely on disk — now remove the superseded originals.
+    //    Guarded so an in-place version bump (same filename) doesn't self-delete.
+    if (newScad !== oldScad) await dir.removeEntry(oldScad);
+    if (oldJson && newJson && newJson !== oldJson) await dir.removeEntry(oldJson);
+
+    logLine(`  Update complete — now running v${manifest.version}. Restarting project…`);
+  } catch (e) {
+    // Leave whatever landed in place and fall through to a restart, which
+    // re-scans and re-validates the folder (and surfaces any "two .scad" state).
+    logLine(`  WARNING during update: ${e.message}. Restarting to re-scan the folder…`);
+  }
+
+  // 5. Drop any snooze and restart against the SAME granted handle (no picker,
+  //    no page reload) so the Customizer, version banner, and preset list all
+  //    rebuild from the new file.
+  if (settings.updateSnooze) setSetting('updateSnooze', null);
+  await openProject(dir);
+}
+
+// --- Web-app self-update -------------------------------------------------
+// Service-worker registration handle plus one-shot reload state. The reload is
+// ARMED only by a load-time check (below), so the browser's own background SW
+// updates can never refresh the page out from under a clinician mid-design.
+let swRegistration = null;
+let appReloadArmed = false;
+let appReloaded    = false;
+
+// Compares the running APP_RELEASE against the published one and, if behind,
+// force-refreshes through the service worker. Called only at app load and at
+// project load — moments where there are provably no unsaved edits. No-ops
+// silently on any fetch failure (offline / github blocked) and on dev/localhost
+// (no service worker registered).
+async function checkForAppUpdate(reg) {
+  if (!reg) return;                          // no SW (dev/localhost) — nothing to refresh through
+  let latest;
+  try {
+    const r = await fetch(APP_MANIFEST_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    latest = Number((await r.json()).app_release);
+  } catch {
+    return;   // offline, or github.com blocked on this network — silent no-op
+  }
+  if (!Number.isFinite(latest) || latest <= APP_RELEASE) return;   // already current
+
+  // Loop guard: if we already forced a refresh for this exact version in this
+  // tab and we're STILL behind, the deploy or cache is inconsistent — stop
+  // rather than reload forever.
+  if (Number(sessionStorage.getItem('kg_app_update_tried')) === latest) {
+    logLine(`App is still release ${APP_RELEASE} after trying to update to ${latest}. ` +
+            `If this persists, hard-refresh once with Ctrl-Shift-R.`);
+    return;
+  }
+  sessionStorage.setItem('kg_app_update_tried', String(latest));
+
+  logLine(`New app release ${latest} published (running ${APP_RELEASE}) — updating and reloading…`);
+  setStatus('Updating to the latest app version…', 'rendering');
+  appReloadArmed = true;
+
+  // Pull the new worker. With skipWaiting() in sw.js it activates as soon as it
+  // installs, firing controllerchange → the armed reload handler.
+  try { await reg.update(); } catch {}
+
+  // Fallback: if no controllerchange arrives (the SW was already current but the
+  // cached shell is somehow behind), clear caches and reload to guarantee fresh
+  // bytes. This terminates — the reloaded app's APP_RELEASE then matches the
+  // manifest and the guard above suppresses any repeat.
+  setTimeout(async () => {
+    if (appReloaded) return;
+    try {
+      if (window.caches) {
+        const ks = await caches.keys();
+        await Promise.all(ks.map(k => caches.delete(k)));
+      }
+    } catch {}
+    appReloaded = true;
+    location.reload();
+  }, 8000);
 }
 
 // Test-only fixture loader. Bypasses the File System Access picker and
@@ -3814,6 +4055,72 @@ function confirmDiscard(message) {
   });
 }
 
+// Three-button update prompt. Resolves to 'update' | 'snooze' | 'skip'
+// (Escape == 'skip'). Message is built with textContent/DOM nodes so nothing
+// from the manifest can inject markup.
+function showUpdateModal({ loaded, latest, notes, oldScad, newScad }) {
+  return new Promise(resolve => {
+    const ov  = document.getElementById('update-overlay');
+    const msg = document.getElementById('update-msg');
+    msg.textContent = '';
+
+    const p1 = document.createElement('div');
+    const a = document.createElement('b'); a.textContent = 'v' + loaded;
+    const b = document.createElement('b'); b.textContent = 'v' + latest;
+    p1.append('Your project uses Keyguard Designer ', a, '. Version ', b, ' is now available.');
+    msg.appendChild(p1);
+
+    // Clinician-visible changes for the new version. Array → bulleted list;
+    // a bare string is still accepted for back-compat.
+    const noteItems = Array.isArray(notes) ? notes.filter(Boolean) : (notes ? [notes] : []);
+    if (noteItems.length) {
+      const intro = document.createElement('div');
+      intro.style.cssText = 'margin-top:10px; color:#555;';
+      intro.textContent = noteItems.length > 1 ? 'What’s new in this version:' : 'What’s new:';
+      msg.appendChild(intro);
+      const ul = document.createElement('ul');
+      ul.style.cssText = 'margin:4px 0 0; padding-left:20px; color:#555;';
+      for (const it of noteItems) {
+        const li = document.createElement('li');
+        li.style.marginBottom = '3px';
+        li.textContent = String(it);
+        ul.appendChild(li);
+      }
+      msg.appendChild(ul);
+    }
+
+    const p2 = document.createElement('div');
+    p2.style.cssText = 'margin-top:12px;';
+    const oc = document.createElement('code'); oc.textContent = oldScad;
+    const nc = document.createElement('code'); nc.textContent = newScad;
+    p2.append('“Update now” will download the new file from GitHub, replace ', oc,
+              ' with ', nc, ', carry your saved presets forward, and reload the project.');
+    msg.appendChild(p2);
+
+    const now    = document.getElementById('update-now');
+    const snooze = document.getElementById('update-snooze');
+    const skip   = document.getElementById('update-skip');
+    function cleanup(val) {
+      ov.classList.remove('open');
+      now.removeEventListener('click', onNow);
+      snooze.removeEventListener('click', onSnooze);
+      skip.removeEventListener('click', onSkip);
+      document.removeEventListener('keydown', onKey);
+      resolve(val);
+    }
+    function onNow()    { cleanup('update'); }
+    function onSnooze() { cleanup('snooze'); }
+    function onSkip()   { cleanup('skip'); }
+    function onKey(e)   { if (e.key === 'Escape') cleanup('skip'); }
+    now.addEventListener('click', onNow);
+    snooze.addEventListener('click', onSnooze);
+    skip.addEventListener('click', onSkip);
+    document.addEventListener('keydown', onKey);
+    ov.classList.add('open');
+    now.focus();
+  });
+}
+
 function updateDirty() {
   if (!project) return;
   const dirty = isDirty();
@@ -4947,7 +5254,16 @@ if ('serviceWorker' in navigator) {
     // Also drop any cache a prior SW left behind, so nothing stale lingers.
     if (window.caches) caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
   } else {
-    navigator.serviceWorker.register('./sw.js');
+    // Reload exactly once when a newer worker takes control — but ONLY when a
+    // load-time checkForAppUpdate armed it, so the browser's own background SW
+    // updates can never refresh the page out from under a clinician mid-design.
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (appReloadArmed && !appReloaded) { appReloaded = true; location.reload(); }
+    });
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      swRegistration = reg;
+      checkForAppUpdate(reg).catch(() => {});   // app-load staleness check
+    }).catch(() => {});
   }
 }
 </script>

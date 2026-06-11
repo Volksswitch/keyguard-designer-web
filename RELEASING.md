@@ -83,11 +83,25 @@ Now update `CHANGELOG.md`: rename the **`## Unreleased (next release)`** heading
 section above it for the next cycle. The changelog is clinician-facing — keep entries to
 what a clinician can see or do differently; leave test/build/tooling changes out.
 
-Finish the atomic commit (the `--no-commit` above left the merge staged; this single
-commit *is* the merge commit, now carrying the cache + release + changelog bump too):
+Now update **`latest_app_version.json`** so the app self-updater knows this release is live.
+It tracks the *deployed* `APP_RELEASE` and moves **only here, at release** — exactly like
+`CACHE_NAME`, and never on `dev`. Regenerate it from the (now-correct) `APP_RELEASE`:
 
 ```
-git add sw.js app.html CHANGELOG.md
+node scripts/publish-app-version.mjs        # or say "publish app version" to Claude
+```
+
+The script prints the `app_release` it wrote and the current `CACHE_NAME` — confirm the number
+matches the release you're shipping before committing. (Edit the `notes` line by hand if you
+want a clinician-facing "what's new"; the script preserves it on future runs.) A stale or
+pre-bumped value here would bounce clinicians through a forced refresh to a build that isn't
+live, so only ever commit it as part of this ritual.
+
+Finish the atomic commit (the `--no-commit` above left the merge staged; this single
+commit *is* the merge commit, now carrying the cache + release + changelog + app-manifest bump):
+
+```
+git add sw.js app.html CHANGELOG.md latest_app_version.json
 git commit -m "Release: <one-line summary of the chunk> (cache keyguard-v2)"
 git push origin main
 ```
@@ -123,6 +137,10 @@ dev build would report the same release number as the just-shipped public versio
   `keyguard_designer_version`). `CACHE_NAME` is the deployment cache key and still moves ONLY
   during the release ritual, on `main` (above). At release the two end up equal-by-increment;
   between releases `dev`'s `APP_RELEASE` leads. Both only ever increase.
+- **`latest_app_version.json` moves like `CACHE_NAME`, not like `APP_RELEASE`.** It is the
+  signal the app self-updater compares against, so it must equal the *deployed* release. Bump
+  it ONLY in the release commit on `main` (via `publish-app-version.mjs`), never on `dev`.
+  Pre-bumping it would force live clinicians to refresh toward a build that isn't deployed yet.
 - If `git merge` reports a conflict in `sw.js`, the **`main` side's version number always
   wins** — resolve in favor of `main`, then bump it as normal. (Conflicts here are rare:
   `dev` never touches the `CACHE_NAME` line.)
