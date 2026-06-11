@@ -10,6 +10,16 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 12
+
+### Improvements
+
+- **Skill level selector is easier to find.** The Beginner / Intermediate / Advanced selector has moved from the Settings panel to the top of the Customizer, so you can switch skill levels without opening Settings.
+
+- **Clearer export-preset icon.** The preset-export button now uses a download-tray icon instead of a floppy disk, making it easier to distinguish from save.
+
+- **3D viewport recovers from graphics interruptions.** If the browser's graphics context is lost (for example, after waking from sleep or a GPU driver hiccup), the 3D viewport now recovers automatically instead of going blank.
+
 ## Release 11
 
 ### New features
