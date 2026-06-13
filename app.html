@@ -1157,7 +1157,7 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // reads one ahead of what's deployed. sw.js CACHE_NAME is the SEPARATE
 // deployment cache key: it is NOT pre-bumped on dev, only at release, to match
 // this number. See RELEASING.md.
-const APP_RELEASE = 13;
+const APP_RELEASE = 14;
 
 // Two-line version banner: the running app release plus the loaded designer
 // file's version (read from its `keyguard_designer_version = NN;` line). Shown
@@ -1919,8 +1919,11 @@ async function openProject(presetHandle = null) {
       return;
     }
   }
-  await idbPutHandle(dirHandle);
-  await pushRecent(dirHandle);
+  // NB: do NOT persist the handle (idbPutHandle / pushRecent) yet — the folder
+  // is only "remembered" once we've confirmed it actually contains a .scad
+  // file (see below). Persisting here would let a clinician who picks a wrong
+  // folder get stuck: on the next click we'd silently reuse the bad stored
+  // handle and never re-show the picker.
   applyProjectUI();
   stopWatcher();
   // Re-frame the scene on the first render of the newly opened project.
@@ -1976,8 +1979,16 @@ async function openProject(presetHandle = null) {
   if (!scadName) {
     setStatus('No .scad file found in selected folder.', 'error');
     logLine('  ERROR: project folder must contain exactly one .scad file');
+    // Folder turned out not to be a project — make sure it isn't remembered
+    // (it never was persisted above, but a previously-valid handle might be
+    // lingering) so the next "Open Project…" click goes straight to the picker
+    // instead of silently reusing this folder.
+    if (!project) { await idbClearHandle(); await removeRecent(dirHandle); await refreshRecentsDropdown(); }
     return;
   }
+  // Confirmed a real project — now it's safe to remember the folder.
+  await idbPutHandle(dirHandle);
+  await pushRecent(dirHandle);
   // Matching json: same basename
   const base = scadName.replace(/\.scad$/i, '');
   const expectedJson = base + '.json';

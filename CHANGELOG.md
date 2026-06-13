@@ -10,6 +10,12 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 14
+
+### Fixes
+
+- **Open Project no longer gets stuck on a wrong first pick.** If your first folder choice didn't contain a keyguard program (`.scad` file), the app warned you but then kept reopening that same folder instead of letting you choose another. It now returns you to the folder picker so you can select the right project.
+
 ## Release 13
 
 ### New features
