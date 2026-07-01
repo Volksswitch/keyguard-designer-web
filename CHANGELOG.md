@@ -8,7 +8,9 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
-_Nothing yet._
+### Fixes
+
+- **Keyguard-frame presets now preview correctly.** Opening a preset set to generate a keyguard frame could pop up a false "Have a keyguard frame is set to no" message and refuse to render, even when the preset did have a frame. Frame presets now render and export as expected.
 
 ## Release 14
 

@@ -2510,7 +2510,11 @@ async function doRender() {
     return;
   }
   if (renderInProgress) { pendingRerender = true; return; }
-  const incompatMsg = incompatibleSettingsMessage(currentFormValues());
+  // Use allParamValues(), not currentFormValues(): the incompatibility check
+  // reads preset-only params (e.g. have_a_keyguard_frame) that aren't surfaced
+  // as DOM controls. currentFormValues() would report them as undefined and
+  // falsely block a valid "keyguard frame" preset with "…frame is set to no".
+  const incompatMsg = incompatibleSettingsMessage(allParamValues());
   if (incompatMsg) { alert(incompatMsg); return; }
   renderInProgress = true;
   window.__renderState = 'rendering';
@@ -3190,7 +3194,9 @@ async function exportCurrent(fmt) {
   if (fmt === 'SVG') {
     // SVG export forces type_of_keyguard="Laser-Cut", so check for settings
     // that are incompatible with laser-cut regardless of the form's current value.
-    const vals = currentFormValues();
+    // allParamValues() (not currentFormValues()) so preset-only params like
+    // have_a_keyguard_frame — which have no DOM control — are seen correctly.
+    const vals = allParamValues();
     const gen = vals.generate || '';
     const hasFrame = vals.have_a_keyguard_frame === 'yes';
     if (['horizontal clip', 'vertical clip', 'horizontal mini clip', 'vertical mini clip', 'horizontal micro clip', 'vertical micro clip'].includes(gen)) {
