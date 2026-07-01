@@ -10,6 +10,12 @@ The release number shown here matches the one on **Settings → About**.
 
 _Nothing yet._
 
+## Release 15
+
+### Fixes
+
+- **Keyguard-frame presets now work correctly.** Opening a saved configuration set to generate a keyguard *frame* could pop up a false "Have a keyguard frame is set to no" message and refuse to build it, even when the configuration did include a frame. Keyguard frames now render and export normally.
+
 ## Release 14
 
 ### Fixes
