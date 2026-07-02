@@ -121,6 +121,8 @@
   .vp-btn:hover { background: #d8d8d8; border-color: #aaa; }
   .vp-btn:active { background: #cfcfcf; }
   .vp-btn.active { background: #cfe0f5; border-color: #6a9bd8; color: #06c; }
+  .vp-btn:disabled { opacity: .35; cursor: default; }
+  .vp-btn:disabled:hover { background: none; border-color: transparent; }
   /* Original CC0 inline SVG icons drawn in OpenSCAD's flat axonometric
      style (cube + highlighted face for views) so users moving between this
      app and native OpenSCAD see the same visual language. currentColor lets
@@ -162,8 +164,6 @@
   #cust-header button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
   #cust-header .preset-btns { display: flex; gap: 4px; }
   #cust-header .preset-btns button { flex: 1; }
-  #cust-header .preset-btns #undo-btn,
-  #cust-header .preset-btns #redo-btn { flex: 0 0 28px; padding: 0; font-size: 15px; line-height: 1; }
   #cust-header .preset-btns #open-json-btn { flex: 0 0 32px; padding: 0; }
   #cust-header .preset-btns #import-preset-btn { flex: 0 0 36px; padding: 0; }
   #cust-header .preset-btns #import-preset-btn sup { font-size: 9px; margin-left: -2px; }
@@ -441,6 +441,19 @@
             <button class="vp-btn" id="export-png" title="Export as PNG (current view)">PNG</button>
           </span>
           <div class="vp-sep" style="margin-left:auto;"></div>
+          <button class="vp-btn" id="undo-btn" title="Undo customizer change" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 8H14A5 5 0 0 1 14 18H8"/>
+              <path d="M8 4 4 8 8 12"/>
+            </svg>
+          </button>
+          <button class="vp-btn" id="redo-btn" title="Redo customizer change" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M20 8H10A5 5 0 0 0 10 18H16"/>
+              <path d="M16 4 20 8 16 12"/>
+            </svg>
+          </button>
+          <div class="vp-sep"></div>
           <button class="vp-btn" id="settings-btn" title="Settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
               <circle cx="12" cy="12" r="3"/>
@@ -493,8 +506,6 @@
           <button id="del-preset-btn" title="Delete current preset">−</button>
           <button id="save-preset-btn" title="Save current parameters to current preset" disabled>Save preset</button>
           <button id="reset-btn" title="Revert parameters to current preset baseline" disabled>Reset</button>
-          <button id="undo-btn" title="Undo customizer change" disabled>&#8630;</button>
-          <button id="redo-btn" title="Redo customizer change" disabled>&#8631;</button>
           <button id="open-json-btn" title="Open a different preset JSON file…" disabled>📂</button>
           <button id="import-preset-btn" title="Import presets from a JSON file into current file…" disabled>📂<sup>+</sup></button>
           <button id="export-preset-btn" title="Export current preset to a JSON file…" disabled>📥</button>
