@@ -162,6 +162,8 @@
   #cust-header button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
   #cust-header .preset-btns { display: flex; gap: 4px; }
   #cust-header .preset-btns button { flex: 1; }
+  #cust-header .preset-btns #undo-btn,
+  #cust-header .preset-btns #redo-btn { flex: 0 0 28px; padding: 0; font-size: 15px; line-height: 1; }
   #cust-header .preset-btns #open-json-btn { flex: 0 0 32px; padding: 0; }
   #cust-header .preset-btns #import-preset-btn { flex: 0 0 36px; padding: 0; }
   #cust-header .preset-btns #import-preset-btn sup { font-size: 9px; margin-left: -2px; }
@@ -491,6 +493,8 @@
           <button id="del-preset-btn" title="Delete current preset">−</button>
           <button id="save-preset-btn" title="Save current parameters to current preset" disabled>Save preset</button>
           <button id="reset-btn" title="Revert parameters to current preset baseline" disabled>Reset</button>
+          <button id="undo-btn" title="Undo customizer change" disabled>&#8630;</button>
+          <button id="redo-btn" title="Redo customizer change" disabled>&#8631;</button>
           <button id="open-json-btn" title="Open a different preset JSON file…" disabled>📂</button>
           <button id="import-preset-btn" title="Import presets from a JSON file into current file…" disabled>📂<sup>+</sup></button>
           <button id="export-preset-btn" title="Export current preset to a JSON file…" disabled>📥</button>
@@ -1501,6 +1505,7 @@ function onSettingsChanged(key) {
     if (project) {
       buildCustomizerForm(project.customizer);
       populateFormFromPreset(project.currentPreset);
+      resetHistory();   // form rebuilt (params shown/hidden) → reset the stack
     }
   }
 }
@@ -1815,10 +1820,11 @@ async function resetToNoProject() {
   document.getElementById('preset-input').value = '';
   document.getElementById('preset-list').innerHTML = '';
   document.getElementById('dirty-marker').classList.remove('visible');
-  for (const id of ['save-preset-btn', 'reset-btn', 'del-preset-btn', 'add-preset-btn', 'open-json-btn', 'import-preset-btn', 'export-preset-btn']) {
+  for (const id of ['save-preset-btn', 'reset-btn', 'undo-btn', 'redo-btn', 'del-preset-btn', 'add-preset-btn', 'open-json-btn', 'import-preset-btn', 'export-preset-btn']) {
     const b = document.getElementById(id);
     if (b) b.disabled = true;
   }
+  histUndo.length = 0; histRedo.length = 0; histBase = null;
   const opBtn = document.getElementById('open-project-btn');
   if (opBtn) {
     opBtn.textContent = 'Open Project…';
@@ -2068,6 +2074,7 @@ async function openProject(presetHandle = null) {
   // Build form and populate with values from the selected preset
   buildCustomizerForm(customizer);
   populateFormFromPreset(project.currentPreset);
+  resetHistory();   // fresh project → empty undo/redo stack
 
   updateDelPresetButton();
   logLine(`Project ready — auto-rendering "${project.currentPreset}"...`);
@@ -2358,6 +2365,7 @@ async function loadFixture(fixturePath, scadName, preset, oaOverride, openscadCa
 
   buildCustomizerForm(customizer);
   populateFormFromPreset(currentPreset);
+  resetHistory();   // fresh project → empty undo/redo stack
   updateDelPresetButton();
 
   // Optional render config (width/height/fov) — applied BEFORE the first
@@ -3678,22 +3686,18 @@ container.addEventListener('wheel', e => {
 // ===== Populate form values from a preset =====
 // Preset values come from the .json file (all strings) or, for "design default values",
 // from the .scad defaults captured during parsing.
-function populateFormFromPreset(presetName) {
+// Write a {paramName: value} map into the customizer controls, reproducing the
+// decimals formatting, range-slider mirroring, and out-of-list <select> holder
+// that preset population needs. Shared by populateFormFromPreset and by
+// undo/redo (applyHistory), so both restore the DOM identically.
+function applyValuesToForm(values) {
   if (!project || !project.customizer) return;
-  const presets = project.jsonText ? (JSON.parse(project.jsonText).parameterSets || {}) : {};
-  const presetVals = presets[presetName] || null;
-
   for (const sec of project.customizer) {
     for (const p of sec.params) {
+      if (!(p.name in values)) continue;
       const input = container.querySelector(`[data-param-name="${cssEsc(p.name)}"] input, [data-param-name="${cssEsc(p.name)}"] select`);
       if (!input) continue;
-      let val;
-      if (presetVals && p.name in presetVals) {
-        val = presetVals[p.name];
-      } else {
-        // Use the .scad default; strip surrounding quotes for strings.
-        val = p.default.replace(/^"|"$/g, '');
-      }
+      const val = values[p.name];
       if (input.type === 'number' && input.dataset.decimals != null && val !== '' && !Number.isNaN(parseFloat(val))) {
         input.value = parseFloat(val).toFixed(+input.dataset.decimals);
       } else {
@@ -3714,10 +3718,92 @@ function populateFormFromPreset(presetName) {
     const n = s.parentElement.querySelector('input[type=number]');
     if (n) s.value = n.value;
   }
+}
+
+function populateFormFromPreset(presetName) {
+  if (!project || !project.customizer) return;
+  const presets = project.jsonText ? (JSON.parse(project.jsonText).parameterSets || {}) : {};
+  const presetVals = presets[presetName] || null;
+
+  // Build a full value map: preset value where present, else the .scad default
+  // (surrounding quotes stripped for strings).
+  const values = {};
+  for (const sec of project.customizer) {
+    for (const p of sec.params) {
+      values[p.name] = (presetVals && p.name in presetVals)
+        ? presetVals[p.name]
+        : p.default.replace(/^"|"$/g, '');
+    }
+  }
+  applyValuesToForm(values);
   // Snapshot the baseline so dirty-state comparisons work
   project.baselineParams = currentFormValues();
   updateDirty();
 }
+
+// ===== Undo / redo history for customizer param changes =====
+// Snapshots are whole-form {paramName: value} maps. We record on COMMIT (the
+// change event, or a programmatic bulk revert like Reset) — never on every
+// intermediate 'input' — so a spinner drag or a multi-keystroke edit collapses
+// to a single entry (the value only lands once focus leaves the field). Choosing
+// a DIFFERENT preset wipes the stack; the unsaved-change discard is already
+// warned. Save / Add / Rename leave the stack intact (values don't change).
+const histUndo = [];   // prior committed states we can step back to
+const histRedo = [];   // states we've undone and can step forward to
+let histBase = null;   // the current committed state
+let isApplyingHistory = false;
+
+function sameValues(a, b) {
+  if (!a || !b) return false;
+  const ak = Object.keys(a);
+  if (ak.length !== Object.keys(b).length) return false;
+  for (const k of ak) if (a[k] !== b[k]) return false;
+  return true;
+}
+
+function updateHistButtons() {
+  const u = document.getElementById('undo-btn');
+  const r = document.getElementById('redo-btn');
+  if (u) u.disabled = !project || histUndo.length === 0;
+  if (r) r.disabled = !project || histRedo.length === 0;
+}
+
+// Fresh baseline + empty stack. Called on project open and on preset switch.
+function resetHistory() {
+  histUndo.length = 0;
+  histRedo.length = 0;
+  histBase = project ? currentFormValues() : null;
+  updateHistButtons();
+}
+
+// Record the current committed values as a new undo step, if they actually
+// differ from the last committed state. Called from the change handler and
+// after a programmatic bulk revert (Reset).
+function commitHistory() {
+  if (isApplyingHistory || !project) return;
+  const now = currentFormValues();
+  if (histBase && sameValues(histBase, now)) return;
+  if (histBase) histUndo.push(histBase);
+  histRedo.length = 0;
+  histBase = now;
+  updateHistButtons();
+}
+
+// Move the current state onto `from` and restore the top of `to` into the form.
+async function applyHistory(from, to) {
+  if (!project || !to.length) return;
+  from.push(histBase);
+  histBase = to.pop();
+  isApplyingHistory = true;
+  applyValuesToForm(histBase);   // sets .value without dispatching → no re-commit
+  updateDirty();
+  isApplyingHistory = false;
+  updateHistButtons();
+  await doRender();
+}
+
+function undo() { if (project && histUndo.length) applyHistory(histRedo, histUndo); }
+function redo() { if (project && histRedo.length) applyHistory(histUndo, histRedo); }
 
 function cssEsc(s) { return s.replace(/"/g, '\\"'); }
 
@@ -4169,6 +4255,7 @@ container.addEventListener('change', async e => {
     t.value = parseFloat(t.value).toFixed(+t.dataset.decimals);
   }
   updateDirty();
+  commitHistory();   // one undo step per committed value (focus left the field)
   // When the user flips include_screenshot: ON → rescan (a folder change
   // since Open Project gets picked up) and reveal the picker if 2+ images;
   // OFF → just hide the picker. updateScreenshotPicker reads the new value.
@@ -4480,6 +4567,7 @@ async function selectPreset(name) {
   project.currentPreset = name;
   rebuildPresetDropdown();
   populateFormFromPreset(name);
+  resetHistory();   // a different preset wipes the undo/redo stack
   updateDelPresetButton();
   logLine(`Selected preset: "${name}" — re-rendering...`);
   await rescanScreenshot();
@@ -4578,7 +4666,41 @@ document.addEventListener('mousedown', (e) => {
 resetBtn.addEventListener('click', () => {
   if (!project) return;
   populateFormFromPreset(project.currentPreset);
+  commitHistory();   // Reset is an undoable step, not a preset switch
   doRender();
+});
+
+// ---- Undo / redo wiring (buttons + keyboard) ----
+document.getElementById('undo-btn').addEventListener('click', undo);
+document.getElementById('redo-btn').addEventListener('click', redo);
+
+// Platform-sensitive shortcut hints in the tooltips: ⌘Z on macOS, Ctrl+Z else.
+{
+  const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '') ||
+                (navigator.userAgentData && navigator.userAgentData.platform === 'macOS');
+  document.getElementById('undo-btn').title =
+    isMac ? 'Undo customizer change (⌘Z)' : 'Undo customizer change (Ctrl+Z)';
+  document.getElementById('redo-btn').title =
+    isMac ? 'Redo customizer change (⇧⌘Z)' : 'Redo customizer change (Ctrl+Shift+Z or Ctrl+Y)';
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!project) return;
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const key = e.key.toLowerCase();
+  const isRedo = (key === 'z' && e.shiftKey) || (key === 'y' && !e.metaKey);
+  const isUndo = key === 'z' && !e.shiftKey;
+  if (!isUndo && !isRedo) return;
+  // While the caret is in a text/number field, let the browser's native
+  // per-character undo win — our stack only holds committed (focus-left) values.
+  const ae = document.activeElement;
+  if (ae && (ae.isContentEditable || ae.tagName === 'TEXTAREA' ||
+      (ae.tagName === 'INPUT' &&
+       !['range', 'checkbox', 'radio', 'button', 'submit'].includes(ae.type)))) {
+    return;
+  }
+  e.preventDefault();
+  if (isRedo) redo(); else undo();
 });
 
 // ===== Export current preset to a user-chosen .json file =====
@@ -4672,6 +4794,7 @@ document.getElementById('open-json-btn').addEventListener('click', async () => {
     project.currentPreset = presetNames[0];
     rebuildPresetDropdown();
     populateFormFromPreset(project.currentPreset);
+    resetHistory();   // new preset file → wipe the stack
     updateDelPresetButton();
     logLine(`Switched to preset file "${name}" — ${Object.keys(sets).length} preset(s)`);
     scheduleRender();
@@ -4852,6 +4975,7 @@ document.getElementById('del-preset-btn').addEventListener('click', async () => 
     project.currentPreset = 'design default values';
     rebuildPresetDropdown();
     populateFormFromPreset(project.currentPreset);
+    resetHistory();   // delete forces a preset switch → wipe the stack
     updateDelPresetButton();
     logLine(`Deleted preset "${name}" from ${jsonName}`);
     doRender();
