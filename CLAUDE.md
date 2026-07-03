@@ -88,9 +88,32 @@ p90 126 s, max 246 s → **~3.2 h** for 174 steps. Suspected cause: wasm32 addre
 process (same root class as the WASM-OOM item above; each render creates a fresh openscad-wasm
 instance via `callMain`→`exitJS`). Note this is SEPARATE from — and was exposed after fixing — the
 base64 export-hook transport fix (commit `b1d7d41`: hooks return base64, not a per-byte `number[]`,
-which alone cut a ~110 s CDP-marshalling cost per heavy step). Candidate mitigations: restart the
-browser every N tests, launch a fresh browser per (heavy) test, or a teardown that actually frees the
-renderer. Keep geometry pass/fail semantics unchanged. **Not yet started.**
+which alone cut a ~110 s CDP-marshalling cost per heavy step). Keep geometry pass/fail semantics
+unchanged.
+
+**Investigation 2026-07-03 — fresh-browser-per-test tried and REVERTED; root cause reframed.**
+- **Attempt:** override the `page` fixture to relaunch a fresh Chromium per test (recyclable via
+  `KEYGUARD_GEOM_BROWSER_RECYCLE`). **Result: ~12× SLOWER uniformly** — TC12 s1 went 15 s → 3.0 min,
+  slow from test #1 (not just late). A fresh browser process discards a **warm, process-level benefit**
+  (almost certainly V8's cached/optimized wasm compilation reused across page loads), which is what
+  keeps shared-browser renders fast early. So "restart the browser every N" fights the very thing that
+  makes renders fast — wrong approach. Reverted; geometry.spec.mjs is unchanged from `b1d7d41`.
+- **Bigger finding — the slowdown is partly MACHINE-LEVEL, not just within one browser process.** The
+  *same* scoped TC12+TC13 run measured **1.5 min early in a session but 6.9 min hours later** (15 s→156 s
+  growth within just 7 steps), i.e. it degrades **across** separate Playwright runs and browser launches,
+  not only within one. Observed alongside **~19 lingering chrome/node processes (~2.5 GB)** left by prior
+  runs and ~74 % RAM use. So session-wide resource accumulation (leaked headless browsers + memory
+  pressure) contributes on top of any per-process wasm fragmentation. This ALSO confounds any harness
+  benchmark run on an already-degraded machine (the fresh-browser test above included).
+- **Consequences:** (a) a clean evaluation of ANY mitigation needs a **freshly-rebooted machine** as
+  baseline; (b) the degraded machine can produce **wrong geometry**, not just slow — TC17b portrait
+  exported vol 49658 mid full-run vs the correct 54102 in isolation (that case's golden/image were
+  unchanged; see the 2026-07-03 golden/visual recapture). (c) The clean root-cause fix remains the
+  deferred **openscad-wasm rebuild** (`-sIMPORTED_MEMORY` / pre-sized memory so instances can be reused
+  without fragmenting the wasm32 address space) — a build-level fix, not a harness tweak.
+- **Next (not yet done):** on a fresh reboot, measure whether (1) `workers>1` parallelism, or (2)
+  ensuring Playwright fully reaps browser/renderer processes between runs, meaningfully helps — WITHOUT
+  the fresh-per-test warm-cache penalty. Until then, treat the wasm rebuild as the real fix.
 
 ### Image parity — camera model confirmed (2026-05-31)
 
