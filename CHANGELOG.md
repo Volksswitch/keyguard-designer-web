@@ -8,7 +8,13 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
-_Nothing yet._
+## Release 16
+
+### New features
+
+- **Undo and redo your Customizer changes.** Undo and redo buttons in the command bar (next to Settings) let you step back and forward through changes you've made in the Customizer. You can also use the keyboard: Ctrl/Cmd+Z to undo, and Ctrl/Cmd+Shift+Z (or Ctrl+Y) to redo — so you can experiment freely and back out a change without starting over.
+
+- **See what's new after an app update.** When the app updates itself to a newer version, it now shows a short "What's new" summary of the features and fixes you've just received, so you always know what changed.
 
 ## Release 15
 

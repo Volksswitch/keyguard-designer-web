@@ -79,6 +79,19 @@ possible with the current build. Fixing it requires rebuilding openscad-wasm wit
 (fresh tab) clears fragmentation. **Deferred until a new openscad-wasm release provides the
 necessary build flags.**
 
+### Geometry-gate per-step slowdown across the full suite — to investigate (2026-07-02)
+In the full 174-step geometry gate (`bash scripts/test.sh --geometry`), per-step time depends on
+POSITION in the run, not just design complexity. Same TC12 step 1, same code: **~15 s** in a scoped
+run (only TC12+TC13) but **~192 s** mid-suite in the full run. Full-run distribution: median 56 s,
+p90 126 s, max 246 s → **~3.2 h** for 174 steps. Suspected cause: wasm32 address-space fragmentation
+/ renderer memory accumulation across many sequential renders in one Playwright worker/browser
+process (same root class as the WASM-OOM item above; each render creates a fresh openscad-wasm
+instance via `callMain`→`exitJS`). Note this is SEPARATE from — and was exposed after fixing — the
+base64 export-hook transport fix (commit `b1d7d41`: hooks return base64, not a per-byte `number[]`,
+which alone cut a ~110 s CDP-marshalling cost per heavy step). Candidate mitigations: restart the
+browser every N tests, launch a fresh browser per (heavy) test, or a teardown that actually frees the
+renderer. Keep geometry pass/fail semantics unchanged. **Not yet started.**
+
 ### Image parity — camera model confirmed (2026-05-31)
 
 Both projects capture at 2048×1536. The camera model has been validated empirically via the
@@ -287,6 +300,33 @@ keyguard-designer-web/
 - **Releasing is a deliberate, infrequent act, not an automatic consequence of a push.** Do
   not merge `dev → main` after every change. See `RELEASING.md` for the full when/how —
   follow it exactly; it is the source of truth for the release process.
+- **Changelog-as-you-go (mandatory).** `CHANGELOG.md` in the project root is kept **in lockstep
+  with the root `app.html`** — it is NOT a pre-release step. The moment you change `app.html` in a
+  way a clinician can see or do differently (a new feature or a visible bug fix), add or edit the
+  matching plain-English entry under the `## Unreleased (next release)` heading **in the same edit,
+  before you consider that change done** — so the code Ken tests in the root and the changelog he
+  reads always describe the same app. Write it the way a clinician would read it (what they can now
+  see or do differently), matching the voice of the existing `## Release N` bullets. **This cuts
+  both ways: if a feature or fix is later backed out of `app.html`, delete its `## Unreleased`
+  entry in the same edit.** The Unreleased section must always mirror exactly what is in the root
+  code — no more, no less. **Exclude** internal-only changes (tests, tooling, refactors, harness/CI,
+  perf work with no visible effect) — the file's own header says so; when in doubt, ask Ken rather
+  than guess. **Committing is Claude's job, never Ken's** — Ken does not run git/commit commands;
+  Claude commits the code + changelog change together (on `dev`) as part of finishing the work.
+  Ken can review the running wording at any time (trigger: "show me the unreleased changelog").
+  **Ken's own edits to `CHANGELOG.md` are authoritative and must be preserved.** He may reword,
+  reorder, or rewrite entries whenever he likes; treat his phrasing as final. Only ever make
+  *surgical* changes to `CHANGELOG.md` — a targeted `Edit`, NEVER a whole-file `Write` or
+  regenerate: add an entry when new clinician-facing code lands, delete one when a change is
+  backed out, and otherwise leave the file exactly as Ken left it. Never overwrite, reword, or
+  reorder his existing entries; if you believe one is inaccurate, ask him rather than change it.
+  **After any `CHANGELOG.md` edit, regenerate the bundled notes** (`node scripts/apply-release-notes.mjs`,
+  trigger "apply release notes") in the same change, so the post-update "What's new" notice in
+  `app.html` (its `RELEASE_NOTES` block) stays in lockstep with the changelog.
+  At release, the ritual merely renames `## Unreleased (next release)` to `## Release <APP_RELEASE>`
+  and opens a fresh empty section — it authors nothing new. NOTE: `CHANGELOG.md` is the
+  clinician-readable record; `latest_app_version.json` is only a version-number trigger for the
+  silent auto-refresh and its `notes` field is never shown — do not treat that file as the changelog.
 - Run `scripts/test.sh` (all layers) after any change. Scope visual tests to affected cases
   during iteration; run the full suite before declaring a feature complete.
 - **Progress logging (mandatory).** For ANY multi-step or long-running task, continuously
@@ -328,6 +368,21 @@ node scripts/apply-skill-config.js
 This reads `skill-config.txt` and injects the updated `SKILL_LEVEL_DESCS` and `SKILL_CONFIG`
 into `app.html` between the `@@…_START@@` / `@@…_END@@` markers. No OpenSCAD or build step
 required. Takes under a second; run it in the foreground and report whether it succeeded.
+
+## Trigger phrase — apply release notes
+
+When Ken says **"apply release notes"**, run from the web-app project root:
+```
+node scripts/apply-release-notes.mjs
+```
+This parses `CHANGELOG.md` and regenerates the bundled `RELEASE_NOTES` object in `app.html`
+(between the `@@RELEASE_NOTES_START@@` / `@@RELEASE_NOTES_END@@` markers) — the notes the app's
+post-update **"What's new"** notice shows clinicians. `## Release N` → key N; `## Unreleased`
+→ `APP_RELEASE` (so dev builds preview pending notes). Notes are bundled, not fetched, so the
+notice works on locked-down networks. Because the block is generated, **whenever you edit
+`CHANGELOG.md` (the changelog-as-you-go convention), run this in the same change** so `app.html`'s
+bundled notes never drift from the changelog; it is also part of the release ritual. Foreground,
+<1 s; report what it wrote.
 
 ## Trigger phrase — update web app visual references
 

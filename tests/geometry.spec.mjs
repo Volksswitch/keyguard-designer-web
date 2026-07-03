@@ -321,14 +321,16 @@ if (discoveryError || CASES.length === 0) {
       // completed; the export hook then runs its own identical render.
       await page.waitForFunction(() => window.__renderState === 'ready', null, { timeout: 180_000 });
 
-      const stlArray = await page.evaluate(async () => {
+      const stlB64 = await page.evaluate(async () => {
         if (typeof window.__exportSTLBytes !== 'function')
           throw new Error('window.__exportSTLBytes is missing — export hook not wired');
         return window.__exportSTLBytes();
       });
       expect(pageErrors, 'page threw an uncaught error').toEqual([]);
 
-      const stlBuf = Buffer.from(stlArray);
+      // Hook returns base64 (not a number[]) — decoding is ~400x faster to
+      // marshal over CDP for multi-MB meshes. See app.html __stlToBase64.
+      const stlBuf = Buffer.from(stlB64, 'base64');
       // openscad-wasm emits a ~80-byte single-triangle shell when there is
       // no solid. A real keyguard is far larger; anything tiny means the
       // clinician would get an empty/!3D file for a step we expected to
