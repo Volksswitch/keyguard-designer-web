@@ -111,9 +111,16 @@ unchanged.
   unchanged; see the 2026-07-03 golden/visual recapture). (c) The clean root-cause fix remains the
   deferred **openscad-wasm rebuild** (`-sIMPORTED_MEMORY` / pre-sized memory so instances can be reused
   without fragmenting the wasm32 address space) — a build-level fix, not a harness tweak.
-- **Next (not yet done):** on a fresh reboot, measure whether (1) `workers>1` parallelism, or (2)
-  ensuring Playwright fully reaps browser/renderer processes between runs, meaningfully helps — WITHOUT
-  the fresh-per-test warm-cache penalty. Until then, treat the wasm rebuild as the real fix.
+- **DECISION (Ken, 2026-07-03): wait for the openscad-wasm rebuild — do NOT pursue a harness
+  workaround.** No fresh-browser / per-N-restart / worker-parallelism changes to the geometry harness;
+  they either lose the warm-cache speed (proven ~12× slower) or only paper over a machine-level issue.
+  The full 174-step marathon may stay slow (~3.2 h) and can degrade late renders until the rebuilt
+  openscad-wasm (`-sIMPORTED_MEMORY` / pre-sized reusable memory) lands and lets a single wasm instance
+  be reused instead of instantiated-and-torn-down per render. **Practical guidance until then:** results
+  are trustworthy in ISOLATION (scoped `KEYGUARD_GEOMETRY_CASES=...` runs, ideally after a reboot); treat
+  a suspicious mid-full-run failure as a possible degraded render and re-check the case scoped before
+  believing it (as TC17b portrait proved). This item is parked pending that WASM release — not to be
+  reopened as a harness task.
 
 ### Image parity — camera model confirmed (2026-05-31)
 
