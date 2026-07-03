@@ -3174,10 +3174,26 @@ async function renderExportBytes(fmt, backend = 'Manifold') {
 
 // Test-only hooks: return the exact bytes a clinician's Export → STL
 // produces (no folder write, no download). Used by tests/geometry.spec.mjs
-// (fast Manifold path) and tests/precision-export.spec.mjs (CGAL path).
-// Array (not Uint8Array) so it survives Playwright's structured clone.
-window.__exportSTLBytes          = async () => Array.from(await renderExportBytes('STL'));
-window.__exportSTLBytesPrecision = async () => Array.from(await renderExportBytes('STL', 'CGAL'));
+// and tests/ready-to-print.spec.mjs (fast Manifold path) and
+// tests/precision-export.spec.mjs (CGAL path).
+//
+// Return a base64 STRING, not a byte array. Playwright's page.evaluate
+// serialises the return value as JSON over the CDP bridge; a multi-megabyte
+// number[] is pathologically slow to marshal (a 12 MB STL measured ~110 s as
+// number[] vs ~0.3 s as base64 — the array cost dwarfed the ~7 s Manifold
+// render). Specs decode with Buffer.from(str, 'base64') back to the exact
+// bytes, so the tested STL is still byte-identical to the clinician's file.
+function __stlToBase64(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let s = '';
+  const CHUNK = 0x8000;   // avoid String.fromCharCode arg-count limits
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    s += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
+}
+window.__exportSTLBytes          = async () => __stlToBase64(await renderExportBytes('STL'));
+window.__exportSTLBytesPrecision = async () => __stlToBase64(await renderExportBytes('STL', 'CGAL'));
 
 async function exportCurrent(fmt) {
   if (fmt === 'PNG') return exportPNG();

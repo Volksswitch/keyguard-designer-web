@@ -75,18 +75,20 @@ test('TC57 precision export produces a verifiably-manifold STL', async ({ page }
   // __exportSTLBytesPrecision is the same call exportCurrent('STL-CGAL')
   // makes — both route through renderExportBytes('STL', 'CGAL'). So a clean
   // STL here proves the precision menu item produces a clean STL too.
-  const stlArray = await page.evaluate(async () => {
+  const stlB64 = await page.evaluate(async () => {
     if (typeof window.__exportSTLBytesPrecision !== 'function')
       throw new Error('window.__exportSTLBytesPrecision is missing — precision hook not wired');
     return window.__exportSTLBytesPrecision();
   });
-  expect(stlArray.length).toBeGreaterThan(200);
+  // Hook returns base64 — decode to exact bytes. See app.html __stlToBase64.
+  const stlBuf = Buffer.from(stlB64, 'base64');
+  expect(stlBuf.length).toBeGreaterThan(200);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-precision-'));
   const stlPath = path.join(tmpDir, 'tc57-precision.stl');
   let report;
   try {
-    fs.writeFileSync(stlPath, Buffer.from(stlArray));
+    fs.writeFileSync(stlPath, stlBuf);
     const r = spawnSync(ADMESH, [stlPath], { encoding: 'utf8', timeout: 120_000, maxBuffer: 32 * 1024 * 1024 });
     report = `${r.stdout || ''}\n${r.stderr || ''}`;
   } finally {

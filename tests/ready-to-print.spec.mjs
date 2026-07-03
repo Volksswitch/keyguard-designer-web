@@ -152,12 +152,14 @@ if (error || designs.length === 0) {
       await page.locator('#viewport').screenshot({ path: pngPath });
 
       // Export the STL.
-      const stlArray = await page.evaluate(async () => {
+      const stlB64 = await page.evaluate(async () => {
         if (typeof window.__exportSTLBytes !== 'function') throw new Error('__exportSTLBytes missing');
         return window.__exportSTLBytes();
       });
       expect(pageErrors, 'page error').toEqual([]);
-      const stlBuf = Buffer.from(stlArray);
+      // Hook returns base64 — far cheaper to marshal than a number[]. Decode
+      // back to exact bytes. See app.html __stlToBase64.
+      const stlBuf = Buffer.from(stlB64, 'base64');
       expect(stlBuf.length, 'STL empty/degenerate (no 3D solid)').toBeGreaterThan(200);
 
       const stlDir = path.join(OUT_STL, safe(tablet), safe(caseName));
