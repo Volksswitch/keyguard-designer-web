@@ -300,6 +300,20 @@ keyguard-designer-web/
 - **Releasing is a deliberate, infrequent act, not an automatic consequence of a push.** Do
   not merge `dev → main` after every change. See `RELEASING.md` for the full when/how —
   follow it exactly; it is the source of truth for the release process.
+- **Changelog-as-you-go (mandatory).** Updating `CHANGELOG.md` is NOT a pre-release step —
+  it happens *with each change*. Whenever a commit adds a clinician-facing feature or fixes a
+  clinician-visible bug, add a one-line plain-English entry under the `## Unreleased (next
+  release)` heading in `CHANGELOG.md`, **in the same commit as the change**. Write it the way a
+  clinician would read it (what they can now see or do differently), not in developer terms —
+  match the voice of the existing `## Release N` bullets. **Exclude** internal-only changes
+  (tests, tooling, refactors, harness/CI, perf work with no visible effect) — the file's own
+  header says so; when in doubt, ask Ken rather than guess. At release, the ritual merely
+  renames `## Unreleased (next release)` to `## Release <APP_RELEASE>` and opens a fresh empty
+  Unreleased section — it authors nothing new. This keeps the running list always current, so
+  Ken can review real wording at any time (trigger: "show me the unreleased changelog") instead
+  of reconstructing it at the end. NOTE: `CHANGELOG.md` is the clinician-readable record;
+  `latest_app_version.json` is only a version-number trigger for the silent auto-refresh and its
+  `notes` field is never shown — do not treat that file as the changelog.
 - Run `scripts/test.sh` (all layers) after any change. Scope visual tests to affected cases
   during iteration; run the full suite before declaring a feature complete.
 - **Progress logging (mandatory).** For ANY multi-step or long-running task, continuously
