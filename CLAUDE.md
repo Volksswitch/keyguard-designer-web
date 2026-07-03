@@ -79,6 +79,19 @@ possible with the current build. Fixing it requires rebuilding openscad-wasm wit
 (fresh tab) clears fragmentation. **Deferred until a new openscad-wasm release provides the
 necessary build flags.**
 
+### Geometry-gate per-step slowdown across the full suite — to investigate (2026-07-02)
+In the full 174-step geometry gate (`bash scripts/test.sh --geometry`), per-step time depends on
+POSITION in the run, not just design complexity. Same TC12 step 1, same code: **~15 s** in a scoped
+run (only TC12+TC13) but **~192 s** mid-suite in the full run. Full-run distribution: median 56 s,
+p90 126 s, max 246 s → **~3.2 h** for 174 steps. Suspected cause: wasm32 address-space fragmentation
+/ renderer memory accumulation across many sequential renders in one Playwright worker/browser
+process (same root class as the WASM-OOM item above; each render creates a fresh openscad-wasm
+instance via `callMain`→`exitJS`). Note this is SEPARATE from — and was exposed after fixing — the
+base64 export-hook transport fix (commit `b1d7d41`: hooks return base64, not a per-byte `number[]`,
+which alone cut a ~110 s CDP-marshalling cost per heavy step). Candidate mitigations: restart the
+browser every N tests, launch a fresh browser per (heavy) test, or a teardown that actually frees the
+renderer. Keep geometry pass/fail semantics unchanged. **Not yet started.**
+
 ### Image parity — camera model confirmed (2026-05-31)
 
 Both projects capture at 2048×1536. The camera model has been validated empirically via the
