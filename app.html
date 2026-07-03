@@ -317,6 +317,23 @@
   #update-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; margin-left: 8px; }
   #update-now { font-weight: bold; color: #185; }
 
+  /* ---------- "What's new" post-update notice (mirrors the update modal) ---------- */
+  #whatsnew-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+                      display: none; align-items: center; justify-content: center; z-index: 1160; }
+  #whatsnew-overlay.open { display: flex; }
+  #whatsnew-modal { background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                    width: 470px; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  #whatsnew-modal h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #ccc;
+                       background: #e8e8e8; font-size: 14px; }
+  #whatsnew-msg { padding: 16px 14px; font-size: 12px; line-height: 1.5; max-height: 60vh; overflow-y: auto; }
+  #whatsnew-msg b { color: #06c; }
+  #whatsnew-msg ul { margin: 4px 0 0; padding-left: 20px; color: #555; }
+  #whatsnew-msg li { margin-bottom: 3px; }
+  #whatsnew-msg .wn-relhead { margin-top: 12px; font-weight: bold; color: #444; }
+  #whatsnew-footer { padding: 8px 14px; border-top: 1px solid #ccc; text-align: right; background: #f0f0f0; }
+  #whatsnew-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+  #whatsnew-ok { font-weight: bold; color: #185; }
+
   /* ---------- export progress modal ---------- */
   #export-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
                     display: none; align-items: center; justify-content: center; z-index: 1200; }
@@ -573,6 +590,17 @@
       <button id="update-skip">Skip</button>
       <button id="update-snooze">Remind me in a week</button>
       <button id="update-now">Update now</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ "What's new" post-update notice ============ -->
+<div id="whatsnew-overlay">
+  <div id="whatsnew-modal">
+    <h3>What’s new in the Keyguard Designer</h3>
+    <div id="whatsnew-msg"></div>
+    <div id="whatsnew-footer">
+      <button id="whatsnew-ok">Got it</button>
     </div>
   </div>
 </div>
@@ -1174,6 +1202,103 @@ const LEGACY_SETTINGS_KEY = 'keyguard-spike:settings';   // pre-rename
 // this number. See RELEASING.md.
 const APP_RELEASE = 16;
 
+// Clinician-facing "What's new" notes, keyed by app release. Bundled INTO the
+// app (not fetched) so the post-update notice works even on locked-down networks
+// where github.com is blocked — the freshly-loaded app already is the new
+// version, so it carries its own notes. Generated from CHANGELOG.md by
+// scripts/apply-release-notes.mjs (trigger: "apply release notes") — do not edit
+// the block between the markers by hand; edit CHANGELOG.md and regenerate.
+// @@RELEASE_NOTES_START@@
+const RELEASE_NOTES = {
+  "3": [
+    "Dark mode for the side panels. The Customizer (right) and Console (bottom) panels can be switched between light and dark in Settings → Colors → Panel theme. The 3D view keeps its own background setting.",
+    "Mouse-wheel zoom amount. A new slider in Settings → Viewport controls how far each wheel notch zooms in or out.",
+    "Choose how the model rotates. Settings → Viewport offers rotation styles (free tumble, guided tumble, classic turntable) and a rotation-sensitivity slider.",
+    "\"Export STL (precision)\". A new Export-menu option produces a cleaner, verified STL for the occasional design where the normal fast export leaves small surface artifacts. Slower, but reliable.",
+    "Exports no longer freeze the app. STL/SVG exports run in the background: the app stays responsive (no more \"Page unresponsive\" message), a progress window shows elapsed time, and you can Cancel a long precision export at any time.",
+    "Viewport appearance settings. Set the keyguard color, the 3D background color, and the Customizer text size in Settings.",
+    "Build-plate grid, Settings, and About. A configurable reference grid you can match to your printer's build plate, a Settings (gear) panel, and an About tab.",
+    "Automatic screenshot handling. When you add, replace, or remove the screenshot image in your project folder, the app detects the change and updates the underlay automatically.",
+    "Better default framing. The keyguard fits snugly in the view and is shown at the same angle as OpenSCAD; the view re-fits when you change the display angle.",
+    "Reference grid sits below the model instead of cutting through it.",
+    "New-preset name is pre-filled when you add a preset, so it's quicker to save a variation.",
+    "Removed a small box artifact that appeared in the upper-left of the 3D view on dark backgrounds.",
+    "Fixed top-down view buttons that rotated the model 90° the wrong way.",
+    "Fixed the app getting stuck when a previously-opened project folder was missing or its access was denied — it now recovers and prompts you to pick the folder again."
+  ],
+  "4": [
+    "Screenshot picker. When a project folder holds more than one image and the screenshot overlay is on, a picker appears at the top-right of the 3D view so you can choose which image shows through the cutouts.",
+    "Multiple screenshot images no longer misbehave. With two or more images in the folder, the app could spam the console with an endless \"Screenshot: using …\" loop and pop a false \"no image found\" message. The app now picks images consistently and the messages are correct."
+  ],
+  "5": [
+    "Orientation gizmo. A small OpenSCAD-style corner navigator (red X / green Y / blue Z) sits in the lower-left of the 3D view and rotates with the model so you always know which way the keyguard is facing.",
+    "Pane sizes are remembered. The Customizer panel width and console height are saved between sessions and restored on reload.",
+    "Project and preset shown in console. The current project folder name and preset are logged to the console when you click Render, making it easier to track which design is which in a long session.",
+    "File replacements now detected reliably. Swapping in a same-name openings_and_additions.txt or screenshot image (same filename, different contents) no longer leaves the app rendering against the old file. The watchers now check file contents, not just timestamps — a common pitfall with OneDrive sync and batch-copied files.",
+    "Non-printable generate options blocked from STL export. Choosing a 2D or diagnostic option from the Generate dropdown and then exporting now shows a clear message instead of silently downloading a 0-byte file.",
+    "2D generate option hidden from dropdown. The \"first layer for SVG/DXF file\" option (only reachable via Export → SVG) has been removed from the Generate dropdown to prevent the above confusion."
+  ],
+  "6": [
+    "Recent Projects and quick project switching. The app now remembers the folders you have recently opened. When no project is loaded, a \"Recent projects\" dropdown lets you reopen a folder in one click. When a project is already open, the Change Project button shows a short list of other known folders alongside a \"Pick a different folder…\" option — no need to navigate through the file browser each time. Stale entries (folders that have been moved or deleted) remove themselves automatically.",
+    "Sliders for adjustable settings. Settings that accept a range of values now show a draggable slider alongside the number box. You can drag the slider or type a number — both stay in sync.",
+    "Save a preset as a file. A new save button (💾) lets you export the current preset's settings to a standalone file. Useful for backing up a design configuration or sharing it with a colleague.",
+    "Mouse wheel speed setting. A new \"Customizer mouse-wheel step\" setting (in General settings) controls how many rows the mouse wheel advances at a time. Default is 3 rows per notch.",
+    "Bold and italic text style options. Settings → Text tab now has checkboxes to make section headings and setting labels bold or italic.",
+    "3D preview shading matches printed output more closely. The highlight and shadow contrast in the 3D view has been tuned to better match what OpenSCAD renders, making the preview a more reliable guide to the final keyguard appearance.",
+    "Numeric fields show the right number of decimal places. Number inputs now display the appropriate decimal places for their step size (e.g. a 0.1-step field shows \"4.0\" rather than \"4\"), matching the behaviour of the OpenSCAD Customizer.",
+    "Mouse wheel no longer gets stuck when all sections are collapsed. Scrolling the settings panel now works correctly even when every section is closed.",
+    "Dropdown values no longer go blank. Dropdown settings no longer showed a blank value when the current setting was very close to — but not exactly matching — a valid option. This affected some preset values that use non-round numbers.",
+    "Expanding a section no longer scrolls it off screen. Clicking a section header to open it now keeps that header visible at the top of the panel.",
+    "Cell openings with no corner rounding now cut all the way through. In some keyguards where the cell corner rounding was set to zero, cells could have a very thin film of material left across the opening. This has been fixed.",
+    "Sloped cell edges no longer incorrectly trimmed. When a cell opening had sides that angle inward (an undercut slope), the bridge of plastic behind the opening was incorrectly cutting into the angled wall. The slope is now preserved correctly.",
+    "Six presets with a dovetail split line now render the dovetail correctly. A typographical error in six saved presets meant the dovetail joint setting was silently ignored, producing a flat split instead. This has been corrected."
+  ],
+  "7": [
+    "SVG/laser-cut export now shows clear error messages for unsupported combinations. Trying to export an SVG for clips, cell inserts, split keyguards, or a keyguard with a frame now shows a plain-language alert explaining what the problem is and what to do instead, rather than producing no output or a confusing error.",
+    "Exported filenames include what was generated. The downloaded file is now named to include the Generate setting (for example, …-frame.stl or …-cell-insert.stl), making it easier to tell files apart when you have exported several things from the same design.",
+    "3D preview appearance now matches OpenSCAD more closely. A new OpenSCAD-style lighting mode uses camera-relative lighting that closely matches what you see in the desktop OpenSCAD application. Background colour and item colour have also been adjusted to match OpenSCAD's defaults.",
+    "Settings panel is draggable and has clearer labels. The settings panel can now be moved anywhere on screen by dragging. Colour and lighting option labels have been renamed to be more descriptive."
+  ],
+  "8": [
+    "Skill level setting. A new Skill level option in Settings → General filters the Customizer to show only the settings relevant to your experience. Beginner shows the essentials for a basic grid keyguard. Intermediate adds grid opening, mounting, and split-keyguard options. Advanced shows everything, including pixel measurements, frames, and engraved text.",
+    "Wider rotation and zoom slider ranges. The rotation sensitivity and zoom speed sliders in Settings → Viewport now reach further in both directions, making it easier to dial in very slow or very fast viewport controls."
+  ],
+  "9": [
+    "Trackpad scrolling in the Customizer panel now feels natural. On devices with a trackpad (such as a MacBook), scrolling the settings list previously jumped too far with each gesture. It now scrolls smoothly and proportionally, matching the feel of any other scrollable panel.",
+    "Pinch-to-zoom now works in the 3D viewport. Pinching or spreading on a trackpad to zoom the 3D view previously produced almost no movement, even with zoom sensitivity set to maximum. Pinch and spread now zoom in and out at a natural pace.",
+    "Scroll and zoom setting names are now input-device neutral. \"Customizer mouse-wheel step\" is now Customizer scroll step and \"Mouse-wheel zoom amount\" is now Zoom sensitivity. The descriptions confirm that these settings apply to all pointing devices, not just a mouse wheel."
+  ],
+  "11": [
+    "Open and import preset files. Two new buttons next to the preset save (💾) button let you work with preset JSON files from anywhere on your computer. The 📂 Open button switches to a different preset file — all add, delete, save, and reset actions then apply to that file. The 📂⁺ Import button merges presets from another file into the current one; duplicate names are automatically renamed with a \"(1)\" suffix.",
+    "Export preset button always available. The 💾 export button is now enabled as soon as you make a change, without needing to save first.",
+    "Export buttons are now text labels. The export toolbar shows STL, STL*, SVG, and PNG as compact text buttons instead of icons, making them easier to identify and leaving room for future formats.",
+    "Grid adapts to background colour. The reference grid now uses colours that contrast with whatever background you've chosen — lighter lines on dark backgrounds, darker lines on light ones. Major (50 mm) lines are drawn visibly thicker than minor (10 mm) lines.",
+    "Toolbar no longer overflows into the Customizer. When the browser window is narrow, the viewport toolbar clips cleanly instead of the export control sliding over the settings panel.",
+    "Saving a preset no longer drops hidden parameters. Presets saved at Beginner or Intermediate skill level previously lost any parameter values that were hidden by the skill filter (such as \"App Layout in px\" settings). All parameter values are now preserved regardless of skill level.",
+    "Imported advanced presets keep their values at lower skill levels. Dropdown values from an advanced preset that aren't visible at the current skill level (such as specific mounting methods or tablet types) are now held in place so they round-trip correctly through save and reload."
+  ],
+  "12": [
+    "Skill level selector is easier to find. The Beginner / Intermediate / Advanced selector has moved from the Settings panel to the top of the Customizer, so you can switch skill levels without opening Settings.",
+    "Clearer export-preset icon. The preset-export button now uses a download-tray icon instead of a floppy disk, making it easier to distinguish from save.",
+    "3D viewport recovers from graphics interruptions. If the browser's graphics context is lost (for example, after waking from sleep or a GPU driver hiccup), the 3D viewport now recovers automatically instead of going blank."
+  ],
+  "13": [
+    "The app keeps your keyguard program up to date. When you open a project, if a newer version of keyguard.scad has been published, the app offers to download it for you — replacing your old file and carrying your saved presets forward. You can update now, be reminded in a week, or skip. The notice lists what changed in the new version so you can decide whether you need it.",
+    "The app updates itself automatically. You no longer need to hard-refresh (Ctrl+Shift+R) to get the newest version of the app. When a new version is published, the app refreshes to it on its own the next time you open it or open a project."
+  ],
+  "14": [
+    "Open Project no longer gets stuck on a wrong first pick. If your first folder choice didn't contain a keyguard program (.scad file), the app warned you but then kept reopening that same folder instead of letting you choose another. It now returns you to the folder picker so you can select the right project."
+  ],
+  "15": [
+    "Keyguard-frame presets now work correctly. Opening a saved configuration set to generate a keyguard frame could pop up a false \"Have a keyguard frame is set to no\" message and refuse to build it, even when the configuration did include a frame. Keyguard frames now render and export normally."
+  ],
+  "16": [
+    "Undo and redo your Customizer changes. Undo and redo buttons in the command bar (next to Settings) let you step back and forward through changes you've made in the Customizer. You can also use the keyboard: Ctrl/Cmd+Z to undo, and Ctrl/Cmd+Shift+Z (or Ctrl+Y) to redo — so you can experiment freely and back out a change without starting over.",
+    "See what's new after an app update. When the app updates itself to a newer version, it now shows a short \"What's new\" summary of the features and fixes you've just received, so you always know what changed."
+  ]
+};
+// @@RELEASE_NOTES_END@@
+
 // Two-line version banner: the running app release plus the loaded designer
 // file's version (read from its `keyguard_designer_version = NN;` line). Shown
 // on project open, on project change, and on each on-demand render (the
@@ -1276,6 +1401,7 @@ const SETTINGS_DEFAULTS = {
   consoleHeight: 180,                    // Console (bottom) pane height in px — restored across sessions
   customizerWheelStep: 3,                // entries advanced per mouse-wheel notch in the Customizer pane + dropdowns
   skillLevel: 'beginner',               // 'beginner' | 'intermediate' | 'advanced'
+  lastSeenAppRelease: null,             // highest APP_RELEASE whose "What's new" the clinician has seen; null until first recorded
 };
 let settings = loadSettings();
 
@@ -4251,6 +4377,80 @@ function showUpdateModal({ loaded, latest, notes, oldScad, newScad }) {
   });
 }
 
+// ===== Post-update "What's new" notice =====
+// After the app silently auto-updates (checkForAppUpdate → SW refresh), the
+// freshly-loaded version shows the clinician what changed since the release they
+// last saw. Notes come from the bundled RELEASE_NOTES (no network fetch — works
+// on locked-down networks). Gated by settings.lastSeenAppRelease so it appears
+// exactly once per update.
+function collectWhatsNew(sinceRelease) {
+  return Object.keys(RELEASE_NOTES)
+    .map(Number)
+    .filter(n => Number.isFinite(n) && n > sinceRelease && n <= APP_RELEASE)
+    .sort((a, b) => b - a)                                  // newest release first
+    .map(n => ({ release: n, notes: (RELEASE_NOTES[n] || []).filter(Boolean) }))
+    .filter(g => g.notes.length);
+}
+
+function showWhatsNewModal(groups) {
+  const ov  = document.getElementById('whatsnew-overlay');
+  const msg = document.getElementById('whatsnew-msg');
+  msg.textContent = '';
+
+  const intro = document.createElement('div');
+  intro.style.cssText = 'color:#555;';
+  intro.append('The app updated itself to release ');
+  const rel = document.createElement('b'); rel.textContent = String(APP_RELEASE);
+  intro.append(rel, '. Here’s what changed:');
+  msg.appendChild(intro);
+
+  const multi = groups.length > 1;
+  for (const g of groups) {
+    if (multi) {
+      const h = document.createElement('div');
+      h.className = 'wn-relhead';
+      h.textContent = 'Release ' + g.release;
+      msg.appendChild(h);
+    }
+    const ul = document.createElement('ul');
+    for (const it of g.notes) {
+      const li = document.createElement('li');
+      li.textContent = String(it);
+      ul.appendChild(li);
+    }
+    msg.appendChild(ul);
+  }
+
+  const ok = document.getElementById('whatsnew-ok');
+  function cleanup() {
+    ov.classList.remove('open');
+    ok.removeEventListener('click', cleanup);
+    document.removeEventListener('keydown', onKey);
+  }
+  function onKey(e) { if (e.key === 'Escape' || e.key === 'Enter') cleanup(); }
+  ok.addEventListener('click', cleanup);
+  document.addEventListener('keydown', onKey);
+  ov.classList.add('open');
+  ok.focus();
+}
+
+// Called once at app load. Shows the notice when the running release is newer
+// than the last one the clinician acknowledged, then records the current release.
+// A run with no prior record (brand-new user, OR the first version to ship this
+// feature — older versions never stored the value) just establishes the baseline
+// silently: the release that INTRODUCES the notice cannot announce itself.
+function maybeShowWhatsNew() {
+  const seen = settings.lastSeenAppRelease;
+  if (seen == null || !Number.isFinite(Number(seen))) {
+    setSetting('lastSeenAppRelease', APP_RELEASE);         // baseline, no notice
+    return;
+  }
+  if (Number(seen) >= APP_RELEASE) return;                 // already current
+  const groups = collectWhatsNew(Number(seen));
+  setSetting('lastSeenAppRelease', APP_RELEASE);           // record before showing (a reload can't re-trigger)
+  if (groups.length) showWhatsNewModal(groups);
+}
+
 function updateDirty() {
   if (!project) return;
   const dirty = isDirty();
@@ -5407,6 +5607,11 @@ document.querySelectorAll('#settings-cats .cat').forEach(c => {
     renderSettingsPanel(c.dataset.cat);
   });
 });
+
+// After a silent auto-update the reloaded app announces what changed. Runs on
+// every load (independent of the service worker, so it also works on the dev
+// server); the lastSeenAppRelease gate makes it a no-op unless the release moved.
+maybeShowWhatsNew();
 
 if ('serviceWorker' in navigator) {
   // The service worker is cache-first (see sw.js) and CACHE_NAME is only bumped

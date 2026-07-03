@@ -320,6 +320,9 @@ keyguard-designer-web/
   regenerate: add an entry when new clinician-facing code lands, delete one when a change is
   backed out, and otherwise leave the file exactly as Ken left it. Never overwrite, reword, or
   reorder his existing entries; if you believe one is inaccurate, ask him rather than change it.
+  **After any `CHANGELOG.md` edit, regenerate the bundled notes** (`node scripts/apply-release-notes.mjs`,
+  trigger "apply release notes") in the same change, so the post-update "What's new" notice in
+  `app.html` (its `RELEASE_NOTES` block) stays in lockstep with the changelog.
   At release, the ritual merely renames `## Unreleased (next release)` to `## Release <APP_RELEASE>`
   and opens a fresh empty section — it authors nothing new. NOTE: `CHANGELOG.md` is the
   clinician-readable record; `latest_app_version.json` is only a version-number trigger for the
@@ -365,6 +368,21 @@ node scripts/apply-skill-config.js
 This reads `skill-config.txt` and injects the updated `SKILL_LEVEL_DESCS` and `SKILL_CONFIG`
 into `app.html` between the `@@…_START@@` / `@@…_END@@` markers. No OpenSCAD or build step
 required. Takes under a second; run it in the foreground and report whether it succeeded.
+
+## Trigger phrase — apply release notes
+
+When Ken says **"apply release notes"**, run from the web-app project root:
+```
+node scripts/apply-release-notes.mjs
+```
+This parses `CHANGELOG.md` and regenerates the bundled `RELEASE_NOTES` object in `app.html`
+(between the `@@RELEASE_NOTES_START@@` / `@@RELEASE_NOTES_END@@` markers) — the notes the app's
+post-update **"What's new"** notice shows clinicians. `## Release N` → key N; `## Unreleased`
+→ `APP_RELEASE` (so dev builds preview pending notes). Notes are bundled, not fetched, so the
+notice works on locked-down networks. Because the block is generated, **whenever you edit
+`CHANGELOG.md` (the changelog-as-you-go convention), run this in the same change** so `app.html`'s
+bundled notes never drift from the changelog; it is also part of the release ritual. Foreground,
+<1 s; report what it wrote.
 
 ## Trigger phrase — update web app visual references
 
