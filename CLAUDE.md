@@ -314,6 +314,12 @@ keyguard-designer-web/
   than guess. **Committing is Claude's job, never Ken's** — Ken does not run git/commit commands;
   Claude commits the code + changelog change together (on `dev`) as part of finishing the work.
   Ken can review the running wording at any time (trigger: "show me the unreleased changelog").
+  **Ken's own edits to `CHANGELOG.md` are authoritative and must be preserved.** He may reword,
+  reorder, or rewrite entries whenever he likes; treat his phrasing as final. Only ever make
+  *surgical* changes to `CHANGELOG.md` — a targeted `Edit`, NEVER a whole-file `Write` or
+  regenerate: add an entry when new clinician-facing code lands, delete one when a change is
+  backed out, and otherwise leave the file exactly as Ken left it. Never overwrite, reword, or
+  reorder his existing entries; if you believe one is inaccurate, ask him rather than change it.
   At release, the ritual merely renames `## Unreleased (next release)` to `## Release <APP_RELEASE>`
   and opens a fresh empty section — it authors nothing new. NOTE: `CHANGELOG.md` is the
   clinician-readable record; `latest_app_version.json` is only a version-number trigger for the
