@@ -8,7 +8,9 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
-_Nothing yet._
+### New features
+
+- **Undo and redo your Customizer changes.** Undo and redo buttons in the command bar (next to Settings) let you step back and forward through changes you've made in the Customizer. You can also use the keyboard: Ctrl/Cmd+Z to undo, and Ctrl/Cmd+Shift+Z (or Ctrl+Y) to redo — so you can experiment freely and back out a change without starting over.
 
 ## Release 15
 
