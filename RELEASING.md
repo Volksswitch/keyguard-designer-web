@@ -1,160 +1,128 @@
-# Releasing the Keyguard Designer (web)
+# Releasing the Keyguard Designer web app
 
-## Branch model
+This is the formal release process for the Keyguard Designer web app. It is the
+**same shape** as the process for the other Volksswitch projects (Conversant AAC and
+the Keyguard Designer `.scad`): *work locally, log each user-visible change to
+`## Unreleased` in plain language, and say "bump keyguard web app" to cut a release.*
+Only the mechanics (integer release numbers, GitHub Pages) differ.
 
-Two branches, nothing else:
+## Environment model
 
-- **`dev`** — all day-to-day work. Push here as often as you like.
-  **Pushing to `dev` never reaches clinicians.**
-- **`main`** — the released app. GitHub Pages serves this branch
-  (<https://volksswitch.github.io/keyguard-designer-web/>). It is *frozen* between
-  releases. You never commit app changes directly to `main`.
+- **The PC is the development environment.** All day-to-day work is committed to the
+  local `main` branch on the PC. **These commits are NOT pushed.** They are backed up
+  and synced across your machines by OneDrive, which syncs the whole project folder
+  including the `.git` directory.
+- **GitHub is the release environment.** The repository is
+  <https://github.com/Volksswitch/keyguard-designer-web>. **GitHub Pages serves the
+  `main` branch** (<https://volksswitch.github.io/keyguard-designer-web/>), so a
+  clinician's browser picks up a new version when `main` moves. Therefore:
 
-"Release branch" and `main` are the same branch. There is no separate `release` branch.
+  > **Commit to local `main` = save your work.
+  > Push `main` = release to clinicians.**
 
-A clinician's browser only picks up a new version when the service worker file `sw.js`
-changes byte-for-byte, and that only happens when you bump `CACHE_NAME`. So:
+  These are two different acts. Everything you commit piles up locally, invisible to
+  clinicians, until you choose to release. **Any push to `main` redeploys the app**
+  (even a docs-only commit), so we do not push between releases — not even documentation.
 
-> **Push to `dev` = save your work.
-> Merge to `main` + bump `CACHE_NAME` = release to clinicians.**
+There is one branch: `main`. The old `dev`/`main` split is retired (`origin/dev` is
+redundant). There is no separate release branch.
 
-These are deliberately two different acts. Everything you push to `dev` piles up,
-invisible to clinicians, until you choose to release.
+## Between releases (the dev cycle)
+
+- **Claude commits; Ken does not run git.** As each change is completed, Claude commits
+  it to local `main`. No pushing.
+- **Changelog-as-you-go (mandatory).** `CHANGELOG.md` is kept in lockstep with `app.html`.
+  The moment a change lands that a **clinician** could see or do differently (a new
+  feature or a visible fix), add or edit the matching plain-English bullet under the
+  topmost **`## Unreleased (next release)`** heading, **in the same commit as the code**,
+  written the way a clinician reads it (not engineering language), matching the voice of
+  the existing `## Release N` bullets. Exclude internal-only work (tests, tooling,
+  refactors, harness/CI, perf with no visible effect); when in doubt, ask Ken. If a
+  change is backed out, delete its bullet in the same commit. **After any `CHANGELOG.md`
+  edit, regenerate the bundled notes** (`node scripts/apply-release-notes.mjs`) so the
+  in-app "What's new" notice stays in lockstep. **Ken's own edits to `CHANGELOG.md` are
+  authoritative** — preserve his wording; make only surgical edits.
+
+## Version numbers
+
+Three things carry the version:
+
+- **`APP_RELEASE`** (integer, in `app.html`) — the number clinicians see on Settings →
+  About and in the project-open console banner. The analog of `keyguard_designer_version`
+  in `keyguard.scad`.
+- **`CACHE_NAME`** (`keyguard-vN`, in `sw.js`) — the service-worker cache key. A client
+  only picks up a new build when this changes byte-for-byte.
+- **`latest_app_version.json`** — the manifest the app's self-updater compares against;
+  it must equal the *deployed* `APP_RELEASE`.
+
+**Pre-bump (so you always know which build you're testing).** At the *end* of each
+release, the local dev copy is immediately pre-incremented: `APP_RELEASE` → (last public
+release + 1). The dev build's About screen and console banner therefore always read a
+number **higher than the last public release**, so when you test dev changes you can tell
+at a glance you're on a dev build. This pre-bump lives **locally only (unpushed)** until
+its release. **`CACHE_NAME` and `latest_app_version.json` are NOT pre-bumped** — they move
+only during the release ritual, to match the deployed `APP_RELEASE`. (A pre-bumped manifest
+on `main` would bounce clinicians toward a build that isn't live.) All numbers only ever
+**increase.**
 
 ## When to release
 
-Merge `dev → main` only when **all** of these hold:
+Release only when a coherent chunk is done — a set of fixes/features you'd describe to a
+clinician in one breath — no more often than **~every 2 months** (routine improvements wait
+for the next window). **Critical-fix exception:** a bug that blocks a clinician from
+designing a keyguard may be released as soon as it's fixed and tested. Anything below that
+bar stays as local commits; `main` does not move.
 
-1. **A coherent chunk is done.** Don't release per-commit or per-tiny-fix. Wait until a
-   set of features/fixes forms a unit you'd describe to a clinician in one breath.
-2. **Cadence: no more often than ~every 2 months.** Routine improvements wait for the
-   next window. (Exception below.)
-3. **The full test suite is green on `dev`:** `scripts\test.cmd` (all layers) passes.
-4. **You've eyeballed it** in a real Chrome/Edge session against a real project folder.
+## Releasing — trigger phrase "bump keyguard web app"
 
-**Critical-fix exception:** a bug that *blocks clinicians from designing a keyguard* may
-be released as soon as it's fixed and tested, even inside the 2-month window. Same ritual
-below — just don't wait for the calendar.
+Ken says **"bump keyguard web app"** (or an obvious variant). Ken issues this only **after
+he has verified the `CHANGELOG.md` contents.** That single command authorizes the entire
+ritual below **through the push** — Claude runs it end to end, printing the release summary
+and the new cache/release numbers as it goes, and does **not** pause for a second
+confirmation before pushing.
 
-Anything that doesn't meet the bar stays on `dev`. `main` does not move.
+The ritual:
 
-## Trigger phrase (Claude Code)
-
-Ken says **"Release the web app"** (or an obvious variant — "do a web release",
-"ship the web app"). That single phrase authorizes the entire ritual below.
-Claude runs steps automatically through the merge + `CACHE_NAME` bump + commit,
-then shows the release summary and new cache number and waits for one go-ahead
-before the final `git push origin main`. After pushing, Claude immediately
-performs the post-release steps (sync + pre-bump) without waiting to be asked.
-No other per-step instruction is needed.
-
-## How to release (the ritual)
-
-This is the **only** time `CACHE_NAME` changes and the **only** time `main` moves. It
-produces one atomic release commit that both merges `dev` and bumps the cache.
-
-```
-git checkout main
-git pull origin main
-git merge --no-ff --no-commit dev
-```
-
-Now bump the cache version in `sw.js` (line ~4) — increment the integer by one:
-
-```
-const CACHE_NAME = 'keyguard-v1';   →   const CACHE_NAME = 'keyguard-v2';
-```
-
-Edit it by hand in your editor — it's a single digit and a manual edit is the least
-error-prone. The number must only ever **go up**.
-
-Now reconcile the **release number** in `app.html`. `APP_RELEASE` (near `SETTINGS_KEY`) is
-pre-incremented on `dev` at the *start* of each development cycle (the convention mirrors
-keyguard.scad's `keyguard_designer_version`), so by the time you merge `dev → main` it should
-**already** read the number you're releasing. **Verify** `const APP_RELEASE = N;` is the new
-release number — it normally needs no edit here. (If a cycle somehow shipped without a
-pre-bump, set it now.) It is the number clinicians see on **Settings → About** and in the
-project-open console banner. `CACHE_NAME` is the separate cache key bumped above; the two end
-up equal-by-increment but don't have to be equal in value. Like the cache number, `APP_RELEASE`
-only ever goes up.
-
-Now update `CHANGELOG.md`: rename the **`## Unreleased (next release)`** heading to
-**`## Release <new APP_RELEASE>`**, and add a fresh empty `## Unreleased (next release)`
-section above it for the next cycle. The changelog is clinician-facing — keep entries to
-what a clinician can see or do differently; leave test/build/tooling changes out.
-
-Now update **`latest_app_version.json`** so the app self-updater knows this release is live.
-It tracks the *deployed* `APP_RELEASE` and moves **only here, at release** — exactly like
-`CACHE_NAME`, and never on `dev`. Regenerate it from the (now-correct) `APP_RELEASE`:
-
-```
-node scripts/publish-app-version.mjs        # or say "publish app version" to Claude
-```
-
-The script prints the `app_release` it wrote and the current `CACHE_NAME` — confirm the number
-matches the release you're shipping before committing. (Edit the `notes` line by hand if you
-want a clinician-facing "what's new"; the script preserves it on future runs.) A stale or
-pre-bumped value here would bounce clinicians through a forced refresh to a build that isn't
-live, so only ever commit it as part of this ritual.
-
-Finish the atomic commit (the `--no-commit` above left the merge staged; this single
-commit *is* the merge commit, now carrying the cache + release + changelog + app-manifest bump):
-
-```
-git add sw.js app.html CHANGELOG.md latest_app_version.json
-git commit -m "Release: <one-line summary of the chunk> (cache keyguard-v2)"
-git push origin main
-```
-
-GitHub Pages redeploys within ~1 minute. Clinicians get the new app on their next
-reload/reopen (occasionally the one after that, because the service worker swaps in on
-one load and serves the new shell on the next).
-
-**Post-release (do this immediately after pushing `main`):**
-
-```
-git checkout dev
-git merge main --no-edit          # bring CHANGELOG + sw.js back into dev
-# bump APP_RELEASE in app.html: N → N+1
-git add app.html
-git commit -m "chore: pre-bump APP_RELEASE to <N+1> for next dev cycle"
-git push origin dev
-```
-
-This keeps `dev` one ahead of public at all times and closes the window where a
-dev build would report the same release number as the just-shipped public version.
+1. **Bump `CACHE_NAME`** in `sw.js` — increment the integer by one (`keyguard-v15` →
+   `keyguard-v16`). It only ever goes up.
+2. **Verify `APP_RELEASE`** in `app.html` already reads the release number (it was
+   pre-bumped at the last release). If a cycle somehow shipped without a pre-bump, set it now.
+3. **Finalize the changelog.** Rename the topmost **`## Unreleased (next release)`** heading
+   to **`## Release <APP_RELEASE>`**, and add a fresh empty `## Unreleased (next release)`
+   section above it.
+4. **Regenerate the bundled "What's new" notes:** `node scripts/apply-release-notes.mjs`.
+5. **Update the manifest:** `node scripts/publish-app-version.mjs` — writes the deployed
+   `APP_RELEASE` into `latest_app_version.json`. Confirm the number matches the release.
+6. **Commit** the release (`sw.js`, `app.html`, `CHANGELOG.md`, the `RELEASE_NOTES` block in
+   `app.html`, `latest_app_version.json`) as one commit.
+7. **Push `origin main`.** GitHub Pages redeploys within ~1 minute. Clinicians get the new app
+   on their next reload (occasionally the one after, as the service worker swaps in).
+8. **Start the next cycle — pre-bump.** Immediately increment `APP_RELEASE` in `app.html` to
+   (release + 1), commit that locally, and **do not push.** The dev copy now leads public by one.
 
 ## Invariants — do not break these
 
-- **Never bump `CACHE_NAME` on `dev`.** It changes only during the ritual above, on
-  `main`. This is what makes "push to `dev`" safe.
-- **Never commit app changes straight to `main`.** Only the release merge moves `main`.
-- **The cache number only increases** (v5 → v6, never back to v4). Browsers detect a
-  *changed* `sw.js`, and a lower/old number can leave clients stuck.
-- **`APP_RELEASE` is pre-bumped on `dev`; `CACHE_NAME` is not.** `APP_RELEASE` is a display
-  label — increment it on `dev` to (last public release + 1) at the *start* of each cycle, so
-  a dev build always reads one ahead of public (mirrors keyguard.scad's
-  `keyguard_designer_version`). `CACHE_NAME` is the deployment cache key and still moves ONLY
-  during the release ritual, on `main` (above). At release the two end up equal-by-increment;
-  between releases `dev`'s `APP_RELEASE` leads. Both only ever increase.
-- **`latest_app_version.json` moves like `CACHE_NAME`, not like `APP_RELEASE`.** It is the
-  signal the app self-updater compares against, so it must equal the *deployed* release. Bump
-  it ONLY in the release commit on `main` (via `publish-app-version.mjs`), never on `dev`.
-  Pre-bumping it would force live clinicians to refresh toward a build that isn't deployed yet.
-- If `git merge` reports a conflict in `sw.js`, the **`main` side's version number always
-  wins** — resolve in favor of `main`, then bump it as normal. (Conflicts here are rare:
-  `dev` never touches the `CACHE_NAME` line.)
+- **Never push to `main` except as step 7 of "bump keyguard web app".** Any push to `main`
+  deploys the app to clinicians — including a docs-only push. Between releases, everything
+  stays as local commits.
+- **The pre-bumped `APP_RELEASE` and the `CACHE_NAME`/manifest bump stay local (unpushed)
+  until release.** GitHub `main` always equals the last **public** release, and on `main` the
+  served `app.html`, `CACHE_NAME`, and `latest_app_version.json` all agree on that number.
+- **`CACHE_NAME`, `APP_RELEASE`, and the manifest only ever increase** (never reused, never
+  lowered). A lowered cache number can strand clients on a stale build.
+- **`CHANGELOG.md` is authored as-you-go**, in clinician language; nothing is authored at
+  release except the `## Unreleased` → `## Release <N>` rename.
+- **Ken verifies `CHANGELOG.md` before issuing "bump keyguard web app";** the command then
+  runs through the push without a second confirmation.
 
 ## Rolling back a bad release
 
-Revert the release commit on `main`, then bump the cache **up** again (e.g. v6 → v7, not
-back to v5):
+Revert the release commit on `main`, then bump `CACHE_NAME` **up** again (e.g. v16 → v17,
+never back to v15), and push:
 
 ```
-git checkout main
-git revert -m 1 <release-commit-sha>
+git revert -m 1 <release-commit-sha>   # -m 1 if it was a merge; drop it otherwise
 # hand-edit sw.js: bump CACHE_NAME up by one more
-git add sw.js
 git commit --amend --no-edit
 git push origin main
 ```

@@ -313,20 +313,21 @@ keyguard-designer-web/
 - Node / npm are only needed for the Playwright test harness.
 - Do not add external library dependencies that require a build step — the app must remain
   servable by a plain `python -m http.server`.
-- **Branch model — `dev` is the only branch you commit to.** All day-to-day work goes on
-  `dev`. **`main` is release-only**: GitHub Pages serves `main`, and it moves *only* via the
-  release ritual (merge `dev → main` + bump `CACHE_NAME` in the same merge commit). Never
-  commit app changes directly to `main`. Never bump `CACHE_NAME` on `dev`. Pushing to `dev`
-  must never reach clinicians — that invariant is the whole point of the split.
-- **Version numbering — `dev` is always one ahead of public.** `APP_RELEASE` (in `app.html`)
-  is the app's integer version — the analog of `keyguard_designer_version` in `keyguard.scad`.
-  The moment you start a new development cycle, **pre-increment `APP_RELEASE` on `dev` to (last
-  public release + 1)**, exactly as you bump `keyguard_designer_version` at the start of new
-  `.scad` work. So a dev build always reads one ahead of what's deployed, and the project-open
-  console banner makes that visible. This is the ONE release constant that moves on `dev`:
-  `APP_RELEASE` is a display label and is pre-bumped; `CACHE_NAME` is the service-worker cache
-  key and is NOT — it still moves only during the release ritual, to match `APP_RELEASE`. See
+- **Branch model — single `main`, PC = dev / GitHub = release (aligned across all Volksswitch
+  projects, Ken July 2026).** There is one branch: `main`. **The PC is the development
+  environment** — all day-to-day work is committed to local `main` but **NOT pushed** (local
+  commits sync/back up across machines via OneDrive). **GitHub is the release environment** —
+  GitHub Pages serves `main`, so **pushing `main` = releasing to clinicians.** Between releases
+  nothing is pushed — not even docs (any push redeploys the served app). The old `dev`/`main`
+  split is retired; `origin/dev` is redundant. Never bump `CACHE_NAME` except at release. See
   `RELEASING.md`.
+- **Version numbering — the dev copy is one ahead of public (pre-bump).** `APP_RELEASE` (in
+  `app.html`) is the app's integer version — the analog of `keyguard_designer_version` in
+  `keyguard.scad`. At the *end* of each release, **pre-increment `APP_RELEASE` to (last public
+  release + 1)** on the local copy, so a dev build always reads one ahead of what's deployed and
+  the project-open console banner makes that visible. The pre-bump lives **locally only
+  (unpushed)** until its release. `CACHE_NAME` is the service-worker cache key and is NOT
+  pre-bumped — it moves only during the release ritual, to match `APP_RELEASE`. See `RELEASING.md`.
 - **Releasing is a deliberate, infrequent act, not an automatic consequence of a push.** Do
   not merge `dev → main` after every change. See `RELEASING.md` for the full when/how —
   follow it exactly; it is the source of truth for the release process.
@@ -342,7 +343,7 @@ keyguard-designer-web/
   code — no more, no less. **Exclude** internal-only changes (tests, tooling, refactors, harness/CI,
   perf work with no visible effect) — the file's own header says so; when in doubt, ask Ken rather
   than guess. **Committing is Claude's job, never Ken's** — Ken does not run git/commit commands;
-  Claude commits the code + changelog change together (on `dev`) as part of finishing the work.
+  Claude commits the code + changelog change together (on local `main`, unpushed) as part of finishing the work.
   Ken can review the running wording at any time (trigger: "show me the unreleased changelog").
   **Ken's own edits to `CHANGELOG.md` are authoritative and must be preserved.** He may reword,
   reorder, or rewrite entries whenever he likes; treat his phrasing as final. Only ever make
