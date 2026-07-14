@@ -289,14 +289,20 @@
   /* ---------- Custom Openings panel ----------
      Deliberately NOT a modal: no backdrop, so the viewport keeps its mouse
      bindings (orbit/zoom) while the panel is up. It just floats above
-     everything in the z order. Draggable by its title bar, resizable via the
-     native CSS resizer, and its body scrolls when the grids get long. */
+     everything in the z order. Draggable by its title bar, resizable by the
+     corner grip, and its body scrolls when the grids get long. (The grip is
+     ours, not the CSS `resize` one: the footer is painted over that corner and
+     swallows the drag.) */
   #openings-panel { position: fixed; top: 70px; left: 70px; z-index: 1200;
                     width: 640px; height: 460px; min-width: 460px; min-height: 240px;
-                    max-width: 96vw; max-height: 92vh;
-                    display: none; flex-direction: column; overflow: hidden; resize: both;
+                    display: none; flex-direction: column; overflow: hidden;
                     background: #fafafa; border: 1px solid #888; border-radius: 4px;
                     box-shadow: 0 8px 24px rgba(0,0,0,0.3); font-size: 12px; }
+  #openings-grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+                   cursor: nwse-resize; z-index: 2; }
+  #openings-grip::after { content: ''; position: absolute; right: 3px; bottom: 3px;
+                          width: 8px; height: 8px;
+                          border-right: 2px solid #999; border-bottom: 2px solid #999; }
   #openings-panel.open { display: flex; }
   #openings-title { margin: 0; padding: 8px 12px; border-bottom: 1px solid #ccc;
                     background: #e8e8e8; font-size: 14px; font-weight: bold;
@@ -699,6 +705,7 @@
     <button id="openings-save">Save</button>
     <button id="openings-cancel">Cancel</button>
   </div>
+  <div id="openings-grip" title="Resize"></div>
 </div>
 
 <script type="module">
@@ -5800,14 +5807,31 @@ function parseOAText(text) {
   }
 
   try {
-    const v = parseValue();
-    ws();
-    if (i < s.length) throw new Error('unexpected text after the vector');
-    if (!v.isList) throw new Error('not a vector');
-    if (v.length === 0) return { ok: true, rows: [] };
-    // A single row may be written without the outer brackets (the .scad's
-    // parse_user_vector does the same normalisation).
-    const rows = v[0] && v[0].isList ? v : [v];
+    // The field holds a comma-separated run of subvectors, one per opening,
+    // with a trailing comma — NOT an outer vector wrapping them. A legacy
+    // outer-vector value is still read (the .scad's parse_user_vector accepts
+    // both); it just gets written back in the un-wrapped form.
+    const items = [];
+    for (;;) {
+      ws();
+      if (i >= s.length) break;
+      items.push(parseValue());
+      ws();
+      if (s[i] === ',') { i++; continue; }   // trailing comma → loop ends at EOF
+      if (i >= s.length) break;
+      throw new Error('expected "," between openings');
+    }
+    if (items.length === 0) return { ok: true, rows: [] };
+    if (items.length === 1 && items[0].isList && items[0].length === 0) {
+      return { ok: true, rows: [] };         // "[]"
+    }
+    // A lone outer vector of rows: unwrap it.
+    const rows = (items.length === 1 && items[0].isList && items[0][0] && items[0][0].isList)
+      ? items[0]
+      : items;
+    for (const r of rows) {
+      if (!r || !r.isList) throw new Error('an opening is not a vector');
+    }
     return { ok: true, rows };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -5865,17 +5889,18 @@ function ogSimplify(row, grid, screenOrigin) {
 // ---- Serialising ---------------------------------------------------------
 const ogFmt = v => String(Number(v.toFixed(4)));   // 2.5000000001 → 2.5
 
+// One subvector per opening, comma-separated, with a trailing comma — the same
+// shape a clinician writes by hand. No outer vector.
 function ogSerialize(rows, highlightIdx) {
   if (!rows.length) return '';
-  const out = rows.map((r, idx) => {
+  return rows.map((r, idx) => {
     const rawId = idx === highlightIdx ? '#' : r.id;
     const id = typeof rawId === 'string' ? `"${rawId.replace(/"/g, '\\"')}"` : String(rawId);
     const w  = r.shape === 'c' ? 0 : r.w;
     const cr = r.shape === 'c' ? 0 : r.cr;
     return `[${id},"${r.shape}",${ogFmt(r.h)},${ogFmt(w)},${ogFmt(cr)},` +
-           `${ogFmt(r.x)},${ogFmt(r.y)},0,"c","",0,0,[],[]]`;
-  });
-  return '[' + out.join(',') + ']';
+           `${ogFmt(r.x)},${ogFmt(r.y)},0,"c","",0,0,[],[]],`;
+  }).join('');
 }
 
 // ---- Grid rendering ------------------------------------------------------
@@ -6019,11 +6044,14 @@ function ogRenderWarnings() {
 // Write the grids into the two Customizer inputs. Everything downstream (the
 // render, the export, the dirty marker) reads its values from those inputs, so
 // this one write is all a preview or a save needs.
-function ogWriteFields(highlight) {
+// `withHighlight` is false only for Save — a "#" ID is a viewport marker and
+// must never be persisted. Every other write (Show, and the highlight button
+// itself) carries the current highlight, so highlighting survives a Show.
+function ogWriteFields(withHighlight) {
   for (const grid of ['screen', 'case']) {
     const st = ogState[grid];
     if (st.error) continue;                // unreadable → never rewrite it
-    const hlIdx = (highlight && highlight.grid === grid) ? highlight.idx : -1;
+    const hlIdx = (withHighlight && st.hl != null) ? st.hl : -1;
     const el = ogFieldInput(grid === 'screen' ? 'my_screen_openings' : 'my_case_openings');
     if (el) el.value = ogSerialize(st.rows, hlIdx);
   }
@@ -6050,11 +6078,11 @@ function ogHighlight(grid, idx) {
   if (!turningOff) st.hl = idx;
   ogRenderGrid('screen');
   ogRenderGrid('case');
-  ogPreview(turningOff ? null : { grid, idx });
+  ogPreview();
 }
 
-function ogPreview(highlight) {
-  ogWriteFields(highlight);
+function ogPreview() {
+  ogWriteFields(true);
   ogState.previewed = true;
   ogMsgEl.textContent = 'Previewing — not saved yet.';
   doRender();
@@ -6118,7 +6146,7 @@ function closeOpenings(rerender = true) {
 
 function saveOpenings() {
   if (!ogState) return;
-  ogWriteFields(null);          // no highlight — "#" IDs are never persisted
+  ogWriteFields(false);         // no highlight — "#" IDs are never persisted
   commitHistory();              // one undo step for the whole edit
   ogPanel.classList.remove('open');
   ogState = null;
@@ -6131,7 +6159,7 @@ if (ogBtn) {
     else openOpenings();
   });
 }
-ogShowBtn.addEventListener('click', () => ogPreview(null));
+ogShowBtn.addEventListener('click', () => ogPreview());
 ogSaveBtn.addEventListener('click', saveOpenings);
 document.getElementById('openings-cancel').addEventListener('click', () => closeOpenings());
 document.getElementById('openings-close').addEventListener('click', () => closeOpenings());
@@ -6168,6 +6196,29 @@ document.addEventListener('keydown', e => {
     ogPanel.style.top  = Math.max(0, Math.min(e.clientY - oy, H - ogPanel.offsetHeight)) + 'px';
   });
   document.addEventListener('mouseup', () => { dragging = false; });
+}());
+
+// Resize by the corner grip. Grows down and right from the panel's top-left,
+// clamped to the CSS min size and to what still fits on screen.
+(function () {
+  const grip = document.getElementById('openings-grip');
+  const MIN_W = 460, MIN_H = 240;
+  let sizing = false, sx = 0, sy = 0, sw = 0, sh = 0;
+
+  grip.addEventListener('mousedown', e => {
+    sizing = true;
+    sx = e.clientX; sy = e.clientY;
+    sw = ogPanel.offsetWidth; sh = ogPanel.offsetHeight;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!sizing) return;
+    const maxW = window.innerWidth  - ogPanel.offsetLeft;
+    const maxH = window.innerHeight - ogPanel.offsetTop;
+    ogPanel.style.width  = Math.max(MIN_W, Math.min(sw + (e.clientX - sx), maxW)) + 'px';
+    ogPanel.style.height = Math.max(MIN_H, Math.min(sh + (e.clientY - sy), maxH)) + 'px';
+  });
+  document.addEventListener('mouseup', () => { sizing = false; });
 }());
 
 updateOpeningsButton();
