@@ -2809,6 +2809,10 @@ async function doRender() {
     baseArgs.push('-D', 'echo_dims="yes"');
     if (project.customizer) {
       const cur = currentFormValues();
+      // The Custom Openings panel previews without touching the Customizer
+      // fields (they only change on its Save), so its pending openings are laid
+      // over the form's values here, for the viewport only.
+      if (ogRenderOverride) Object.assign(cur, ogRenderOverride);
       const baseline = project.baselineParams || {};
       const typeMap = {};
       for (const sec of project.customizer)
@@ -6088,31 +6092,26 @@ function ogRenderWarnings() {
 }
 
 // ---- Field / render plumbing --------------------------------------------
-// Write the grids into the two Customizer inputs. Everything downstream (the
-// render, the export, the dirty marker) reads its values from those inputs, so
-// this one write is all a preview or a save needs.
-// Every write — Show, the highlight button, and Save alike — reflects exactly
-// what the panel shows, highlight included. "#" in the ID column IS the O&A
-// format's highlight marker, so a highlighted row saves with a "#" ID and stays
-// highlighted; clicking the highlight off restores the row's own ID.
-function ogWriteFields() {
+// The panel as a pair of field values: what my_screen_openings / my_case_openings
+// WOULD hold. Highlight included — "#" in the ID column IS the O&A format's
+// highlight marker, so a highlighted row carries a "#" ID and a row whose
+// highlight is off carries its own.
+function ogFieldText() {
+  const out = {};
   for (const grid of ['screen', 'case']) {
     const st = ogState[grid];
     if (st.error) continue;                // unreadable → never rewrite it
-    const el = ogFieldInput(grid === 'screen' ? 'my_screen_openings' : 'my_case_openings');
-    if (el) el.value = ogSerialize(st.rows, st.hl);
+    out[grid === 'screen' ? 'my_screen_openings' : 'my_case_openings'] =
+      ogSerialize(st.rows, st.hl);
   }
-  updateDirty();
+  return out;
 }
 
-// Put the fields back the way they were when the panel opened.
-function ogRestoreFields() {
-  for (const [name, val] of Object.entries(ogState.snapshot)) {
-    const el = ogFieldInput(name);
-    if (el) el.value = val;
-  }
-  updateDirty();
-}
+// A preview must not touch the Customizer fields — only Save does. So the
+// preview values live here and doRender() lays them over the form's values for
+// the duration. Cleared on Save (which writes the fields for real) and on
+// Cancel/close.
+let ogRenderOverride = null;
 
 // The .scad paints EVERY O&A row whose ID is "#" as a translucent overlay, so
 // highlighting is just "render with this row's ID swapped for #" — and any
@@ -6127,7 +6126,7 @@ function ogHighlight(grid, idx) {
 }
 
 function ogPreview() {
-  ogWriteFields();
+  ogRenderOverride = ogFieldText();
   ogState.previewed = true;
   ogMsgEl.textContent = 'Previewing — not saved yet.';
   doRender();
@@ -6143,7 +6142,6 @@ function openOpenings() {
 
   ogState = {
     screenUnit: unit,
-    snapshot: {},
     previewed: false,
     screen: { rows: [], error: null, dropped: 0, converted: 0, hl: new Set() },
     case:   { rows: [], error: null, dropped: 0, converted: 0, hl: new Set() },
@@ -6153,8 +6151,6 @@ function openOpenings() {
     const name = grid === 'screen' ? 'my_screen_openings' : 'my_case_openings';
     const el = ogFieldInput(name);
     const text = el ? el.value : '';
-    ogState.snapshot[name] = text;
-
     const parsed = parseOAText(text);
     const st = ogState[grid];
     if (!parsed.ok) { st.error = parsed.error; continue; }
@@ -6185,20 +6181,26 @@ function openOpenings() {
   if (!ogState.screen.error && !ogState.case.error) ogShowBtn.focus();
 }
 
-// Closing without saving must undo anything Show/highlight pushed into the
-// fields — hence the re-render.
+// Closing without saving drops the preview, so the viewport goes back to what
+// the (untouched) fields say — hence the re-render.
 function closeOpenings(rerender = true) {
   if (!ogPanel.classList.contains('open')) return;
   const previewed = ogState && ogState.previewed;
-  if (ogState) ogRestoreFields();
+  ogRenderOverride = null;
   ogPanel.classList.remove('open');
   ogState = null;
   if (rerender && previewed && project) doRender();
 }
 
+// The one and only write to the Customizer fields.
 function saveOpenings() {
   if (!ogState) return;
-  ogWriteFields();              // saves the panel as shown, highlight included
+  for (const [name, text] of Object.entries(ogFieldText())) {
+    const el = ogFieldInput(name);
+    if (el) el.value = text;
+  }
+  ogRenderOverride = null;      // the fields now say what the preview said
+  updateDirty();
   commitHistory();              // one undo step for the whole edit
   ogPanel.classList.remove('open');
   ogState = null;
