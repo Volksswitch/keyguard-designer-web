@@ -5896,11 +5896,12 @@ function ogSimplify(row, grid, screenOrigin) {
 const ogFmt = v => String(Number(v.toFixed(4)));   // 2.5000000001 → 2.5
 
 // One subvector per opening, comma-separated, with a trailing comma — the same
-// shape a clinician writes by hand. No outer vector.
-function ogSerialize(rows, highlightIdx) {
+// shape a clinician writes by hand. No outer vector. `highlighted` is the set of
+// row indexes to mark with a "#" ID; any number of them may be highlighted.
+function ogSerialize(rows, highlighted) {
   if (!rows.length) return '';
   return rows.map((r, idx) => {
-    const rawId = idx === highlightIdx ? '#' : r.id;
+    const rawId = highlighted.has(idx) ? '#' : r.id;
     const id = typeof rawId === 'string' ? `"${rawId.replace(/"/g, '\\"')}"` : String(rawId);
     const w  = r.shape === 'c' ? 0 : r.w;
     const cr = r.shape === 'c' ? 0 : r.cr;
@@ -6024,7 +6025,7 @@ function ogRenderGrid(grid) {
 
     const hlTd = document.createElement('td');
     const hl = document.createElement('button');
-    hl.className = 'og-rowbtn' + (st.hl === idx ? ' on' : '');
+    hl.className = 'og-rowbtn' + (st.hl.has(idx) ? ' on' : '');
     hl.textContent = '◉';
     hl.title = 'Highlight this opening in the viewport';
     hl.addEventListener('click', () => ogHighlight(grid, idx));
@@ -6038,8 +6039,11 @@ function ogRenderGrid(grid) {
     del.title = 'Delete this opening';
     del.addEventListener('click', () => {
       st.rows.splice(idx, 1);
-      if (st.hl === idx) st.hl = null;
-      else if (st.hl != null && st.hl > idx) st.hl--;
+      // Highlights are held as row indexes, so the rows after the deleted one
+      // shift down by one.
+      st.hl = new Set([...st.hl]
+        .filter(i => i !== idx)
+        .map(i => (i > idx ? i - 1 : i)));
       ogRenderGrid(grid);
       ogPreview();               // the opening leaves the viewport, not just the grid
     });
@@ -6095,9 +6099,8 @@ function ogWriteFields() {
   for (const grid of ['screen', 'case']) {
     const st = ogState[grid];
     if (st.error) continue;                // unreadable → never rewrite it
-    const hlIdx = st.hl != null ? st.hl : -1;
     const el = ogFieldInput(grid === 'screen' ? 'my_screen_openings' : 'my_case_openings');
-    if (el) el.value = ogSerialize(st.rows, hlIdx);
+    if (el) el.value = ogSerialize(st.rows, st.hl);
   }
   updateDirty();
 }
@@ -6111,17 +6114,15 @@ function ogRestoreFields() {
   updateDirty();
 }
 
+// The .scad paints EVERY O&A row whose ID is "#" as a translucent overlay, so
+// highlighting is just "render with this row's ID swapped for #" — and any
+// number of rows can be highlighted at once. Each button is its own toggle;
+// highlighting one opening never disturbs another.
 function ogHighlight(grid, idx) {
   const st = ogState[grid];
-  const turningOff = st.hl === idx;
-  // The .scad paints any O&A row whose ID is "#" as a translucent overlay, and
-  // the app already renders that highlight pass every time — so highlighting is
-  // just "render with this row's ID swapped for #". One at a time, by nature.
-  ogState.screen.hl = null;
-  ogState.case.hl = null;
-  if (!turningOff) st.hl = idx;
-  ogRenderGrid('screen');
-  ogRenderGrid('case');
+  if (st.hl.has(idx)) st.hl.delete(idx);
+  else st.hl.add(idx);
+  ogRenderGrid(grid);
   ogPreview();
 }
 
@@ -6144,8 +6145,8 @@ function openOpenings() {
     screenUnit: unit,
     snapshot: {},
     previewed: false,
-    screen: { rows: [], error: null, dropped: 0, converted: 0, hl: null },
-    case:   { rows: [], error: null, dropped: 0, converted: 0, hl: null },
+    screen: { rows: [], error: null, dropped: 0, converted: 0, hl: new Set() },
+    case:   { rows: [], error: null, dropped: 0, converted: 0, hl: new Set() },
   };
 
   for (const grid of ['screen', 'case']) {
@@ -6164,7 +6165,7 @@ function openOpenings() {
       // A saved "#" ID is a highlighted opening — reopen it highlighted. The
       // marker isn't an ID the clinician chose, so the row falls back to 0 and
       // gets its "#" back from the highlight state on the next write.
-      if (simple.id === '#') { simple.id = 0; st.hl = st.rows.length; }
+      if (simple.id === '#') { simple.id = 0; st.hl.add(st.rows.length); }
       st.rows.push(simple);
     }
   }
