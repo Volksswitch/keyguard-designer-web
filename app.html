@@ -5904,7 +5904,11 @@ function ogSimplify(row, grid, screenOrigin) {
   if (cb !== 0) return null;                                 // build-up or depth override
   const anchor  = at(8) ? ogStr(at(8)) : '';
   const surface = at(9) ? ogStr(at(9)) : '';
-  if (anchor === null || surface === null || surface !== '') return null;
+  if (anchor === null || surface === null) return null;
+  // Surface: "T"/"t" (top) is the default and means the same as blank — the
+  // .scad only acts on "B"/"b" (cut from the back). A "T" row is an ordinary
+  // through-cut, so accept it; only a back-surface row is beyond this panel.
+  if (surface !== '' && surface !== 'T' && surface !== 't') return null;
   const len = at(10) ? ogNum(at(10)) : 0;
   const th  = at(11) ? ogNum(at(11)) : 0;
   if (len !== 0 || th !== 0) return null;
@@ -6114,8 +6118,10 @@ function ogRenderWarnings() {
                 `Press Cancel to keep them and edit that field directly instead.`);
     }
     if (st.converted) {
-      bits.push(`<b>${field}</b>: ${st.converted} opening(s) were measured from a corner and are ` +
-                `now shown measured from their centre. The openings have not moved.`);
+      bits.push(`<b>${field}</b>: ${st.converted} opening(s) were measured from their lower-left ` +
+                `corner and have been converted to be measured from their <b>centre</b>. The ` +
+                `openings have not moved — but if you Save, they will be written back ` +
+                `centre-based.`);
     }
   }
   ogWarnEl.classList.toggle('show', bits.length > 0);
