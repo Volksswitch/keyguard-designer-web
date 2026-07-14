@@ -286,6 +286,52 @@
   .swatch-name { font-size: 11px; color: #555; margin-bottom: 8px; }
   .set-reset { margin-top: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 
+  /* ---------- Custom Openings panel ----------
+     Deliberately NOT a modal: no backdrop, so the viewport keeps its mouse
+     bindings (orbit/zoom) while the panel is up. It just floats above
+     everything in the z order. Draggable by its title bar, resizable via the
+     native CSS resizer, and its body scrolls when the grids get long. */
+  #openings-panel { position: fixed; top: 70px; left: 70px; z-index: 1200;
+                    width: 640px; height: 460px; min-width: 460px; min-height: 240px;
+                    max-width: 96vw; max-height: 92vh;
+                    display: none; flex-direction: column; overflow: hidden; resize: both;
+                    background: #fafafa; border: 1px solid #888; border-radius: 4px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.3); font-size: 12px; }
+  #openings-panel.open { display: flex; }
+  #openings-title { margin: 0; padding: 8px 12px; border-bottom: 1px solid #ccc;
+                    background: #e8e8e8; font-size: 14px; font-weight: bold;
+                    cursor: move; user-select: none; display: flex; align-items: center; }
+  #openings-title .sp { margin-left: auto; }
+  #openings-close { border: none; background: none; font-size: 16px; line-height: 1;
+                    cursor: pointer; color: #555; padding: 0 2px; }
+  #openings-body { flex: 1; overflow: auto; padding: 10px 12px; min-height: 0; }
+  #openings-note { color: #555; margin-bottom: 10px; line-height: 1.5; }
+  #openings-warn { display: none; margin-bottom: 10px; padding: 7px 9px; line-height: 1.5;
+                   border: 1px solid #e0c060; background: #fdf6e0; border-radius: 3px; }
+  #openings-warn.err { border-color: #d99; background: #fdecec; }
+  #openings-warn.show { display: block; }
+  .og-sec { margin-bottom: 16px; }
+  .og-sec h4 { margin: 0 0 5px; font-size: 12px; }
+  .og-sec h4 .units { font-weight: normal; color: #666; }
+  .og-table { border-collapse: collapse; width: 100%; }
+  .og-table th { text-align: left; font-weight: normal; color: #666; font-size: 11px;
+                 padding: 2px 4px; border-bottom: 1px solid #ddd; white-space: nowrap; }
+  .og-table td { padding: 2px 4px; }
+  .og-table input[type=number] { width: 74px; font-size: 12px; padding: 2px 4px; }
+  .og-table select { font-size: 12px; padding: 1px 2px; }
+  .og-table input:disabled { background: #eee; color: #aaa; }
+  .og-rowbtn { border: 1px solid #bbb; background: #f4f4f4; border-radius: 3px;
+               cursor: pointer; font-size: 12px; line-height: 1; padding: 3px 6px; }
+  .og-rowbtn:hover { background: #e6e6e6; }
+  .og-rowbtn.on { background: #f9d3d3; border-color: #c88; }
+  .og-empty { color: #888; font-style: italic; padding: 3px 4px; }
+  .og-add { margin-top: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  #openings-footer { padding: 8px 12px; border-top: 1px solid #ccc; background: #f0f0f0;
+                     display: flex; align-items: center; gap: 8px; }
+  #openings-footer .msg { color: #666; margin-right: auto; }
+  #openings-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
+  #openings-save { font-weight: bold; }
+
   /* ---------- Confirm (unsaved-changes) modal ---------- */
   #confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
                      display: none; align-items: center; justify-content: center; z-index: 1100; }
@@ -451,6 +497,14 @@
             </svg>
           </button>
           <div class="vp-sep"></div>
+          <button class="vp-btn" id="openings-btn" title="Custom Openings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+              <path d="M3.5 4.5H20.5V19.5H3.5Z"/>
+              <path d="M6.5 7.5H11V12H6.5Z"/>
+              <circle cx="16" cy="15" r="2.6"/>
+            </svg>
+          </button>
+          <div class="vp-sep" id="openings-sep"></div>
           <span class="export-group">
             <button class="vp-btn" id="export-stl" title="Export as STL (3D print)">STL</button>
             <button class="vp-btn" id="export-stl-cgal" title="Export as STL — precision (slower, cleaner output)">STL*</button>
@@ -616,6 +670,34 @@
     <div id="export-footer">
       <button id="export-cancel">Cancel export</button>
     </div>
+  </div>
+</div>
+
+<div id="openings-panel">
+  <div id="openings-title">Custom Openings<span class="sp"></span><button id="openings-close" title="Close (Cancel)">✕</button></div>
+  <div id="openings-body">
+    <div id="openings-warn"></div>
+    <div id="openings-note">
+      Openings cut all the way through the keyguard (or the frame, if you have one).
+      For a <b>circle</b>, the <b>height</b> is the diameter — width and corner radius are ignored.
+      Each opening is positioned by its <b>centre</b>.
+    </div>
+    <div class="og-sec">
+      <h4>Screen openings <span class="units" id="og-screen-units"></span></h4>
+      <table class="og-table" id="og-screen"></table>
+      <button class="og-add" data-grid="screen">+ Add opening</button>
+    </div>
+    <div class="og-sec">
+      <h4>Case openings <span class="units">— millimetres, from the lower-left corner of the case opening</span></h4>
+      <table class="og-table" id="og-case"></table>
+      <button class="og-add" data-grid="case">+ Add opening</button>
+    </div>
+  </div>
+  <div id="openings-footer">
+    <span class="msg" id="openings-msg"></span>
+    <button id="openings-show">Show</button>
+    <button id="openings-save">Save</button>
+    <button id="openings-cancel">Cancel</button>
   </div>
 </div>
 
@@ -1295,6 +1377,9 @@ const RELEASE_NOTES = {
   "16": [
     "Undo and redo your Customizer changes. Undo and redo buttons in the command bar (next to Settings) let you step back and forward through changes you've made in the Customizer. You can also use the keyboard: Ctrl/Cmd+Z to undo, and Ctrl/Cmd+Shift+Z (or Ctrl+Y) to redo — so you can experiment freely and back out a change without starting over.",
     "See what's new after an app update. When the app updates itself to a newer version, it now shows a short \"What's new\" summary of the features and fixes you've just received, so you always know what changed."
+  ],
+  "17": [
+    "Add simple openings without editing a text field. A new Custom Openings button in the command bar (to the left of the export buttons) opens a panel where you can add rectangular and circular openings to the screen and case areas by filling in a small table — shape, height, width, corner radius, and position. Openings cut all the way through the keyguard, or through the frame if you have one. A circle uses the height as its diameter, and every opening is positioned by its centre. Screen measurements use whatever unit and starting corner you've chosen for the screen; case measurements are in millimetres from the lower-left corner of the case opening. Show previews your openings in the viewport, the button beside each row highlights that opening so you can find it, Save applies them, and Cancel leaves everything as it was. The panel stays on top but doesn't lock the viewport — you can still rotate and zoom your keyguard while it's open. Behind the scenes this simply fills in the my_screen_openings and my_case_openings Customizer fields, so you can still edit them by hand; openings that are more complex than a simple rectangle or circle stay editable there, and the panel tells you when it finds one."
   ]
 };
 // @@RELEASE_NOTES_END@@
@@ -3639,6 +3724,9 @@ function buildCustomizerForm(sections) {
     }
     container.appendChild(div);
   }
+  // The Custom Openings button edits two of these controls, so its visibility
+  // follows the same skill gate that decides whether they exist at all.
+  updateOpeningsButton();
 }
 
 // Range params that should NOT get a slider — rendered as number+spinner only.
@@ -5607,6 +5695,482 @@ document.querySelectorAll('#settings-cats .cat').forEach(c => {
     renderSettingsPanel(c.dataset.cat);
   });
 });
+
+// ===== Custom Openings panel =====
+// A simplified editor for the `my_screen_openings` / `my_case_openings`
+// Customizer fields. Those fields hold O&A "type 2" rows:
+//
+//   [ID, shape, height, width, corner, x, y, cut/build, anchor, surface,
+//    length, thickness, [edge_slopes], [special_parms]]
+//
+// The panel only ever reads and writes the SIMPLE subset of that format —
+// rectangles ("r") and circles ("c") that cut straight through (cut/build = 0,
+// no slopes, no surface, no depth override). Everything else in those fields
+// (text, SVG, ridges, build-ups…) is reported as unsupported and left to the
+// clinician to edit in the Customizer field itself; Save would drop it, which
+// is why the warning says so and Cancel is the way out.
+//
+// Positions are CENTRE-anchored (the V2 "c" anchor). A hand-written row with
+// no anchor is corner-anchored, so it is converted to a centre on load — the
+// geometry is identical, only the numbers the clinician sees change.
+const OPENINGS_PARAMS = ['my_screen_openings', 'my_case_openings'];
+const ogPanel  = document.getElementById('openings-panel');
+const ogBtn    = document.getElementById('openings-btn');
+const ogSep    = document.getElementById('openings-sep');
+const ogWarnEl = document.getElementById('openings-warn');
+const ogMsgEl  = document.getElementById('openings-msg');
+const ogShowBtn = document.getElementById('openings-show');
+const ogSaveBtn = document.getElementById('openings-save');
+
+// {rows, error, dropped, converted} per grid, plus the pre-edit field values.
+let ogState = null;
+
+function ogFieldInput(name) {
+  return container.querySelector(`[data-param-name="${cssEsc(name)}"] input`);
+}
+
+// The button is an advanced-skill affordance: it edits two advanced params, and
+// hiding it below that level keeps the beginner toolbar uncluttered. It also
+// needs both params to actually exist in the loaded .scad.
+function updateOpeningsButton() {
+  const ok = !!project && meetsSkill('advanced') &&
+             OPENINGS_PARAMS.every(n => !!ogFieldInput(n));
+  const disp = ok ? '' : 'none';
+  if (ogBtn) ogBtn.style.display = disp;
+  if (ogSep) ogSep.style.display = disp;
+  if (!ok) closeOpenings(false);
+}
+
+// ---- Parsing -------------------------------------------------------------
+// A tolerant reader for the OpenSCAD vector text these fields hold. Numbers and
+// quoted strings come back as values; anything else (an identifier, an
+// expression like `sxo*10.4`) comes back as an opaque token, which is enough to
+// classify the row as "not simple" without pretending to evaluate it.
+function parseOAText(text) {
+  const s = (text || '').trim();
+  if (!s) return { ok: true, rows: [] };
+  let i = 0;
+  const ws = () => { while (i < s.length && /\s/.test(s[i])) i++; };
+
+  function parseValue() {
+    ws();
+    if (i >= s.length) throw new Error('unexpected end of text');
+    if (s[i] === '[') return parseList();
+    if (s[i] === '"') return parseString();
+    return parseScalar();
+  }
+  function parseList() {
+    i++;                                   // consume '['
+    const out = []; out.isList = true;
+    ws();
+    if (s[i] === ']') { i++; return out; }
+    for (;;) {
+      out.push(parseValue());
+      ws();
+      if (s[i] === ',') { i++; continue; }
+      if (s[i] === ']') { i++; return out; }
+      throw new Error('expected "," or "]"');
+    }
+  }
+  function parseString() {
+    i++;                                   // consume opening quote
+    let out = '';
+    while (i < s.length && s[i] !== '"') {
+      if (s[i] === '\\' && i + 1 < s.length) { out += s[i + 1]; i += 2; continue; }
+      out += s[i++];
+    }
+    if (s[i] !== '"') throw new Error('unterminated string');
+    i++;
+    return { s: out };
+  }
+  function parseScalar() {
+    const start = i;
+    let depth = 0;
+    while (i < s.length) {
+      const c = s[i];
+      if (c === '(') depth++;
+      else if (c === ')') depth--;
+      else if (depth === 0 && (c === ',' || c === ']')) break;
+      i++;
+    }
+    const raw = s.slice(start, i).trim();
+    if (!raw) throw new Error('empty value');
+    if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(raw)) return { n: parseFloat(raw) };
+    return { e: raw };                     // identifier / expression — opaque
+  }
+
+  try {
+    const v = parseValue();
+    ws();
+    if (i < s.length) throw new Error('unexpected text after the vector');
+    if (!v.isList) throw new Error('not a vector');
+    if (v.length === 0) return { ok: true, rows: [] };
+    // A single row may be written without the outer brackets (the .scad's
+    // parse_user_vector does the same normalisation).
+    const rows = v[0] && v[0].isList ? v : [v];
+    return { ok: true, rows };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+const ogStr = t => (t && typeof t.s === 'string') ? t.s : null;
+const ogNum = t => (t && typeof t.n === 'number') ? t.n : null;
+
+// Reduce one parsed row to the simple {shape,h,w,cr,x,y} the grid can edit, or
+// null if the row uses anything the panel doesn't model.
+function ogSimplify(row, grid, screenOrigin) {
+  if (!row || !row.isList || row.length < 7) return null;
+  const shape = ogStr(row[1]);
+  if (shape !== 'r' && shape !== 'c') return null;
+
+  const h = ogNum(row[2]), w = ogNum(row[3]), cr = ogNum(row[4]);
+  let x = ogNum(row[5]), y = ogNum(row[6]);
+  if ([h, w, cr, x, y].some(v => v === null)) return null;   // expression-valued → leave alone
+
+  const at = k => (row.length > k ? row[k] : null);
+  const cb = at(7) ? ogNum(at(7)) : 0;
+  if (cb !== 0) return null;                                 // build-up or depth override
+  const anchor  = at(8) ? ogStr(at(8)) : '';
+  const surface = at(9) ? ogStr(at(9)) : '';
+  if (anchor === null || surface === null || surface !== '') return null;
+  const len = at(10) ? ogNum(at(10)) : 0;
+  const th  = at(11) ? ogNum(at(11)) : 0;
+  if (len !== 0 || th !== 0) return null;
+  const es = at(12), sp = at(13);
+  if (es && !(es.isList && es.length === 0)) return null;    // edge slopes
+  if (sp && !(sp.isList && sp.length === 0)) return null;    // rotation, font, …
+
+  const idTok = row[0];
+  const id = ogStr(idTok) !== null ? ogStr(idTok) : ogNum(idTok);
+  if (id === null) return null;
+
+  // Effective footprint: a circle's height is its diameter and its width is
+  // ignored, so it is square.
+  const ew = shape === 'c' ? h : w;
+  const eh = h;
+
+  // Corner-anchored → centre-anchored. In the screen grid with an upper-left
+  // origin, y grows downward, so the centre is half a height *up* the axis.
+  let converted = false;
+  const centred = anchor === 'c' || anchor === 'C';
+  if (!centred) {
+    x += ew / 2;
+    y += (grid === 'screen' && screenOrigin === 'upper-left') ? -eh / 2 : eh / 2;
+    converted = true;
+  }
+  return { id, shape, h, w: shape === 'c' ? 0 : w, cr: shape === 'c' ? 0 : cr, x, y, converted };
+}
+
+// ---- Serialising ---------------------------------------------------------
+const ogFmt = v => String(Number(v.toFixed(4)));   // 2.5000000001 → 2.5
+
+function ogSerialize(rows, highlightIdx) {
+  if (!rows.length) return '';
+  const out = rows.map((r, idx) => {
+    const rawId = idx === highlightIdx ? '#' : r.id;
+    const id = typeof rawId === 'string' ? `"${rawId.replace(/"/g, '\\"')}"` : String(rawId);
+    const w  = r.shape === 'c' ? 0 : r.w;
+    const cr = r.shape === 'c' ? 0 : r.cr;
+    return `[${id},"${r.shape}",${ogFmt(r.h)},${ogFmt(w)},${ogFmt(cr)},` +
+           `${ogFmt(r.x)},${ogFmt(r.y)},0,"c","",0,0,[],[]]`;
+  });
+  return '[' + out.join(',') + ']';
+}
+
+// ---- Grid rendering ------------------------------------------------------
+const OG_HEADERS = ['shape', 'height', 'width', 'corner radius', 'x', 'y', '', ''];
+
+function ogRenderGrid(grid) {
+  const st = ogState[grid];
+  const table = document.getElementById(grid === 'screen' ? 'og-screen' : 'og-case');
+  table.innerHTML = '';
+
+  const head = document.createElement('tr');
+  for (const h of OG_HEADERS) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    head.appendChild(th);
+  }
+  table.appendChild(head);
+
+  if (st.error) return;
+  if (!st.rows.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = OG_HEADERS.length;
+    td.className = 'og-empty';
+    td.textContent = 'No openings.';
+    tr.appendChild(td);
+    table.appendChild(tr);
+    return;
+  }
+
+  const step = (grid === 'screen' && ogState.screenUnit === 'px') ? 1 : 0.1;
+
+  st.rows.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+
+    const shapeTd = document.createElement('td');
+    const sel = document.createElement('select');
+    for (const [val, label] of [['r', 'rectangle'], ['c', 'circle']]) {
+      const o = document.createElement('option');
+      o.value = val; o.textContent = label;
+      sel.appendChild(o);
+    }
+    sel.value = row.shape;
+    sel.addEventListener('change', () => {
+      row.shape = sel.value;
+      ogRenderGrid(grid);        // width/corner enable-state follows the shape
+    });
+    shapeTd.appendChild(sel);
+    tr.appendChild(shapeTd);
+
+    // A circle takes its diameter from the height column, so its width and
+    // corner radius are inert — grey them out rather than let a clinician type
+    // a value that the .scad will silently ignore.
+    const isCircle = row.shape === 'c';
+    for (const [key, disabled, minZero] of [
+      ['h',  false,     true],
+      ['w',  isCircle,  true],
+      ['cr', isCircle,  true],
+      ['x',  false,     false],
+      ['y',  false,     false],
+    ]) {
+      const td = document.createElement('td');
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.step = step;
+      if (minZero) inp.min = 0;
+      inp.disabled = disabled;
+      inp.value = disabled ? 0 : row[key];
+      inp.addEventListener('change', () => {
+        let v = parseFloat(inp.value);
+        if (!Number.isFinite(v)) v = 0;
+        if (minZero && v < 0) v = 0;       // height/width/corner can't be negative
+        inp.value = v;
+        row[key] = v;
+      });
+      td.appendChild(inp);
+      tr.appendChild(td);
+    }
+
+    const hlTd = document.createElement('td');
+    const hl = document.createElement('button');
+    hl.className = 'og-rowbtn' + (st.hl === idx ? ' on' : '');
+    hl.textContent = '◉';
+    hl.title = 'Highlight this opening in the viewport';
+    hl.addEventListener('click', () => ogHighlight(grid, idx));
+    hlTd.appendChild(hl);
+    tr.appendChild(hlTd);
+
+    const delTd = document.createElement('td');
+    const del = document.createElement('button');
+    del.className = 'og-rowbtn';
+    del.textContent = '✕';
+    del.title = 'Delete this opening';
+    del.addEventListener('click', () => {
+      st.rows.splice(idx, 1);
+      if (st.hl === idx) st.hl = null;
+      else if (st.hl != null && st.hl > idx) st.hl--;
+      ogRenderGrid(grid);
+    });
+    delTd.appendChild(del);
+    tr.appendChild(delTd);
+
+    table.appendChild(tr);
+  });
+}
+
+function ogRenderWarnings() {
+  const bits = [];
+  let isErr = false;
+  for (const grid of ['screen', 'case']) {
+    const st = ogState[grid];
+    const field = grid === 'screen' ? 'my_screen_openings' : 'my_case_openings';
+    if (st.error) {
+      isErr = true;
+      bits.push(`<b>${field}</b> can't be read (${st.error}). Fix it in the Customizer field — ` +
+                `this panel can't edit it. Press Cancel to leave it untouched.`);
+      continue;
+    }
+    if (st.dropped) {
+      bits.push(`<b>${field}</b> has ${st.dropped} opening(s) this panel can't show — ` +
+                `they use features beyond a simple rectangle or circle (text, an SVG, a ridge, ` +
+                `a slope, a raised addition…). <b>Saving will remove them.</b> ` +
+                `Press Cancel to keep them and edit that field directly instead.`);
+    }
+    if (st.converted) {
+      bits.push(`<b>${field}</b>: ${st.converted} opening(s) were measured from a corner and are ` +
+                `now shown measured from their centre. The openings have not moved.`);
+    }
+  }
+  ogWarnEl.classList.toggle('show', bits.length > 0);
+  ogWarnEl.classList.toggle('err', isErr);
+  ogWarnEl.innerHTML = bits.map(b => `<div>${b}</div>`).join('');
+
+  // An unreadable field means Save/Show can't safely rewrite it — Cancel only.
+  const fatal = ogState.screen.error || ogState.case.error;
+  ogShowBtn.style.display = fatal ? 'none' : '';
+  ogSaveBtn.style.display = fatal ? 'none' : '';
+}
+
+// ---- Field / render plumbing --------------------------------------------
+// Write the grids into the two Customizer inputs. Everything downstream (the
+// render, the export, the dirty marker) reads its values from those inputs, so
+// this one write is all a preview or a save needs.
+function ogWriteFields(highlight) {
+  for (const grid of ['screen', 'case']) {
+    const st = ogState[grid];
+    if (st.error) continue;                // unreadable → never rewrite it
+    const hlIdx = (highlight && highlight.grid === grid) ? highlight.idx : -1;
+    const el = ogFieldInput(grid === 'screen' ? 'my_screen_openings' : 'my_case_openings');
+    if (el) el.value = ogSerialize(st.rows, hlIdx);
+  }
+  updateDirty();
+}
+
+// Put the fields back the way they were when the panel opened.
+function ogRestoreFields() {
+  for (const [name, val] of Object.entries(ogState.snapshot)) {
+    const el = ogFieldInput(name);
+    if (el) el.value = val;
+  }
+  updateDirty();
+}
+
+function ogHighlight(grid, idx) {
+  const st = ogState[grid];
+  const turningOff = st.hl === idx;
+  // The .scad paints any O&A row whose ID is "#" as a translucent overlay, and
+  // the app already renders that highlight pass every time — so highlighting is
+  // just "render with this row's ID swapped for #". One at a time, by nature.
+  ogState.screen.hl = null;
+  ogState.case.hl = null;
+  if (!turningOff) st.hl = idx;
+  ogRenderGrid('screen');
+  ogRenderGrid('case');
+  ogPreview(turningOff ? null : { grid, idx });
+}
+
+function ogPreview(highlight) {
+  ogWriteFields(highlight);
+  ogState.previewed = true;
+  ogMsgEl.textContent = 'Previewing — not saved yet.';
+  doRender();
+}
+
+// ---- Open / close --------------------------------------------------------
+function openOpenings() {
+  if (!project) return;
+  const vals = currentFormValues();
+  const unit   = vals.unit_of_measure_for_screen === 'mm' ? 'mm' : 'px';
+  const origin = vals.starting_corner_for_screen_measurements === 'lower-left'
+    ? 'lower-left' : 'upper-left';
+
+  ogState = {
+    screenUnit: unit,
+    snapshot: {},
+    previewed: false,
+    screen: { rows: [], error: null, dropped: 0, converted: 0, hl: null },
+    case:   { rows: [], error: null, dropped: 0, converted: 0, hl: null },
+  };
+
+  for (const grid of ['screen', 'case']) {
+    const name = grid === 'screen' ? 'my_screen_openings' : 'my_case_openings';
+    const el = ogFieldInput(name);
+    const text = el ? el.value : '';
+    ogState.snapshot[name] = text;
+
+    const parsed = parseOAText(text);
+    const st = ogState[grid];
+    if (!parsed.ok) { st.error = parsed.error; continue; }
+    for (const row of parsed.rows) {
+      const simple = ogSimplify(row, grid, origin);
+      if (!simple) { st.dropped++; continue; }
+      if (simple.converted) st.converted++;
+      st.rows.push(simple);
+    }
+  }
+
+  document.getElementById('og-screen-units').textContent =
+    unit === 'px'
+      ? `— pixels, from the ${origin} corner of the screen`
+      : `— millimetres, from the ${origin} corner of the screen`;
+
+  ogRenderGrid('screen');
+  ogRenderGrid('case');
+  ogRenderWarnings();
+  ogMsgEl.textContent = '';
+  ogPanel.classList.add('open');
+}
+
+// Closing without saving must undo anything Show/highlight pushed into the
+// fields — hence the re-render.
+function closeOpenings(rerender = true) {
+  if (!ogPanel.classList.contains('open')) return;
+  const previewed = ogState && ogState.previewed;
+  if (ogState) ogRestoreFields();
+  ogPanel.classList.remove('open');
+  ogState = null;
+  if (rerender && previewed && project) doRender();
+}
+
+function saveOpenings() {
+  if (!ogState) return;
+  ogWriteFields(null);          // no highlight — "#" IDs are never persisted
+  commitHistory();              // one undo step for the whole edit
+  ogPanel.classList.remove('open');
+  ogState = null;
+  doRender();
+}
+
+if (ogBtn) {
+  ogBtn.addEventListener('click', () => {
+    if (ogPanel.classList.contains('open')) closeOpenings();
+    else openOpenings();
+  });
+}
+ogShowBtn.addEventListener('click', () => ogPreview(null));
+ogSaveBtn.addEventListener('click', saveOpenings);
+document.getElementById('openings-cancel').addEventListener('click', () => closeOpenings());
+document.getElementById('openings-close').addEventListener('click', () => closeOpenings());
+document.querySelectorAll('.og-add').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const grid = btn.dataset.grid;
+    if (!ogState || ogState[grid].error) return;
+    // ID 0 for a new opening: the field format wants an ID, nothing reads it,
+    // and "#" is reserved for the highlight.
+    ogState[grid].rows.push({ id: 0, shape: 'r', h: 0, w: 0, cr: 0, x: 0, y: 0 });
+    ogRenderGrid(grid);
+  });
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && ogPanel.classList.contains('open')) closeOpenings();
+});
+
+// Drag by the title bar. The panel has no backdrop, so the viewport keeps its
+// own mouse handling while this is up.
+(function () {
+  const handle = document.getElementById('openings-title');
+  let dragging = false, ox = 0, oy = 0;
+  handle.addEventListener('mousedown', e => {
+    if (e.target.id === 'openings-close') return;
+    dragging = true;
+    ox = e.clientX - ogPanel.offsetLeft;
+    oy = e.clientY - ogPanel.offsetTop;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const W = window.innerWidth, H = window.innerHeight;
+    ogPanel.style.left = Math.max(0, Math.min(e.clientX - ox, W - ogPanel.offsetWidth)) + 'px';
+    ogPanel.style.top  = Math.max(0, Math.min(e.clientY - oy, H - ogPanel.offsetHeight)) + 'px';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+}());
+
+updateOpeningsButton();
 
 // After a silent auto-update the reloaded app announces what changed. Runs on
 // every load (independent of the service worker, so it also works on the dev
