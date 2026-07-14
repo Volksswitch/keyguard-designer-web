@@ -6087,14 +6087,15 @@ function ogRenderWarnings() {
 // Write the grids into the two Customizer inputs. Everything downstream (the
 // render, the export, the dirty marker) reads its values from those inputs, so
 // this one write is all a preview or a save needs.
-// `withHighlight` is false only for Save — a "#" ID is a viewport marker and
-// must never be persisted. Every other write (Show, and the highlight button
-// itself) carries the current highlight, so highlighting survives a Show.
-function ogWriteFields(withHighlight) {
+// Every write — Show, the highlight button, and Save alike — reflects exactly
+// what the panel shows, highlight included. "#" in the ID column IS the O&A
+// format's highlight marker, so a highlighted row saves with a "#" ID and stays
+// highlighted; clicking the highlight off restores the row's own ID.
+function ogWriteFields() {
   for (const grid of ['screen', 'case']) {
     const st = ogState[grid];
     if (st.error) continue;                // unreadable → never rewrite it
-    const hlIdx = (withHighlight && st.hl != null) ? st.hl : -1;
+    const hlIdx = st.hl != null ? st.hl : -1;
     const el = ogFieldInput(grid === 'screen' ? 'my_screen_openings' : 'my_case_openings');
     if (el) el.value = ogSerialize(st.rows, hlIdx);
   }
@@ -6125,7 +6126,7 @@ function ogHighlight(grid, idx) {
 }
 
 function ogPreview() {
-  ogWriteFields(true);
+  ogWriteFields();
   ogState.previewed = true;
   ogMsgEl.textContent = 'Previewing — not saved yet.';
   doRender();
@@ -6160,6 +6161,10 @@ function openOpenings() {
       const simple = ogSimplify(row, grid, origin);
       if (!simple) { st.dropped++; continue; }
       if (simple.converted) st.converted++;
+      // A saved "#" ID is a highlighted opening — reopen it highlighted. The
+      // marker isn't an ID the clinician chose, so the row falls back to 0 and
+      // gets its "#" back from the highlight state on the next write.
+      if (simple.id === '#') { simple.id = 0; st.hl = st.rows.length; }
       st.rows.push(simple);
     }
   }
@@ -6189,7 +6194,7 @@ function closeOpenings(rerender = true) {
 
 function saveOpenings() {
   if (!ogState) return;
-  ogWriteFields(false);         // no highlight — "#" IDs are never persisted
+  ogWriteFields();              // saves the panel as shown, highlight included
   commitHistory();              // one undo step for the whole edit
   ogPanel.classList.remove('open');
   ogState = null;
