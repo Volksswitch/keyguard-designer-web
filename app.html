@@ -1587,8 +1587,8 @@ const SKILL_CONFIG = {
     'use_Laser_Cutting_best_practices': 'advanced',
     'other_tablet_general_sizes': 'advanced',
     'other_tablet_pixel_sizes': 'advanced',
-    'my_screen_openings': 'advanced',
-    'my_case_openings': 'advanced',
+    'my_screen_openings': 'intermediate',
+    'my_case_openings': 'intermediate',
     'my_case_additions': 'advanced',
     'my_tablet_openings': 'advanced',
   },
@@ -5736,12 +5736,13 @@ function ogFieldInput(name) {
   return container.querySelector(`[data-param-name="${cssEsc(name)}"] input`);
 }
 
-// The button is an advanced-skill affordance: it edits two advanced params, and
-// hiding it below that level keeps the beginner toolbar uncluttered. It also
-// needs both params to actually exist in the loaded .scad.
+// The button edits the two openings params, so it appears exactly when they do:
+// the presence of their controls IS the skill gate (buildCustomizerForm drops a
+// param below its skill-config level), which also means the button follows any
+// later change to skill-config.txt on its own. It equally covers a .scad that
+// doesn't have the params at all.
 function updateOpeningsButton() {
-  const ok = !!project && meetsSkill('advanced') &&
-             OPENINGS_PARAMS.every(n => !!ogFieldInput(n));
+  const ok = !!project && OPENINGS_PARAMS.every(n => !!ogFieldInput(n));
   const disp = ok ? '' : 'none';
   if (ogBtn) ogBtn.style.display = disp;
   if (ogSep) ogSep.style.display = disp;

@@ -115,8 +115,8 @@ trim_to_rectangle_upper_right            = advanced
 use_Laser_Cutting_best_practices         = advanced
 other_tablet_general_sizes               = advanced
 other_tablet_pixel_sizes                 = advanced
-my_screen_openings                       = advanced
-my_case_openings                         = advanced
+my_screen_openings                       = intermediate
+my_case_openings                         = intermediate
 my_case_additions                        = advanced
 my_tablet_openings                       = advanced
 
