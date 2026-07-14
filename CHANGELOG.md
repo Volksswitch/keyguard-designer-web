@@ -12,6 +12,10 @@ The release number shown here matches the one on **Settings → About**.
 
 - **Add simple openings without editing a text field.** A new **Custom Openings** button in the command bar (to the left of the export buttons) opens a panel where you can add rectangular and circular openings to the screen and case areas by filling in a small table — shape, height, width, corner radius, and position. Openings cut all the way through the keyguard, or through the frame if you have one. A circle uses the height as its diameter, and every opening is positioned by its centre. Screen measurements use whatever unit and starting corner you've chosen for the screen; case measurements are in millimetres from the lower-left corner of the case opening. The keyguard updates as you work: changing a number updates it as soon as you press Enter or click another box (a box you've changed but not yet applied is tinted), and deleting a row removes that opening straight away. **Show** previews your openings in the viewport, the button beside each row highlights that opening so you can find it, **Save** applies them, and **Cancel** leaves everything as it was. The panel stays on top but doesn't lock the viewport — you can still rotate and zoom your keyguard while it's open. Behind the scenes this simply fills in the `my_screen_openings` and `my_case_openings` Customizer fields, so you can still edit them by hand; openings that are more complex than a simple rectangle or circle stay editable there, and the panel tells you when it finds one.
 
+### Fixes
+
+- **Changing your skill level no longer changes your design.** Switching skill level (in Settings) reset every Customizer setting back to the saved preset, silently discarding any changes you hadn't saved yet — and a switch to a lower level threw away the settings that level doesn't show, so a design handed to you by a colleague could quietly lose part of itself. Your skill level now only controls what you can *see*: all settings keep their values, including the ones your level hides, and the unsaved-changes marker stays put.
+
 ## Release 16
 
 ### New features
