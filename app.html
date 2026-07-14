@@ -326,6 +326,9 @@
   .og-table input[type=number] { width: 74px; font-size: 12px; padding: 2px 4px; }
   .og-table select { font-size: 12px; padding: 1px 2px; }
   .og-table input:disabled { background: #eee; color: #aaa; }
+  /* Tinted = typed or stepped, but not yet applied to the viewport. Cleared by
+     Enter or by focus leaving the box — which is what applies it. */
+  .og-table input.pending { background: #fff6cc; }
   .og-rowbtn { border: 1px solid #bbb; background: #f4f4f4; border-radius: 3px;
                cursor: pointer; font-size: 12px; line-height: 1; padding: 3px 6px; }
   .og-rowbtn:hover { background: #e6e6e6; }
@@ -687,6 +690,8 @@
       Openings cut all the way through the keyguard (or the frame, if you have one).
       For a <b>circle</b>, the <b>height</b> is the diameter — width and corner radius are ignored.
       Each opening is positioned by its <b>centre</b>.
+      A <b>tinted box</b> is a number you've changed but not applied yet: press <b>Enter</b>, or
+      click another box, to update the keyguard.
     </div>
     <div class="og-sec">
       <h4>Screen openings <span class="units" id="og-screen-units"></span></h4>
@@ -1386,7 +1391,7 @@ const RELEASE_NOTES = {
     "See what's new after an app update. When the app updates itself to a newer version, it now shows a short \"What's new\" summary of the features and fixes you've just received, so you always know what changed."
   ],
   "17": [
-    "Add simple openings without editing a text field. A new Custom Openings button in the command bar (to the left of the export buttons) opens a panel where you can add rectangular and circular openings to the screen and case areas by filling in a small table — shape, height, width, corner radius, and position. Openings cut all the way through the keyguard, or through the frame if you have one. A circle uses the height as its diameter, and every opening is positioned by its centre. Screen measurements use whatever unit and starting corner you've chosen for the screen; case measurements are in millimetres from the lower-left corner of the case opening. Show previews your openings in the viewport, the button beside each row highlights that opening so you can find it, Save applies them, and Cancel leaves everything as it was. The panel stays on top but doesn't lock the viewport — you can still rotate and zoom your keyguard while it's open. Behind the scenes this simply fills in the my_screen_openings and my_case_openings Customizer fields, so you can still edit them by hand; openings that are more complex than a simple rectangle or circle stay editable there, and the panel tells you when it finds one."
+    "Add simple openings without editing a text field. A new Custom Openings button in the command bar (to the left of the export buttons) opens a panel where you can add rectangular and circular openings to the screen and case areas by filling in a small table — shape, height, width, corner radius, and position. Openings cut all the way through the keyguard, or through the frame if you have one. A circle uses the height as its diameter, and every opening is positioned by its centre. Screen measurements use whatever unit and starting corner you've chosen for the screen; case measurements are in millimetres from the lower-left corner of the case opening. The keyguard updates as you work: changing a number updates it as soon as you press Enter or click another box (a box you've changed but not yet applied is tinted), and deleting a row removes that opening straight away. Show previews your openings in the viewport, the button beside each row highlights that opening so you can find it, Save applies them, and Cancel leaves everything as it was. The panel stays on top but doesn't lock the viewport — you can still rotate and zoom your keyguard while it's open. Behind the scenes this simply fills in the my_screen_openings and my_case_openings Customizer fields, so you can still edit them by hand; openings that are more complex than a simple rectangle or circle stay editable there, and the panel tells you when it finds one."
   ]
 };
 // @@RELEASE_NOTES_END@@
@@ -5932,7 +5937,12 @@ function ogRenderGrid(grid) {
     return;
   }
 
-  const step = (grid === 'screen' && ogState.screenUnit === 'px') ? 1 : 0.1;
+  // Millimetres are read to 0.1 mm but stepped a whole mm at a time; pixels are
+  // whole numbers stepped 10 at a time. (A typed 20.5 with step=1 is kept — the
+  // step only governs the spinner arrows, and nothing here uses form validation.)
+  const isPx     = grid === 'screen' && ogState.screenUnit === 'px';
+  const step     = isPx ? 10 : 1;
+  const decimals = isPx ? 0 : 1;
 
   st.rows.forEach((row, idx) => {
     const tr = document.createElement('tr');
@@ -5948,6 +5958,7 @@ function ogRenderGrid(grid) {
     sel.addEventListener('change', () => {
       row.shape = sel.value;
       ogRenderGrid(grid);        // width/corner enable-state follows the shape
+      ogPreview();
     });
     shapeTd.appendChild(sel);
     tr.appendChild(shapeTd);
@@ -5969,13 +5980,43 @@ function ogRenderGrid(grid) {
       inp.step = step;
       if (minZero) inp.min = 0;
       inp.disabled = disabled;
-      inp.value = disabled ? 0 : row[key];
-      inp.addEventListener('change', () => {
+      inp.value = disabled ? (0).toFixed(decimals) : row[key].toFixed(decimals);
+
+      // The viewport follows the value the clinician has FINISHED with: it
+      // re-renders on blur (focus moved elsewhere) or Enter, never on 'change'.
+      // The spinner arrows fire a 'change' per click, so rendering there would
+      // mean a render per increment. They keep focus in the box, so stepping up
+      // and down is free — the box is tinted meanwhile to show the number hasn't
+      // reached the viewport yet, and one render lands when the box is left.
+      let applied = row[key];
+      inp.addEventListener('focus', () => { applied = row[key]; });
+
+      // Keep the row in step with the box as it is typed/stepped (cheap, no
+      // render), so a Show or Save mid-edit sees the current number.
+      inp.addEventListener('input', () => {
+        const v = parseFloat(inp.value);
+        row[key] = Number.isFinite(v) ? v : 0;
+        inp.classList.toggle('pending', row[key] !== applied);
+      });
+
+      inp.addEventListener('blur', () => {
         let v = parseFloat(inp.value);
         if (!Number.isFinite(v)) v = 0;
         if (minZero && v < 0) v = 0;       // height/width/corner can't be negative
-        inp.value = v;
+        v = parseFloat(v.toFixed(decimals));
+        inp.value = v.toFixed(decimals);
         row[key] = v;
+        inp.classList.remove('pending');
+        if (v === applied) return;         // nothing actually changed → no render
+        applied = v;
+        ogPreview();
+      });
+
+      // Enter applies it without waiting for focus to move: blur does the work.
+      inp.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        inp.blur();
       });
       td.appendChild(inp);
       tr.appendChild(td);
@@ -6000,6 +6041,7 @@ function ogRenderGrid(grid) {
       if (st.hl === idx) st.hl = null;
       else if (st.hl != null && st.hl > idx) st.hl--;
       ogRenderGrid(grid);
+      ogPreview();               // the opening leaves the viewport, not just the grid
     });
     delTd.appendChild(del);
     tr.appendChild(delTd);
