@@ -339,7 +339,7 @@
                      display: flex; align-items: center; gap: 8px; }
   #openings-footer .msg { color: #666; margin-right: auto; }
   #openings-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
-  #openings-save { font-weight: bold; }
+  #openings-show { font-weight: bold; }
 
   /* ---------- Confirm (unsaved-changes) modal ---------- */
   #confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -6180,6 +6180,9 @@ function openOpenings() {
   ogRenderWarnings();
   ogMsgEl.textContent = '';
   ogPanel.classList.add('open');
+  // Show is the default button — give it the focus so Enter presses it until the
+  // clinician clicks into a field.
+  if (!ogState.screen.error && !ogState.case.error) ogShowBtn.focus();
 }
 
 // Closing without saving must undo anything Show/highlight pushed into the
@@ -6224,6 +6227,17 @@ document.querySelectorAll('.og-add').forEach(btn => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && ogPanel.classList.contains('open')) closeOpenings();
+});
+// Show is the panel's default button: Enter presses it. Inside a number box,
+// Enter already applies that value (which renders), and the shape dropdown and
+// the row buttons keep their own Enter behaviour — so the default only fires
+// when focus is somewhere neutral in the panel.
+ogPanel.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const t = e.target;
+  if (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON') return;
+  e.preventDefault();
+  ogShowBtn.click();
 });
 
 // Drag by the title bar. The panel has no backdrop, so the viewport keeps its
