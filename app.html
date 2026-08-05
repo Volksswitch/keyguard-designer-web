@@ -339,7 +339,6 @@
                      display: flex; align-items: center; gap: 8px; }
   #openings-footer .msg { color: #666; margin-right: auto; }
   #openings-footer button { padding: 4px 14px; font-size: 12px; cursor: pointer; }
-  #openings-show { font-weight: bold; }
 
   /* ---------- Confirm (unsaved-changes) modal ---------- */
   #confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -706,7 +705,6 @@
   </div>
   <div id="openings-footer">
     <span class="msg" id="openings-msg"></span>
-    <button id="openings-show">Show</button>
     <button id="openings-save">Save</button>
     <button id="openings-cancel">Cancel</button>
   </div>
@@ -1393,6 +1391,11 @@ const RELEASE_NOTES = {
   "17": [
     "Add simple openings without editing a text field. A new Custom Openings button in the command bar (to the left of the export buttons) opens a panel where you can add rectangular and circular openings to the screen and case areas by filling in a small table — shape, height, width, corner radius, and position. Openings cut all the way through the keyguard, or through the frame if you have one. A circle uses the height as its diameter, and every opening is positioned by its centre. Screen measurements use whatever unit and starting corner you've chosen for the screen; case measurements are in millimetres from the lower-left corner of the case opening. The keyguard updates as you work: changing a number updates it as soon as you press Enter or click another box (a box you've changed but not yet applied is tinted), and deleting a row removes that opening straight away. Show previews your openings in the viewport, the button beside each row highlights that opening so you can find it, Save applies them, and Cancel leaves everything as it was. The panel stays on top but doesn't lock the viewport — you can still rotate and zoom your keyguard while it's open. Behind the scenes this simply fills in the my_screen_openings and my_case_openings Customizer fields, so you can still edit them by hand; openings that are more complex than a simple rectangle or circle stay editable there, and the panel tells you when it finds one.",
     "Changing your skill level no longer changes your design. Switching skill level (in Settings) reset every Customizer setting back to the saved preset, silently discarding any changes you hadn't saved yet — and a switch to a lower level threw away the settings that level doesn't show, so a design handed to you by a colleague could quietly lose part of itself. Your skill level now only controls what you can see: all settings keep their values, including the ones your level hides, and the unsaved-changes marker stays put."
+  ],
+  "18": [
+    "Settings → About now shows which keyguard designer file you're using. Alongside the app's own release number, the About tab lists the designer file your open project is running on and its version number — the same two numbers the app writes to the console when you open a project, so you can find them without scrolling back through the log.",
+    "The Custom Openings panel no longer has a Show button. Everything you do in the panel already updates the keyguard straight away — typing a number and pressing Enter (or clicking another box), changing a shape, highlighting a row, or deleting one — so Show had nothing left to do and has been removed. Save and Cancel work exactly as before.",
+    "The \"Screen openings\" heading now keeps up with your settings. The heading tells you which unit your screen measurements are in and which corner they're counted from, but it was only worked out at the moment the panel opened — so changing either one in the Customizer left the heading describing the old setting until you closed and reopened the panel. It now updates the moment you change them, and the number boxes switch to match the new unit."
   ]
 };
 // @@RELEASE_NOTES_END@@
@@ -4631,6 +4634,12 @@ container.addEventListener('change', async e => {
     if (e.target.value === 'yes') await rescanScreenshot();
     updateScreenshotPicker();
   }
+  // The Custom Openings panel can be open while these two are changed, and its
+  // "Screen openings" label names both — keep it honest.
+  if (e.target.dataset.paramName === 'unit_of_measure_for_screen' ||
+      e.target.dataset.paramName === 'starting_corner_for_screen_measurements') {
+    ogSyncScreenUnits();
+  }
   scheduleRender();
 });
 
@@ -5406,6 +5415,20 @@ function colorLabel(list, hex) {
   const m = list.find(c => c.hex.toUpperCase() === h);
   return m ? m.name : 'Custom';
 }
+// The About tab's designer line: which keyguard.scad the open project is
+// running on, and its version. Same number logVersionBanner puts in the
+// console at project open — repeated here so a clinician reporting a problem
+// can find it without scrolling the log. Re-read on every panel render, so
+// opening a different project (or applying a designer update) shows the new
+// file the next time the tab is viewed.
+function aboutDesignerLine() {
+  if (!project) return 'No project open';
+  const v = parseDesignerVersion(project.scadText);
+  const name = String(project.scadName || '(unknown)')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `${name} — version ${v != null ? v : 'unknown'}`;
+}
+
 // A 4-column grid of clickable colour swatches; the active one is ticked.
 function swatchGridHTML(list, selectedHex, group) {
   const sel = (selectedHex || '').toUpperCase();
@@ -5587,6 +5610,8 @@ const SETTINGS_PANELS = {
     <div class="setting">
       <label>Keyguard Designer (web)</label>
       <div style="margin-bottom:10px;">Release ${APP_RELEASE}</div>
+      <label>Keyguard designer file</label>
+      <div style="margin-bottom:10px;">${aboutDesignerLine()}</div>
       <label>License</label>
       <div style="margin-bottom:10px;">
         CC0 1.0 Universal — dedicated to the public domain. You are free to
@@ -5772,7 +5797,6 @@ const ogBtn    = document.getElementById('openings-btn');
 const ogSep    = document.getElementById('openings-sep');
 const ogWarnEl = document.getElementById('openings-warn');
 const ogMsgEl  = document.getElementById('openings-msg');
-const ogShowBtn = document.getElementById('openings-show');
 const ogSaveBtn = document.getElementById('openings-save');
 
 // {rows, error, dropped, converted} per grid, plus the pre-edit field values.
@@ -6128,9 +6152,8 @@ function ogRenderWarnings() {
   ogWarnEl.classList.toggle('err', isErr);
   ogWarnEl.innerHTML = bits.map(b => `<div>${b}</div>`).join('');
 
-  // An unreadable field means Save/Show can't safely rewrite it — Cancel only.
+  // An unreadable field means Save can't safely rewrite it — Cancel only.
   const fatal = ogState.screen.error || ogState.case.error;
-  ogShowBtn.style.display = fatal ? 'none' : '';
   ogSaveBtn.style.display = fatal ? 'none' : '';
 }
 
@@ -6166,6 +6189,30 @@ function ogHighlight(grid, idx) {
   else st.hl.add(idx);
   ogRenderGrid(grid);
   ogPreview();
+}
+
+// The units and the 0,0 corner the screen grid is expressed in are Customizer
+// values, and the clinician can change either with this panel still open — so
+// the label is re-read from the form rather than frozen at open time. The
+// stored numbers are the .scad's own, written back centre-anchored, so a change
+// of corner re-labels them without disturbing them; a change of unit also moves
+// the number boxes to that unit's step and precision.
+function ogSyncScreenUnits() {
+  if (!ogState) return;
+  const vals   = currentFormValues();
+  const unit   = vals.unit_of_measure_for_screen === 'mm' ? 'mm' : 'px';
+  const origin = vals.starting_corner_for_screen_measurements === 'lower-left'
+    ? 'lower-left' : 'upper-left';
+
+  document.getElementById('og-screen-units').textContent =
+    unit === 'px'
+      ? `— pixels, from the ${origin} corner of the screen`
+      : `— millimetres, from the ${origin} corner of the screen`;
+
+  if (unit !== ogState.screenUnit) {
+    ogState.screenUnit = unit;
+    ogRenderGrid('screen');
+  }
 }
 
 function ogPreview() {
@@ -6209,19 +6256,13 @@ function openOpenings() {
     }
   }
 
-  document.getElementById('og-screen-units').textContent =
-    unit === 'px'
-      ? `— pixels, from the ${origin} corner of the screen`
-      : `— millimetres, from the ${origin} corner of the screen`;
+  ogSyncScreenUnits();
 
   ogRenderGrid('screen');
   ogRenderGrid('case');
   ogRenderWarnings();
   ogMsgEl.textContent = '';
   ogPanel.classList.add('open');
-  // Show is the default button — give it the focus so Enter presses it until the
-  // clinician clicks into a field.
-  if (!ogState.screen.error && !ogState.case.error) ogShowBtn.focus();
 }
 
 // Closing without saving drops the preview, so the viewport goes back to what
@@ -6256,7 +6297,6 @@ if (ogBtn) {
     else openOpenings();
   });
 }
-ogShowBtn.addEventListener('click', () => ogPreview());
 ogSaveBtn.addEventListener('click', saveOpenings);
 document.getElementById('openings-cancel').addEventListener('click', () => closeOpenings());
 document.getElementById('openings-close').addEventListener('click', () => closeOpenings());
@@ -6273,17 +6313,9 @@ document.querySelectorAll('.og-add').forEach(btn => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && ogPanel.classList.contains('open')) closeOpenings();
 });
-// Show is the panel's default button: Enter presses it. Inside a number box,
-// Enter already applies that value (which renders), and the shape dropdown and
-// the row buttons keep their own Enter behaviour — so the default only fires
-// when focus is somewhere neutral in the panel.
-ogPanel.addEventListener('keydown', e => {
-  if (e.key !== 'Enter') return;
-  const t = e.target;
-  if (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON') return;
-  e.preventDefault();
-  ogShowBtn.click();
-});
+// Every edit previews on its own — a number box on Enter or blur, the shape
+// dropdown and the row buttons as they are clicked — so Enter on neutral panel
+// chrome has nothing left to do.
 
 // Drag by the title bar. The panel has no backdrop, so the viewport keeps its
 // own mouse handling while this is up.

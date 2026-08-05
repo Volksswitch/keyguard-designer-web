@@ -8,6 +8,16 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
+### New features
+
+- **Settings → About now shows which keyguard designer file you're using.** Alongside the app's own release number, the About tab lists the designer file your open project is running on and its version number — the same two numbers the app writes to the console when you open a project, so you can find them without scrolling back through the log.
+
+### Fixes
+
+- **The Custom Openings panel no longer has a Show button.** Everything you do in the panel already updates the keyguard straight away — typing a number and pressing Enter (or clicking another box), changing a shape, highlighting a row, or deleting one — so **Show** had nothing left to do and has been removed. **Save** and **Cancel** work exactly as before.
+
+- **The "Screen openings" heading now keeps up with your settings.** The heading tells you which unit your screen measurements are in and which corner they're counted from, but it was only worked out at the moment the panel opened — so changing either one in the Customizer left the heading describing the old setting until you closed and reopened the panel. It now updates the moment you change them, and the number boxes switch to match the new unit.
+
 ## Release 17
 
 ### New features
