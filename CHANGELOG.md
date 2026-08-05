@@ -8,6 +8,8 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
+## Release 18
+
 ### New features
 
 - **Settings → About now shows which keyguard designer file you're using.** Alongside the app's own release number, the About tab lists the designer file your open project is running on and its version number — the same two numbers the app writes to the console when you open a project, so you can find them without scrolling back through the log.
