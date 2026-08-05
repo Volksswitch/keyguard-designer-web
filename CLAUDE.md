@@ -429,6 +429,13 @@ pinned appearance settings in `tests/visual.spec.mjs` (`CAPTURE_ITEM_COLOR`, `CA
 
 - **Progress log** (tail -f while running): `visual-update-progress.log`
 
+**Do not offer this run every time a reference goes stale.** Ken's standing decision
+(2026-08-05): testing-related files are cleaned up in ONE pass when the `.scad` next gets
+really significant changes — not piecemeal. Flag a stale reference once, then move on;
+a stale reference does not block a release (Release 18 shipped with one outstanding).
+Run this only when Ken asks. **Currently stale:** every reference containing an O&A
+highlight, since the highlight material went solid in `4057ef7`.
+
 ---
 
 ## Trigger phrase — cross-backend visual parity
