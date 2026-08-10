@@ -8,6 +8,8 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
+- The console now reports the actual horizontal and vertical rail widths — the bands of material running between the cells. They appear when you open a project and again whenever a setting you change moves them (rows and columns, cell size, padding, bar heights, orientation, tablet or case dimensions). Renders that leave the rails alone stay quiet, so the report doesn't pile up in the console.
+
 ## Release 18
 
 ### New features

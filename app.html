@@ -2879,6 +2879,27 @@ async function doRender() {
           vpd: +vpd[1],
         };
       }
+      // Actual rail widths, reported ONLY when they change. keyguard.scad can't
+      // do this itself — every render re-runs the script from scratch, so it has
+      // no memory of the previous values and any echo there would repeat on every
+      // render and bury the console. Here we remember the last pair we showed and
+      // stay silent until it actually moves. Compared as the formatted strings so
+      // sub-0.01 mm float wobble never counts as a change.
+      // The viewport does two renders per update (keyguard + highlights) and both
+      // emit this line with the same numbers; the second one is silent for free.
+      // .scad sends undef when the design has no grid — forget the last values so
+      // the rails are re-reported if a grid comes back.
+      const rv = line.match(new RegExp(`vrw\\s*=\\s*${num}`));
+      const rh = line.match(new RegExp(`hrw\\s*=\\s*${num}`));
+      if (rv && rh) {
+        const rails = `vertical: ${(+rv[1]).toFixed(2)} mm, horizontal: ${(+rh[1]).toFixed(2)} mm`;
+        if (rails !== project.lastRails) {
+          project.lastRails = rails;
+          logLine(`Rail widths — ${rails}`);
+        }
+      } else {
+        project.lastRails = null;
+      }
     }
 
     // Lines we know are pure noise from openscad-wasm and don't want
