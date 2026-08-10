@@ -1402,7 +1402,7 @@ const RELEASE_NOTES = {
     "The console now reports the actual horizontal and vertical rail widths — the bands of material running between the cells. They appear when you open a project and again whenever a setting you change moves them (rows and columns, cell size, padding, bar heights, orientation, tablet or case dimensions). Renders that leave the rails alone stay quiet, so the report doesn't pile up in the console."
   ],
   "20": [
-    "\"Move screenshot horizontally\" and \"Move screenshot vertically\" now actually move the screenshot. The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts as you'd expect, matching what the keyguard designer does on the desktop, and the console instructions are unchanged."
+    "\"Move screenshot horizontally\" and \"Move screenshot vertically\" now actually move the screenshot. The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts as you'd expect, matching what the keyguard designer does on the desktop, and the console instructions are unchanged. These two boxes also follow the arrow keys now: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box."
   ]
 };
 // @@RELEASE_NOTES_END@@
@@ -3806,6 +3806,13 @@ function buildCustomizerForm(sections) {
   updateOpeningsButton();
 }
 
+// The two screenshot-nudge offsets. These are meant to be *stepped* (watch the
+// picture move) rather than typed, so the input handler treats them specially.
+const SCREENSHOT_NUDGE_PARAMS = new Set([
+  'move_screenshot_horizontally',
+  'move_screenshot_vertically',
+]);
+
 // Range params that should NOT get a slider — rendered as number+spinner only.
 // The five "App Layout in px" offsets (huge 0–10000 px ranges) and the two
 // screenshot-nudge offsets in "Special Actions and Settings".
@@ -4663,6 +4670,18 @@ container.addEventListener('input', e => {
   // typing a multi-digit number triggers a render off the in-flight value.
   if (e.target.tagName === 'INPUT' && e.target.type === 'number') return;
   scheduleRender();
+});
+// The nudge fields are the one place a clinician steps a number with the arrow
+// keys and expects the viewport to follow. Arrow keys in a number input fire
+// only 'input' (never 'change' until focus leaves), so the deferral above would
+// hold the render back until blur — the picture would sit still while the value
+// climbed. Render on the step for these two. Typing is untouched (the value has
+// already been reformatted/committed by then either way), and scheduleRender's
+// debounce coalesces a held key into a single render.
+container.addEventListener('keydown', e => {
+  if (!project || !SCREENSHOT_NUDGE_PARAMS.has(e.target.dataset.paramName)) return;
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  scheduleRender();   // debounce lands well after the browser applies the step
 });
 container.addEventListener('change', async e => {
   if (!project || !e.target.dataset.paramName) return;

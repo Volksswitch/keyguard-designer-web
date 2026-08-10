@@ -8,7 +8,7 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
-- **"Move screenshot horizontally" and "Move screenshot vertically" now actually move the screenshot.** The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts as you'd expect, matching what the keyguard designer does on the desktop, and the console instructions are unchanged.
+- **"Move screenshot horizontally" and "Move screenshot vertically" now actually move the screenshot.** The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts as you'd expect, matching what the keyguard designer does on the desktop, and the console instructions are unchanged. These two boxes also follow the arrow keys now: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box.
 
 ## Release 19
 
