@@ -8,6 +8,8 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
+- **"Move screenshot horizontally" and "Move screenshot vertically" now actually move the screenshot.** The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts as you'd expect, matching what the keyguard designer does on the desktop, and the console instructions are unchanged.
+
 ## Release 19
 
 - The console now reports the actual horizontal and vertical rail widths — the bands of material running between the cells. They appear when you open a project and again whenever a setting you change moves them (rows and columns, cell size, padding, bar heights, orientation, tablet or case dimensions). Renders that leave the rails alone stay quiet, so the report doesn't pile up in the console.
