@@ -1402,7 +1402,7 @@ const RELEASE_NOTES = {
     "The console now reports the actual horizontal and vertical rail widths — the bands of material running between the cells. They appear when you open a project and again whenever a setting you change moves them (rows and columns, cell size, padding, bar heights, orientation, tablet or case dimensions). Renders that leave the rails alone stay quiet, so the report doesn't pile up in the console."
   ],
   "20": [
-    "\"Move screenshot horizontally\" and \"Move screenshot vertically\" now actually move the screenshot. The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts as you'd expect, matching what the keyguard designer does on the desktop, and the console instructions are unchanged. These two boxes also follow the arrow keys now: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box."
+    "\"Move screenshot horizontally\" and \"Move screenshot vertically\" now actually move the screenshot. The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts by the number of millimetres you enter, so you can line the screenshot up with your cutouts and see the result. The console instructions are unchanged. These two boxes also follow the arrow keys: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box."
   ]
 };
 // @@RELEASE_NOTES_END@@
@@ -3084,10 +3084,12 @@ async function doRender() {
     // referenced app screenshot through the cell cutouts. Sized to swm × shm
     // captured from keyguard.scad's __KG_DIMS__ echo. Honours the
     // include_screenshot Customizer parameter, and the two nudge parameters
-    // (move_screenshot_horizontally/vertically) — the .scad applies those in
-    // show_screenshot() as translate([msh, msv, …]) with msh = value/10, but
-    // since we draw the plane ourselves instead of letting the .scad import
-    // the SVG, we have to apply the same offset here or the nudge does nothing.
+    // (move_screenshot_horizontally/vertically), which simply translate the
+    // plane. The .scad does the same in show_screenshot() — but there the
+    // offset is value/10, so a spinner click moves the picture 0.01 mm and
+    // nothing appears to happen. Treat the value as millimetres here, which
+    // is what the field's ±50 range and the console's own advice imply
+    // ("set unequal left side of case opening to <border + value>", in mm).
     const wantScreenshot = cur.include_screenshot === 'yes';
     if (wantScreenshot) {
       // Only warn when there are genuinely zero image files — not when an
@@ -3105,8 +3107,8 @@ async function doRender() {
           new THREE.PlaneGeometry(swm, shm),
           new THREE.MeshBasicMaterial({ map: project.screenshotTexture, side: THREE.DoubleSide })
         );
-        const msh = (Number(cur.move_screenshot_horizontally) || 0) / 10;
-        const msv = (Number(cur.move_screenshot_vertically) || 0) / 10;
+        const msh = Number(cur.move_screenshot_horizontally) || 0;
+        const msv = Number(cur.move_screenshot_vertically) || 0;
         plane.position.set(msh, msv, -kt / 2 - 0.05);
         group.add(plane);
       }
