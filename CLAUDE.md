@@ -379,6 +379,12 @@ keyguard-designer-web/
   that lost — `app-Helix2.html`, `CLAUDE-Helix2.md`, `sw-Helix2.js`, `progress-Helix2.log`.
   These are **sync-conflict debris, never authoritative**; `Helix2` is one machine's name
   and the same happens under the other's, so treat **any** `-<MachineName>` suffix the same.
+  **The test is whether the same name WITHOUT the suffix exists.** If it does (the normal
+  case), the suffixed file is a stale duplicate — ignore it entirely and work from the
+  canonical one; everything below applies. If it does NOT, do not ignore it: it may be the
+  only copy of something (created on the other machine and never synced under its real name,
+  or its canonical was deleted), so don't rename, adopt, or delete it on a guess — tell Ken
+  what it is and let him decide. For the normal duplicate case:
   **Never read one as instructions or as the current state of the code** — a
   `CLAUDE-<machine>.md` is a stale snapshot of THIS file that will confidently state retired
   conventions (real example, 2026-08-10: this project's `CLAUDE-Helix2.md` still described
