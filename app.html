@@ -1331,7 +1331,13 @@ function makeConsoleSink(emit, noise) {
       held.push(line);
       return;
     }
-    if (NUDGE_ADVICE_RE.test(line)) { held = []; eatOne = true; return; }
+    // The advice itself: swallow the raw ECHO and its spacers, and put the
+    // message up as a sticky line (verbatim — the .scad computes the suggested
+    // border from case geometry we don't have here). Doing it here rather than
+    // in a separate parse hook keeps one place responsible for recognising
+    // these lines, and covers the export render path for free.
+    const adv = line.match(NUDGE_ADVICE_RE);
+    if (adv) { setStickyLine(NUDGE_STICKY[adv[2]], adv[1]); held = []; eatOne = true; return; }
     flush();
     eatOne = false;
     if (!noise(line)) emit(line);
@@ -2980,13 +2986,6 @@ async function doRender() {
       } else {
         project.lastRails = null;
       }
-      // Screen-nudge advice → one sticky line per axis, carrying keyguard.scad's
-      // own sentence verbatim (it computes the suggested border from the case
-      // geometry, which we don't know here). Rewritten in place as the number
-      // changes; removed by doRender when its nudge goes back to 0, since the
-      // .scad then stops echoing and the advice would otherwise go stale.
-      const adv = line.match(NUDGE_ADVICE_RE);
-      if (adv) setStickyLine(NUDGE_STICKY[adv[2]], adv[1]);
     }
 
     // Lines we know are pure noise from openscad-wasm and don't want
