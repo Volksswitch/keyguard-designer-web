@@ -8,7 +8,7 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
-- **"Move screenshot horizontally" and "Move screenshot vertically" now actually move the screenshot.** The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts by the number of millimetres you enter, so you can line the screenshot up with your cutouts and see the result. The console instructions are unchanged. These two boxes also follow the arrow keys: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box.
+- **"Move screenshot horizontally" and "Move screenshot vertically" now actually move the screenshot.** The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts by the number of millimetres you enter, so you can line the screenshot up with your cutouts and see the result. The console instructions are unchanged. These two boxes also follow the arrow keys: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box. The Console no longer repeats the matching instructions on every single update: while a nudge is set, you get one line for the left side of the case opening and one for the bottom, each rewritten in place as the suggested number changes, and both retired when you set the nudge back to 0.
 
 ## Release 19
 

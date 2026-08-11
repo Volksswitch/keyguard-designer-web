@@ -1233,6 +1233,50 @@ function logRaw(text) {
   consoleEl.scrollTop = consoleEl.scrollHeight;
 }
 
+// ---- Sticky console lines ----
+// A sticky line appears at most ONCE and is rewritten in place when its text
+// changes, instead of being appended again. For keyguard.scad advice that is
+// re-echoed on every render: the script runs from scratch each time and has no
+// memory of what it already said, so a plain append piles the same message up
+// on every keystroke. The console's own text is the backing store (the user can
+// clear it, so we can't assume our line is still there) — hence lastIndexOf and
+// the append fallback.
+const stickyLines = new Map();     // id -> exact line text currently on screen
+function setStickyLine(id, text) {
+  if (stickyLines.get(id) === text) return;    // same advice as last render
+  const prev = stickyLines.get(id);
+  stickyLines.set(id, text);
+  const lines = consoleEl.textContent.split('\n');
+  const i = prev == null ? -1 : lines.lastIndexOf(prev);
+  if (i < 0) { logLine(text); return; }        // first time, or console cleared
+  lines[i] = text;
+  consoleEl.textContent = lines.join('\n');
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+function clearStickyLine(id) {
+  const prev = stickyLines.get(id);
+  if (prev == null) return;
+  stickyLines.delete(id);
+  const lines = consoleEl.textContent.split('\n');
+  const i = lines.lastIndexOf(prev);
+  if (i < 0) return;
+  lines.splice(i, 1);
+  consoleEl.textContent = lines.join('\n');
+}
+function clearConsole() {
+  consoleEl.textContent = '';
+  stickyLines.clear();             // their backing text just went away
+}
+
+// The two screen-nudge instructions keyguard.scad echoes while
+// move_screenshot_horizontally / _vertically are non-zero. Each is shown as one
+// sticky line; the raw ECHO is suppressed by isNoiseLine() and its blank
+// spacers by makeConsoleSink().
+const NUDGE_ADVICE_RE =
+  /^ECHO:\s*"(Set '(unequal (?:left|bottom)) side of case opening'[^"]*)"\s*$/;
+const NUDGE_STICKY = { 'unequal left': 'nudge-left-side',
+                       'unequal bottom': 'nudge-bottom-side' };
+
 // Shared console-noise filter for OpenSCAD's raw stdout/stderr. Both the
 // viewport render (runOnce → isNoise) and the export render (renderExportBytes
 // → onLog) pipe every OpenSCAD line through this so the same cosmetic chatter is
@@ -1263,7 +1307,37 @@ function isNoiseLine(t) {
   if (/^\s*Top level object is a [23]D object/.test(t)) return true;
   if (/^\s*Status:\s+NoError/.test(t)) return true;
   if (/^\s*(Genus|Vertices|Halfedges|Edges|Halffacets|Facets|Volumes|Simple|Convex|Area):/.test(t)) return true;
+  // Screen-nudge advice: re-echoed on every render, shown as a sticky line
+  // instead (maybeCaptureDims → setStickyLine). Suppressed in both render paths.
+  if (NUDGE_ADVICE_RE.test(t)) return true;
   return false;
+}
+
+// Wraps a console sink so the blank spacer lines around a suppressed message go
+// with it. keyguard.scad brackets its console messages with bare `echo();`
+// calls, which arrive as empty "ECHO:" lines — dropping only the screen-nudge
+// message would leave four strays behind. Blank ECHOs are therefore held until
+// we see what follows: dropped if that turns out to be nudge advice, emitted in
+// order otherwise. One blank straight AFTER dropped advice is its closing
+// spacer, so it goes too. Spacers around every other message are untouched.
+// Call .flush() when the render ends to release any still being held.
+function makeConsoleSink(emit, noise) {
+  let held = [];          // blank ECHOs waiting to see what comes next
+  let eatOne = false;     // drop one blank: closing spacer of dropped advice
+  const flush = () => { for (const b of held) emit(b); held = []; };
+  const sink = line => {
+    if (/^ECHO:\s*$/.test(line)) {
+      if (eatOne) { eatOne = false; return; }
+      held.push(line);
+      return;
+    }
+    if (NUDGE_ADVICE_RE.test(line)) { held = []; eatOne = true; return; }
+    flush();
+    eatOne = false;
+    if (!noise(line)) emit(line);
+  };
+  sink.flush = flush;
+  return sink;
 }
 
 function setStatus(msg, kind = '') {
@@ -1402,7 +1476,7 @@ const RELEASE_NOTES = {
     "The console now reports the actual horizontal and vertical rail widths — the bands of material running between the cells. They appear when you open a project and again whenever a setting you change moves them (rows and columns, cell size, padding, bar heights, orientation, tablet or case dimensions). Renders that leave the rails alone stay quiet, so the report doesn't pile up in the console."
   ],
   "20": [
-    "\"Move screenshot horizontally\" and \"Move screenshot vertically\" now actually move the screenshot. The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts by the number of millimetres you enter, so you can line the screenshot up with your cutouts and see the result. The console instructions are unchanged. These two boxes also follow the arrow keys: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box."
+    "\"Move screenshot horizontally\" and \"Move screenshot vertically\" now actually move the screenshot. The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts by the number of millimetres you enter, so you can line the screenshot up with your cutouts and see the result. The console instructions are unchanged. These two boxes also follow the arrow keys: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box. The Console no longer repeats the matching instructions on every single update: while a nudge is set, you get one line for the left side of the case opening and one for the bottom, each rewritten in place as the suggested number changes, and both retired when you set the nudge back to 0."
   ]
 };
 // @@RELEASE_NOTES_END@@
@@ -2068,7 +2142,7 @@ async function resetToNoProject() {
   positionGrid();   // no model → grid returns to the z = 0 plane
   renderer.render(scene, camera);
   cameraFitOnce = false;
-  consoleEl.textContent = '';
+  clearConsole();
   container.innerHTML = '';
   document.getElementById('preset-input').value = '';
   document.getElementById('preset-list').innerHTML = '';
@@ -2190,7 +2264,7 @@ async function openProject(presetHandle = null) {
   // Start each project-open with a clean console so the version banner (logged
   // below, once keyguard.scad has been read) is the first thing in the log —
   // a clinician can copy/paste both numbers straight into a support email.
-  consoleEl.textContent = '';
+  clearConsole();
   setStatus('Loading project...', 'rendering');
 
   // Enumerate root-level files
@@ -2906,6 +2980,13 @@ async function doRender() {
       } else {
         project.lastRails = null;
       }
+      // Screen-nudge advice → one sticky line per axis, carrying keyguard.scad's
+      // own sentence verbatim (it computes the suggested border from the case
+      // geometry, which we don't know here). Rewritten in place as the number
+      // changes; removed by doRender when its nudge goes back to 0, since the
+      // .scad then stops echoing and the advice would otherwise go stale.
+      const adv = line.match(NUDGE_ADVICE_RE);
+      if (adv) setStickyLine(NUDGE_STICKY[adv[2]], adv[1]);
     }
 
     // Lines we know are pure noise from openscad-wasm and don't want
@@ -2949,9 +3030,10 @@ async function doRender() {
       // the "Rendering X (N extra args)" and per-STL byte-count lines below.
       // The user-facing render time appears on the status bar instead.
       suppressedEmpty = false;
+      const sink = makeConsoleSink(logRaw, isNoise);
       const oscad = await createOpenSCAD({
-        print:    t => { if (!isNoise(t)) logRaw(t); maybeCaptureDims(t); },
-        printErr: t => { if (!isNoise(t)) logRaw(t); maybeCaptureDims(t); }
+        print:    t => { sink(t); maybeCaptureDims(t); },
+        printErr: t => { sink(t); maybeCaptureDims(t); }
       });
       // Install OpenSCAD's bundled fonts (Liberation Sans + fontconfig)
       // into the virtual FS so text() primitives render. Without this,
@@ -2970,6 +3052,7 @@ async function doRender() {
       const args = ['/' + project.scadName, '-o', outPath, ...baseArgs, ...extraArgs];
       const t0 = performance.now();
       const rc = oscad.getInstance().callMain(args);
+      sink.flush();          // callMain is synchronous: all output has arrived
       const elapsed = (performance.now() - t0) / 1000;
       if (rc !== 0) {
         // The highlights render is a non-essential overlay; if it fails for
@@ -3046,6 +3129,11 @@ async function doRender() {
     group.add(kgMesh);
 
     const cur = currentFormValues();
+
+    // A nudge back at 0 means keyguard.scad emitted no advice for that axis this
+    // render, so its sticky line (if any) is now stale — retire it.
+    if (!(Number(cur.move_screenshot_horizontally) || 0)) clearStickyLine(NUDGE_STICKY['unequal left']);
+    if (!(Number(cur.move_screenshot_vertically)   || 0)) clearStickyLine(NUDGE_STICKY['unequal bottom']);
 
     // The STL writer emits a single-triangle "empty" shell when there is no
     // overlay geometry — guard against tiny/empty files so we don't draw a
@@ -3452,9 +3540,9 @@ async function renderExportBytes(fmt, backend = 'Manifold') {
   // sizing line, the benign CGAL applyHull assertion block, and the per-render
   // cache / "Top level object" dump don't leak into the clinician-visible
   // console. Real ERROR/WARNING/ECHO lines still come through.
-  const bytes = await runExportInWorker(job, {
-    onLog: t => { if (!isNoiseLine(t)) logRaw(t); },
-  });
+  const exportSink = makeConsoleSink(logRaw, isNoiseLine);
+  const bytes = await runExportInWorker(job, { onLog: exportSink });
+  exportSink.flush();
   const elapsed = (performance.now() - t0) / 1000;
   // Console is clinician-visible: say "precision" rather than the backend's
   // internal name (CGAL / Manifold), which means nothing to a clinician.
@@ -4795,7 +4883,7 @@ makeVSplit(document.getElementById('vsplit-console'),
 
 // ---------- console toolbar actions ----------
 // (consoleEl is declared in the module-script section above)
-document.getElementById('clear-btn').addEventListener('click', () => { consoleEl.textContent = ''; });
+document.getElementById('clear-btn').addEventListener('click', () => { clearConsole(); });
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(consoleEl.textContent).then(() => alert('Console copied to clipboard'));
 });
