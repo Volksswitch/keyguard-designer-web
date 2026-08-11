@@ -373,6 +373,24 @@ keyguard-designer-web/
   code history, `progress.log` is the work history. Per-job logs (e.g.
   `visual-update-progress.log`) may coexist, but their progress must flow into `progress.log`
   LIVE (redirect/tee from the start, or a follower that mirrors new lines).
+- **Machine-name suffixed files are ALWAYS suspect (`…-Helix2…`, or any machine name).**
+  Work happens on two machines sharing one OneDrive copy of this project, and OneDrive
+  resolves an edit collision by keeping both versions and renaming one after the machine
+  that lost — `app-Helix2.html`, `CLAUDE-Helix2.md`, `sw-Helix2.js`, `progress-Helix2.log`.
+  These are **sync-conflict debris, never authoritative**; `Helix2` is one machine's name
+  and the same happens under the other's, so treat **any** `-<MachineName>` suffix the same.
+  **Never read one as instructions or as the current state of the code** — a
+  `CLAUDE-<machine>.md` is a stale snapshot of THIS file that will confidently state retired
+  conventions (real example, 2026-08-10: this project's `CLAUDE-Helix2.md` still described
+  the abandoned `dev`/`main` branch split and said to push after every change — following it
+  would have deployed unreleased work to clinicians). **Never edit one** — editing
+  `app-Helix2.html` looks like it worked and changes nothing Ken runs. Don't consult one to
+  answer a question about the code; read the canonical name instead. When you notice one,
+  say so and offer to clean it up. **Before deleting, verify nothing lives only there** —
+  they are untracked, so git cannot restore them: a code file is safe when
+  `git hash-object <copy>` matches a historical blob for the canonical path (an exact old
+  commit); a doc is safe when its unique lines are superseded wording; logs, timings, and
+  generated artifacts are disposable by policy. Report what you verified.
 
 ## Working by trigger phrase (no manual shell commands)
 
