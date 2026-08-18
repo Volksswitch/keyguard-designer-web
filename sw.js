@@ -4,6 +4,10 @@
 const CACHE_NAME = 'keyguard-v20';
 
 const SHELL = [
+  './',                    // the bare address: a bookmark to the folder rather than
+                           // to app.html. Without this it goes to the network every
+                           // time, so it has no offline copy and, once the app moves,
+                           // nothing of the user's comes with it.
   './app.html',
   './manifest.json',
   './icons/icon.svg',
@@ -22,7 +26,13 @@ const SHELL = [
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE_NAME)
-      .then(c => c.addAll(SHELL))
+      // `cache: 'reload'` bypasses the browser's HTTP cache on the way out and
+      // refreshes it on the way back. Without it a NEW cache can be filled with
+      // the OLD app: GitHub Pages serves everything with a 10-minute freshness
+      // window, so a client that loaded recently gets its own stale copy handed
+      // back. Measured directly in the 2025 rehearsal - a cache named v2
+      // containing v1's bytes, and an update that "succeeded" and changed nothing.
+      .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });

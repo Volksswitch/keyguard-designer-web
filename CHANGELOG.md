@@ -8,6 +8,18 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
+### New features
+
+- **Settings → About now has a "Reload the app" button.** Use it any time the app looks wrong or seems stuck — it starts the app fresh and picks up the newest version. You'll need to open your project again afterwards. The old advice to press Ctrl-Shift-R has been removed: you no longer need to know that two kinds of refresh exist.
+
+### Fixes
+
+- **An update could install and leave you on the old version anyway.** The app fetched the new version through the browser's own short-term store, which could hand back the copy it had just been given — so the update reported success and nothing actually changed. It now always fetches a genuinely fresh copy.
+
+- **The app could give up on an update that would have worked.** After one unsuccessful attempt it refused to try that version again for the rest of the session, even when a later attempt would have succeeded, leaving you on the older version until you next opened the app. It now retries sensibly instead.
+
+- **Bookmarking the app's folder address rather than the page itself left you without an offline copy.** The app opened normally with a connection but not without one. Both forms of the address now work offline.
+
 ## Release 20
 
 - **"Move screenshot horizontally" and "Move screenshot vertically" now actually move the screenshot.** The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts by the number of millimetres you enter, so you can line the screenshot up with your cutouts and see the result. The console instructions are unchanged. These two boxes also follow the arrow keys: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box. The Console no longer repeats the matching instructions on every single update: while a nudge is set, you get one line for the left side of the case opening and one for the bottom, each rewritten in place as the suggested number changes, and both retired when you set the nudge back to 0.

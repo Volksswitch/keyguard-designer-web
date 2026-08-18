@@ -1483,6 +1483,12 @@ const RELEASE_NOTES = {
   ],
   "20": [
     "\"Move screenshot horizontally\" and \"Move screenshot vertically\" now actually move the screenshot. The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts by the number of millimetres you enter, so you can line the screenshot up with your cutouts and see the result. The console instructions are unchanged. These two boxes also follow the arrow keys: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box. The Console no longer repeats the matching instructions on every single update: while a nudge is set, you get one line for the left side of the case opening and one for the bottom, each rewritten in place as the suggested number changes, and both retired when you set the nudge back to 0."
+  ],
+  "21": [
+    "Settings → About now has a \"Reload the app\" button. Use it any time the app looks wrong or seems stuck — it starts the app fresh and picks up the newest version. You'll need to open your project again afterwards. The old advice to press Ctrl-Shift-R has been removed: you no longer need to know that two kinds of refresh exist.",
+    "An update could install and leave you on the old version anyway. The app fetched the new version through the browser's own short-term store, which could hand back the copy it had just been given — so the update reported success and nothing actually changed. It now always fetches a genuinely fresh copy.",
+    "The app could give up on an update that would have worked. After one unsuccessful attempt it refused to try that version again for the rest of the session, even when a later attempt would have succeeded, leaving you on the older version until you next opened the app. It now retries sensibly instead.",
+    "Bookmarking the app's folder address rather than the page itself left you without an offline copy. The app opened normally with a connection but not without one. Both forms of the address now work offline."
   ]
 };
 // @@RELEASE_NOTES_END@@
@@ -2566,12 +2572,26 @@ async function checkForAppUpdate(reg) {
   // Loop guard: if we already forced a refresh for this exact version in this
   // tab and we're STILL behind, the deploy or cache is inconsistent — stop
   // rather than reload forever.
-  if (Number(sessionStorage.getItem('kg_app_update_tried')) === latest) {
+  //
+  // ⚠ It is keyed on the PAIR (running → target) and expires, rather than on the
+  // target alone and forever. GitHub's edges do not agree with each other: the
+  // 2025 rehearsal watched a client be told "release 2 exists" by a stale edge
+  // minutes after release 3 had shipped, read that as "I already tried 2 and it
+  // failed", and give up on an update that would have worked. A guard should stop
+  // a reload loop inside one sitting; it should not veto a genuine update seen
+  // later. That failure matters most during the move — a client that gives up
+  // here is a clinician who does not cross on that visit.
+  const guardKey  = `${APP_RELEASE}->${latest}`;
+  const GUARD_MS  = 10 * 60 * 1000;
+  const prior     = (sessionStorage.getItem('kg_app_update_tried') || '').split('@');
+  const sameHop   = prior[0] === guardKey;
+  const stillWarm = Number(prior[1]) > Date.now() - GUARD_MS;
+  if (sameHop && stillWarm) {
     logLine(`App is still release ${APP_RELEASE} after trying to update to ${latest}. ` +
-            `If this persists, hard-refresh once with Ctrl-Shift-R.`);
+            `If this persists, use “Reload the app” on the Settings → About tab.`);
     return;
   }
-  sessionStorage.setItem('kg_app_update_tried', String(latest));
+  sessionStorage.setItem('kg_app_update_tried', `${guardKey}@${Date.now()}`);
 
   logLine(`New app release ${latest} published (running ${APP_RELEASE}) — updating and reloading…`);
   setStatus('Updating to the latest app version…', 'rendering');
@@ -2597,6 +2617,37 @@ async function checkForAppUpdate(reg) {
     location.reload();
   }, 8000);
 }
+
+// --- Starting the app fresh ------------------------------------------------
+// The replacement for telling a clinician to press Ctrl-Shift-R. Nobody should
+// have to know that two kinds of reload exist, and the hard one is actively
+// dangerous here: it skips past the app entirely, so any code that would have
+// carried their settings somewhere never runs.
+//
+// ⚠ ORDER IS LOAD-BEARING. Move first, clear second. The cached copy is the only
+// thing that lets this page run at all once the app has moved addresses, so
+// clearing it before handing the settings over destroys exactly what the hard
+// refresh destroys — the failure this button exists to prevent.
+async function cleanReload() {
+  if (await moveIfDue()) return;    // page is being replaced; nothing below runs
+  try {
+    (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister());
+  } catch {}
+  try {
+    if (window.caches) {
+      const ks = await caches.keys();
+      await Promise.all(ks.map(k => caches.delete(k)));
+    }
+  } catch {}
+  location.reload();
+}
+
+// The departure half of the move to keyguard.volksswitch.org lands here. Until it
+// does — and afterwards, whenever the move is not armed — there is nothing due
+// and this correctly does nothing. It is called FIRST by cleanReload(); do not
+// reorder that, and do not delete this in the belief it is unused.
+async function moveIfDue() { return false; }
+
 
 // Test-only fixture loader. Bypasses the File System Access picker and
 // fetches the project files directly from the local web server. Triggered
@@ -5775,6 +5826,13 @@ const SETTINGS_PANELS = {
         use, modify, and share this tool for any purpose, with no restrictions
         and no attribution required.
       </div>
+      <label>Reloading</label>
+      <div style="margin-bottom:8px;">
+        Starts the app fresh and picks up the newest version. Use this any time the
+        app looks wrong or seems stuck. You&rsquo;ll need to open your project again.
+      </div>
+      <button id="about-reload-btn" type="button"
+              style="margin-bottom:14px;">Reload the app</button>
       <label>Created by</label>
       <div>
         Volksswitch —
@@ -5787,6 +5845,17 @@ const SETTINGS_PANELS = {
 
 function renderSettingsPanel(cat) {
   settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
+  // The panel's markup is replaced on every render, so its controls are wired
+  // each time rather than once at startup.
+  const reloadBtn = settingsPanel.querySelector('#about-reload-btn');
+  if (reloadBtn) reloadBtn.addEventListener('click', () => {
+    reloadBtn.disabled = true;
+    reloadBtn.textContent = 'Reloading…';
+    cleanReload().catch(() => {
+      reloadBtn.disabled = false;
+      reloadBtn.textContent = 'Reload the app';
+    });
+  });
   settingsPanel.querySelectorAll('input[type=radio][name=skillLevel]').forEach(r => {
     r.addEventListener('change', () => { if (r.checked) setSetting('skillLevel', r.value); });
   });
