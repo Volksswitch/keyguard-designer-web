@@ -298,6 +298,15 @@ const doc = new Document({
   ], 'Old address'),
 
   table([9360], [[[
+    P([R('⚠ Saving is the gate, and it has to be built that way. ', {bold:true}),
+       R('An armed move carries across only those who have already saved a copy. Anyone who has not is ' +
+         'asked first, and “Not now” genuinely means nothing happens — which is what the ' +
+         'notice promises them. Built without that gate the move runs on every load once armed and takes ' +
+         'people who have just declined; that is exactly what the first implementation did, and it was ' +
+         'caught on the rig rather than by reading the code.')], {after:0}),
+  ]]], { head:false }),
+
+  table([9360], [[[
     P([R('Someone who has already saved, once the move is armed, sees nothing at all. ', {bold:true}),
        R('They are simply moved. Asking them to save a second time would be asking for something they ' +
          'have already done, and a departure notice on top of the arrival screen announces one event ' +
@@ -338,8 +347,16 @@ const doc = new Document({
          'itself. '),
        R('95% of keyguard users have only one project folder', {bold:true}),
        R(', so for almost everyone the folder they reopen is the folder the file is in.')], {after:80}),
-    P('If no project is open when they press Save, they are asked to open one first. A download remains ' +
-      'the fallback if they decline.', {after:0}),
+    P([R('The request only appears once a project is open, ', {bold:true}),
+       R('so saving is a single click into a folder the app already holds. Asking someone to pick a ' +
+         'project purely so a file could be written was worse than it sounds: with the move armed they ' +
+         'would then be carried across seconds later, and the first thing the new address does is ask ' +
+         'them to open that same project again — the same folder picked twice, the app loading ' +
+         'twice, inside about ten seconds (Ken, 18 Aug 2026). Reopening after a move is unavoidable; ' +
+         'making someone open a project first was not.')], {after:80}),
+    P([R('Consequence, accepted: ', {bold:true}),
+       R('someone who never opens a project is never asked, and never moved. The “We’ve ' +
+         'moved” page in step 7 is the backstop for them.')], {after:0}),
   ]]], { head:false }),
 
   ...figure('cleanup-bar', [
