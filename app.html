@@ -84,7 +84,8 @@
 
   /* ---------- main layout: row of (left column) + splitter + (right Customizer) ---------- */
   #app { display: flex; flex-direction: column; height: 100vh; }
-  /* The move notice. Deliberately modest: what it asks for is one click, and an
+  /* DEPARTURE-ONLY START — delete these rules when seeding release 100.
+     The move notice. Deliberately modest: what it asks for is one click, and an
      alarming bar would spend credibility the arrival screens need later. */
   #move-notice { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
                  padding: 11px 13px; background: #fdf6e3; border-bottom: 1px solid #e8dcc0;
@@ -94,9 +95,9 @@
   #move-notice-text { flex: 1 1 260px; min-width: 0; }
   #move-notice-text b { color: #4a3a0d; }
   #move-notice.done #move-notice-text b { color: #17402a; }
-  .move-notice-actions { display: flex; gap: 6px; flex: 0 0 auto; }
   #move-notice button { font-size: 12px; padding: 4px 11px; cursor: pointer; }
   #move-notice-save { font-weight: bold; }
+  /* DEPARTURE-ONLY END */
   /* The arrival screen. Same furniture as the other modals so it reads as part
      of the app rather than as something that has gone wrong. */
   #moved-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -116,6 +117,9 @@
   #cleanup-notice[hidden] { display: none; }
   #cleanup-notice-text { flex: 1 1 260px; min-width: 0; }
   #cleanup-notice-text b { color: #4a3a0d; }
+  /* Shared by both bars, so it lives outside the departure-only rules — the save
+     request goes with release 100, the cleanup bar stays. */
+  .notice-actions { display: flex; gap: 6px; flex: 0 0 auto; }
   #cleanup-notice button { font-size: 12px; padding: 4px 11px; cursor: pointer; }
   #cleanup-notice-how { font-weight: bold; }
   #main { display: flex; flex: 1; min-height: 0; }
@@ -451,17 +455,19 @@
 </head>
 <body>
 <div id="app">
-  <!-- The standing request to save a copy of the settings before the app moves.
+  <!-- DEPARTURE-ONLY START — delete this element when seeding release 100.
+       The standing request to save a copy of the settings before the app moves.
        INSIDE the app rather than over it, so a clinician meets it once they are
        actually in a position to act on it. Hidden by default; shown at startup
        only on the retiring address and only until the button is pressed. -->
   <div id="move-notice" hidden>
     <span id="move-notice-text"></span>
-    <span class="move-notice-actions">
+    <span class="notice-actions">
       <button id="move-notice-save" type="button">Save my settings</button>
       <button id="move-notice-later" type="button">Not now</button>
     </span>
   </div>
+  <!-- DEPARTURE-ONLY END -->
 
   <!-- The one job left once they are here: the bookmark and the installed icon
        still point at the old address. Same bar as the save request above, on the
@@ -469,7 +475,7 @@
        it would sit beside the button everyone presses and be read by nobody. -->
   <div id="cleanup-notice" hidden>
     <span id="cleanup-notice-text"><b>One more step to finish the move.</b></span>
-    <span class="move-notice-actions">
+    <span class="notice-actions">
       <button id="cleanup-notice-how" type="button">Show me how</button>
       <button id="cleanup-notice-later" type="button">Not now</button>
     </span>
@@ -2546,9 +2552,11 @@ async function openProject(presetHandle = null) {
   // Two questions get answered by the folder that has just been handed to us:
   // is there a copy of the settings in it, and — if they arrived without theirs
   // — should it be put back. Look once, then act on what was found.
-  checkForSettingsCopy()
+  // Putting settings back is arrival-side and stays for years. Looking for a copy
+  // and asking for one are departure-only and vanish with release 100.
+  (typeof checkForSettingsCopy === 'function' ? checkForSettingsCopy() : Promise.resolve())
     .then(() => restoreFromProjectFolderIfPending())
-    .then(() => showMoveNotice())
+    .then(() => (typeof showMoveNotice === 'function' ? showMoveNotice() : null))
     .catch(() => {});
 
   // UI updates
@@ -2791,7 +2799,9 @@ async function checkForAppUpdate(reg) {
 // clearing it before handing the settings over destroys exactly what the hard
 // refresh destroys — the failure this button exists to prevent.
 async function cleanReload() {
-  if (await moveIfDue()) return;    // page is being replaced; nothing below runs
+  // Departure-only, and deleted from release 100 — where there is nowhere to go,
+  // so this correctly does nothing. `typeof` keeps the call safe once it is gone.
+  if (typeof moveIfDue === 'function' && await moveIfDue()) return;
   try {
     (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister());
   } catch {}
@@ -2804,6 +2814,7 @@ async function cleanReload() {
   location.reload();
 }
 
+// ── DEPARTURE-ONLY START ───────────────────────────────────────────────────
 // Leaves nothing behind that could keep serving the old app to this browser.
 async function moveTearDown() {
   try {
@@ -2840,10 +2851,33 @@ async function moveIfDue() {
                    `#s=${encodeURIComponent(payload)}`);
   return true;
 }
+// ── DEPARTURE-ONLY END ─────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THE MOVE TO keyguard.volksswitch.org
 // ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠ TWO HALVES, AND THEY BELONG TO DIFFERENT ADDRESSES.
+//
+//   DEPARTURE — asking for a copy, the arming probe, and the crossing itself.
+//     Belongs to the RETIRING address only. It must NOT exist in the release-100
+//     app at all (Ken, 18 Aug 2026) — not merely be switched off there. Nobody on
+//     the new address is ever going anywhere, and a nag that forces a save is a
+//     migration measure, not a feature.
+//
+//   ARRIVAL — taking delivery, putting settings back from the project folder, and
+//     the reminder to retire the old bookmark and icon. Belongs to the NEW address
+//     and stays there for years: a stale bookmark or a stranded icon can still
+//     send someone across long after everything else is gone.
+//
+// The departure half is fenced by start/end markers below. Seeding the new
+// repository means DELETING everything between them, plus the banner's markup and
+// styles (both marked the same way). It is a deletion, never an edit — nothing
+// has to be written by hand, so nothing can be got wrong.
+//
+// ⚠ Saving a copy is NOT departure-only. The mechanism stays in both: on the new
+// address it is an ordinary feature, offered on the About tab. Only the FORCING
+// of it goes.
 // Release 21 carries all of this to the address clinicians use today. It is
 // dormant until the move is armed — a single flag served from the new address,
 // set with no release involved and reversible at any moment.
@@ -2976,6 +3010,8 @@ async function readSettingsFileFromProject() {
   } catch { return null; }
 }
 
+// ── DEPARTURE-ONLY START ───────────────────────────────────────────────────
+// Everything down to the matching end marker is deleted when seeding release 100.
 // ── Is the move armed? ─────────────────────────────────────────────────────
 // A real fetch requiring an explicit ready:true — never `mode:'no-cors'`, whose
 // opaque response resolves even on a 404 and would happily move people onto a
@@ -3129,6 +3165,8 @@ function wireMoveNotice() {
   });
 }
 
+// ── DEPARTURE-ONLY END ─────────────────────────────────────────────────────
+
 // ── Landing at the new address ─────────────────────────────────────────────
 // Two screens, chosen by whether the settings actually made the crossing. Each
 // says one thing and offers one button. Nothing about bookmarks or icons appears
@@ -3212,6 +3250,50 @@ function wireArrivalFilePicker() {
     if (!f) return;
     try { await restoreSettingsFromFile(f); }
     catch (e) { alert(e.message || String(e)); }
+  });
+}
+
+// Saving and loading a copy, on the About tab. Hidden on the retiring address,
+// where the banner is the only way to save — there, saving is also what carries
+// you across, and that has to be said in the same breath as the action rather
+// than sitting behind a bare button (Ken, 18 Aug 2026).
+//
+// On the new address the banner is gone entirely, so this IS the feature: an
+// ordinary way to keep a copy of your settings, with no migration attached.
+function wireAboutSettings(root) {
+  const box = root.querySelector('#about-settings');
+  if (!box) return;
+  if (!onNewAddress) return;                 // retiring address: the banner does this
+  box.hidden = false;
+
+  const saveBtn = root.querySelector('#about-save-btn');
+  const loadBtn = root.querySelector('#about-load-btn');
+  const input   = root.querySelector('#about-load-input');
+  const msgEl   = root.querySelector('#about-settings-msg');
+  const say = t => { if (msgEl) msgEl.textContent = t; };
+
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    say('Saving…');
+    try {
+      const r = await saveSettingsCopy();
+      say(r.where === 'folder'
+        ? `Saved as ${SETTINGS_FILE} in your ${r.name} folder.`
+        : `Saved as ${SETTINGS_FILE} to your downloads. Open a project and save again ` +
+          `to keep it beside your work.`);
+    } catch (e) { say('Could not save: ' + (e.message || e)); }
+    finally { saveBtn.disabled = false; }
+  });
+
+  loadBtn.addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const f = input.files && input.files[0];
+    input.value = '';
+    if (!f) return;
+    try {
+      const r = await restoreSettingsFromFile(f);
+      say(`Restored ${r.count} setting${r.count === 1 ? '' : 's'}.`);
+    } catch (e) { say(e.message || String(e)); }
   });
 }
 
@@ -6427,6 +6509,19 @@ const SETTINGS_PANELS = {
         use, modify, and share this tool for any purpose, with no restrictions
         and no attribution required.
       </div>
+      <div id="about-settings" hidden>
+        <label>Your settings</label>
+        <div style="margin-bottom:8px;">
+          Save a copy of your settings into your project folder, or put a saved copy back.
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+          <button id="about-save-btn" type="button">Save a copy of my settings</button>
+          <button id="about-load-btn" type="button">Load saved settings&hellip;</button>
+          <input id="about-load-input" type="file" accept="application/json,.json" hidden>
+        </div>
+        <p id="about-settings-msg" style="margin:0 0 14px; min-height:1.2em; color:#666;"></p>
+      </div>
+
       <label>Reloading</label>
       <div style="margin-bottom:8px;">
         Starts the app fresh and picks up the newest version. Use this any time the
@@ -6448,6 +6543,7 @@ function renderSettingsPanel(cat) {
   settingsPanel.innerHTML = SETTINGS_PANELS[cat]();
   // The panel's markup is replaced on every render, so its controls are wired
   // each time rather than once at startup.
+  wireAboutSettings(settingsPanel);
   const reloadBtn = settingsPanel.querySelector('#about-reload-btn');
   if (reloadBtn) reloadBtn.addEventListener('click', () => {
     reloadBtn.disabled = true;
@@ -7198,8 +7294,10 @@ maybeShowWhatsNew();
 // The standing request to save a copy of the settings before the app moves.
 // Wired once; shown (or not) on every load, and again whenever the answer could
 // have changed — pressing Save is what retires it for good.
+// ── DEPARTURE-ONLY START ───────────────────────────────────────────────────
 wireMoveNotice();
 showMoveNotice().catch(() => {});
+// ── DEPARTURE-ONLY END ─────────────────────────────────────────────────────
 
 // Landing at the new address: the arrival screen if we have just come across,
 // and the standing reminder to retire the old bookmark and icon.
@@ -7214,7 +7312,9 @@ showCleanupNotice();
 // nothing happens (Ken's step 5). Firing this unconditionally — which it did until
 // 18 Aug 2026 — moved people who had declined, which is the opposite of what the
 // notice promises them.
+// ── DEPARTURE-ONLY START ───────────────────────────────────────────────────
 if (localStorage.getItem(LS_HAS_A_COPY) === 'yes') moveIfDue().catch(() => {});
+// ── DEPARTURE-ONLY END ─────────────────────────────────────────────────────
 
 if ('serviceWorker' in navigator) {
   // The service worker is cache-first (see sw.js) and CACHE_NAME is only bumped
