@@ -84,6 +84,19 @@
 
   /* ---------- main layout: row of (left column) + splitter + (right Customizer) ---------- */
   #app { display: flex; flex-direction: column; height: 100vh; }
+  /* The move notice. Deliberately modest: what it asks for is one click, and an
+     alarming bar would spend credibility the arrival screens need later. */
+  #move-notice { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+                 padding: 11px 13px; background: #fdf6e3; border-bottom: 1px solid #e8dcc0;
+                 color: #5c4813; font-size: 12.5px; line-height: 1.45; flex: 0 0 auto; }
+  #move-notice[hidden] { display: none; }
+  #move-notice.done { background: #e8f4ec; border-bottom-color: #c6e0d0; color: #1f5133; }
+  #move-notice-text { flex: 1 1 260px; min-width: 0; }
+  #move-notice-text b { color: #4a3a0d; }
+  #move-notice.done #move-notice-text b { color: #17402a; }
+  .move-notice-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+  #move-notice button { font-size: 12px; padding: 4px 11px; cursor: pointer; }
+  #move-notice-save { font-weight: bold; }
   #main { display: flex; flex: 1; min-height: 0; }
   #left { display: flex; flex-direction: column; flex: 1; min-width: 0; }
   #right { width: 280px; flex-shrink: 0; background: var(--kg-pane-bg); border-left: 1px solid var(--kg-pane-border);
@@ -417,6 +430,17 @@
 </head>
 <body>
 <div id="app">
+  <!-- The standing request to save a copy of the settings before the app moves.
+       INSIDE the app rather than over it, so a clinician meets it once they are
+       actually in a position to act on it. Hidden by default; shown at startup
+       only on the retiring address and only until the button is pressed. -->
+  <div id="move-notice" hidden>
+    <span id="move-notice-text"></span>
+    <span class="move-notice-actions">
+      <button id="move-notice-save" type="button">Save my settings</button>
+      <button id="move-notice-later" type="button">Not now</button>
+    </span>
+  </div>
 
   <!-- ============ MAIN ROW: left column + Customizer ============ -->
   <div id="main">
@@ -1485,6 +1509,7 @@ const RELEASE_NOTES = {
     "\"Move screenshot horizontally\" and \"Move screenshot vertically\" now actually move the screenshot. The two nudge settings printed their advice in the console but left the screenshot picture sitting where it was, so there was no way to see the effect of the nudge before committing to it. The picture now shifts by the number of millimetres you enter, so you can line the screenshot up with your cutouts and see the result. The console instructions are unchanged. These two boxes also follow the arrow keys: hold ▲ or ▼ and the picture moves with the number, instead of waiting until you click away from the box. The Console no longer repeats the matching instructions on every single update: while a nudge is set, you get one line for the left side of the case opening and one for the bottom, each rewritten in place as the suggested number changes, and both retired when you set the nudge back to 0."
   ],
   "21": [
+    "Keyguard Designer is moving to a web address of its own, and the app can now save a copy of your settings. A notice at the top of the app asks you to save one; it appears each time you open the app until you do, and Not now puts it off until your next visit. The copy is written into your project folder as keyguard-settings.json — beside the files it belongs with, and where the app can find it for you afterwards. If you have no project open, you'll be asked to open one first; if you'd rather not, the copy is downloaded instead. Your settings are held by your browser against the app's web address rather than in your project folder, so a saved copy is what lets you carry them to the new address, to another computer, or back after a browser clear-out.",
     "Settings → About now has a \"Reload the app\" button. Use it any time the app looks wrong or seems stuck — it starts the app fresh and picks up the newest version. You'll need to open your project again afterwards. The old advice to press Ctrl-Shift-R has been removed: you no longer need to know that two kinds of refresh exist.",
     "An update could install and leave you on the old version anyway. The app fetched the new version through the browser's own short-term store, which could hand back the copy it had just been given — so the update reported success and nothing actually changed. It now always fetches a genuinely fresh copy.",
     "The app could give up on an update that would have worked. After one unsuccessful attempt it refused to try that version again for the rest of the session, even when a later attempt would have succeeded, leaving you on the older version until you next opened the app. It now retries sensibly instead.",
@@ -2647,6 +2672,259 @@ async function cleanReload() {
 // and this correctly does nothing. It is called FIRST by cleanReload(); do not
 // reorder that, and do not delete this in the belief it is unused.
 async function moveIfDue() { return false; }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE MOVE TO keyguard.volksswitch.org
+// ═══════════════════════════════════════════════════════════════════════════
+// Release 21 carries all of this to the address clinicians use today. It is
+// dormant until the move is armed — a single flag served from the new address,
+// set with no release involved and reversible at any moment.
+//
+// PAGE-ONLY. Never put any of this in the service worker as well. A worker
+// intercepts the navigation before any page code runs and has no access to the
+// stored settings, so it always arrives empty-handed; implementing both
+// guarantees the worse one wins. Measured during the Bliss migration.
+const MOVE = {
+  OLD_ORIGIN: 'https://volksswitch.github.io',
+  OLD_PREFIX: '/keyguard-designer-web',
+  NEW_ORIGIN: 'https://keyguard.volksswitch.org',
+  PROBE_URL:  'https://keyguard.volksswitch.org/move-probe.json',
+  PROBE_TIMEOUT_MS: 4000,
+  CLEANUP_URL: 'https://volksswitch.org/index.php/keyguard-designer-move-cleanup/',
+};
+const onNewAddress = location.origin === MOVE.NEW_ORIGIN;
+// Path-qualified on purpose: the new site is also reachable at a github.io path
+// while it is being set up, and that must never be mistaken for the old one and
+// told to move to itself.
+const onRetiringAddress = location.origin === MOVE.OLD_ORIGIN &&
+                          location.pathname.startsWith(MOVE.OLD_PREFIX + '/');
+
+// ⚠ THE ONE THING THAT TRAVELS, BY NAME. Every setting the app has lives in a
+// single stored item, so this is a list of one rather than a pattern — which is
+// what makes it impossible to sweep up anything belonging to another app that
+// happens to share this address. The Bliss migration used a pattern and carried
+// away another app's API key and a person's contact details; a named item cannot
+// do that even by accident.
+//
+// ⚠ AND ONE FIELD IS LEFT BEHIND. `lastSeenAppRelease` records which release
+// notes the clinician has already read. The two addresses count releases
+// differently — the old one ends at 21, the new one starts at 100 — so carrying
+// it would hand an arriving clinician a list of seventy-eight releases they never
+// ran. It is bookkeeping, not a preference.
+function carriedSettings() {
+  const { lastSeenAppRelease, ...carried } = settings;
+  return carried;
+}
+
+// ── Saving a copy ──────────────────────────────────────────────────────────
+// Into the PROJECT FOLDER, not the downloads folder, and the reason is that we
+// have to be able to find it again. An app cannot read a file off the disk
+// unless a person points at it in a dialog, and saving never reveals where the
+// browser put the file — so a copy in Downloads can never be found by the app
+// itself. The project folder is the one folder we can be sure of on the other
+// side, because the arrival screen asks them to open it anyway. 95% of keyguard
+// users have only one project folder (Ken, 17 Aug 2026), so for almost everyone
+// the folder they reopen is the folder the file is in, and the restore happens
+// by itself.
+const SETTINGS_FILE = 'keyguard-settings.json';
+const SETTINGS_KIND = 'keyguard-settings-backup';
+
+function settingsBackupObject() {
+  return {
+    kind: SETTINGS_KIND,
+    version: 1,
+    savedAt: new Date().toISOString(),
+    savedFrom: location.origin,
+    settings: carriedSettings(),
+  };
+}
+
+// Returns { where: 'folder'|'download', name } or throws. When no project is
+// open the clinician is asked to open one first — the notice fires at launch,
+// before they have started work, so that is the common case rather than a
+// detour. Declining leaves the download as the fallback.
+async function saveSettingsCopy() {
+  const text = JSON.stringify(settingsBackupObject(), null, 2);
+
+  let dir = project && project.dirHandle;
+  if (!dir) {
+    await openProject();                      // cancelling leaves project untouched
+    dir = project && project.dirHandle;
+  }
+
+  if (dir) {
+    const fh = await dir.getFileHandle(SETTINGS_FILE, { create: true });
+    const w  = await fh.createWritable();
+    await w.write(text);
+    await w.close();
+    logLine(`Saved a copy of your settings as ${SETTINGS_FILE} in ${dir.name}.`);
+    return { where: 'folder', name: dir.name };
+  }
+
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = SETTINGS_FILE;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  logLine(`Saved a copy of your settings to your downloads as ${SETTINGS_FILE}.`);
+  return { where: 'download', name: null };
+}
+
+// ── Putting a copy back ────────────────────────────────────────────────────
+// Never writes anything that is not ours, even from an older file, and never
+// restores the read-notes record. Applying is deliberately the same path a
+// clinician's own change takes, so nothing can be restored that the app would
+// not otherwise let them set.
+function applyRestoredSettings(incoming) {
+  let n = 0;
+  for (const [k, v] of Object.entries(incoming)) {
+    if (!(k in SETTINGS_DEFAULTS)) continue;      // unknown or retired — ignore
+    if (k === 'lastSeenAppRelease') continue;     // history, not a preference
+    settings[k] = v;
+    n++;
+  }
+  saveSettings();
+  for (const k of Object.keys(incoming)) {
+    if (k in SETTINGS_DEFAULTS && k !== 'lastSeenAppRelease') onSettingsChanged(k);
+  }
+  return n;
+}
+
+async function restoreSettingsFromFile(file) {
+  let obj;
+  try { obj = JSON.parse(await file.text()); }
+  catch { throw new Error('That file could not be read.'); }
+  if (!obj || obj.kind !== SETTINGS_KIND || !obj.settings || typeof obj.settings !== 'object') {
+    throw new Error('That is not a Keyguard Designer settings file.');
+  }
+  const n = applyRestoredSettings(obj.settings);
+  logLine(`Restored ${n} setting${n === 1 ? '' : 's'} from ${file.name}.`);
+  return { count: n, savedAt: obj.savedAt };
+}
+
+// Looks for the saved copy in the project folder that has just been opened.
+// Returns null when there is nothing there, which is the ordinary case for
+// anyone whose settings arrived with them.
+async function readSettingsFileFromProject() {
+  const dir = project && project.dirHandle;
+  if (!dir) return null;
+  try {
+    const fh = await dir.getFileHandle(SETTINGS_FILE);
+    return await fh.getFile();
+  } catch { return null; }
+}
+
+// ── Is the move armed? ─────────────────────────────────────────────────────
+// A real fetch requiring an explicit ready:true — never `mode:'no-cors'`, whose
+// opaque response resolves even on a 404 and would happily move people onto a
+// host that is not serving yet. Asked once per session; before the new address
+// exists this simply fails and the answer is no.
+let _armedAnswer = null;
+async function moveIsArmed() {
+  // Test hook, so both wordings of the notice can be exercised without a live
+  // address to point at. Undefined in every real session.
+  if (window.__moveArmed !== undefined) return !!window.__moveArmed;
+  // ⚠ Only ever ask from the address the move is FROM. Asking anywhere else — a
+  // dev server, the new address itself — is a request to a host that may not
+  // exist, which fails noisily in the console on every load for no benefit, and
+  // the answer is a foregone "no" in any case.
+  if (!onRetiringAddress) return false;
+  if (_armedAnswer !== null) return _armedAnswer;
+  _armedAnswer = false;
+  try {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), MOVE.PROBE_TIMEOUT_MS);
+    const r = await fetch(MOVE.PROBE_URL + '?t=' + Date.now(),
+                          { cache: 'no-store', signal: c.signal });
+    clearTimeout(t);
+    if (r.ok) _armedAnswer = (await r.json())?.ready === true;
+  } catch { /* not reachable yet, or no network — not armed */ }
+  return _armedAnswer;
+}
+
+// ── The standing request to save a copy ────────────────────────────────────
+// Shown on every visit until the button is actually pressed, so the only people
+// who keep seeing it are the ones not yet protected: it self-resolves. "Not now"
+// dismisses it for this visit alone.
+//
+// It sits INSIDE the app rather than over it, so a clinician meets it once they
+// are actually in a position to act on it.
+const LS_SETTINGS_SAVED = 'keyguard:settings-copy-saved';
+const SS_NOTICE_SNOOZED = 'kg_move_notice_snoozed';
+
+function saveCopyDue() {
+  if (onNewAddress) return false;
+  if (localStorage.getItem(LS_SETTINGS_SAVED) === 'yes') return false;
+  if (sessionStorage.getItem(SS_NOTICE_SNOOZED) === 'yes') return false;
+  return true;
+}
+
+function moveNoticeEl() { return document.getElementById('move-notice'); }
+
+// `armed` changes the wording and the button, because once the move is armed
+// pressing Save also moves them — and a button must say what it does. Leaving
+// it reading "Save my settings" would make "Not now" quietly mean two things.
+function renderMoveNotice(armed) {
+  const el = moveNoticeEl();
+  if (!el) return;
+  document.getElementById('move-notice-text').innerHTML = armed
+    ? '<b>Keyguard Designer is moving to a new home.</b> Please save a copy of your ' +
+      'settings. We’ll take you there straight away.'
+    : '<b>Keyguard Designer is moving to a new home.</b> Please save a copy of your ' +
+      'settings now.';
+  document.getElementById('move-notice-save').textContent = armed
+    ? 'Save and move me' : 'Save my settings';
+  el.hidden = false;
+}
+
+async function showMoveNotice() {
+  const el = moveNoticeEl();
+  if (!el) return;
+  if (!saveCopyDue()) { el.hidden = true; return; }
+  renderMoveNotice(await moveIsArmed());
+}
+
+// Test hooks. The save path writes through a folder the clinician picks in an OS
+// dialog, which no automated browser can drive, so the pieces either side of that
+// dialog are exercised through these instead.
+window.__settingsBackupObject = () => settingsBackupObject();
+window.__restoreSettingsFile  = (obj) => restoreSettingsFromFile(
+  new File([JSON.stringify(obj)], SETTINGS_FILE, { type: 'application/json' }));
+window.__saveCopyDue          = () => saveCopyDue();
+window.__showMoveNotice       = () => showMoveNotice();
+
+function wireMoveNotice() {
+  const el = moveNoticeEl();
+  if (!el) return;
+  const saveBtn = document.getElementById('move-notice-save');
+  const laterBtn = document.getElementById('move-notice-later');
+  const textEl = document.getElementById('move-notice-text');
+
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    const wasArmed = await moveIsArmed();
+    try {
+      const r = await saveSettingsCopy();
+      localStorage.setItem(LS_SETTINGS_SAVED, 'yes');   // recorded only on success
+      if (wasArmed && await moveIfDue()) return;        // page is being replaced
+      el.classList.add('done');
+      textEl.innerHTML = r.where === 'folder'
+        ? `<b>Saved as ${SETTINGS_FILE} in your ${r.name} folder.</b> Keep it until the app moves.`
+        : `<b>Saved as ${SETTINGS_FILE} to your downloads.</b> Keep it until the app moves.`;
+      saveBtn.hidden = true; laterBtn.hidden = true;
+    } catch (e) {
+      saveBtn.disabled = false;
+      textEl.innerHTML = 'Could not save a copy of your settings: ' +
+        String(e && e.message || e);
+    }
+  });
+
+  laterBtn.addEventListener('click', () => {
+    sessionStorage.setItem(SS_NOTICE_SNOOZED, 'yes');   // back on the next visit
+    el.hidden = true;
+  });
+}
+
 
 
 // Test-only fixture loader. Bypasses the File System Access picker and
@@ -6593,6 +6871,12 @@ updateOpeningsButton();
 // every load (independent of the service worker, so it also works on the dev
 // server); the lastSeenAppRelease gate makes it a no-op unless the release moved.
 maybeShowWhatsNew();
+
+// The standing request to save a copy of the settings before the app moves.
+// Wired once; shown (or not) on every load, and again whenever the answer could
+// have changed — pressing Save is what retires it for good.
+wireMoveNotice();
+showMoveNotice().catch(() => {});
 
 if ('serviceWorker' in navigator) {
   // The service worker is cache-first (see sw.js) and CACHE_NAME is only bumped

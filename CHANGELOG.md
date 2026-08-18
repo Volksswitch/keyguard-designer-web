@@ -10,6 +10,8 @@ The release number shown here matches the one on **Settings → About**.
 
 ### New features
 
+- **Keyguard Designer is moving to a web address of its own, and the app can now save a copy of your settings.** A notice at the top of the app asks you to save one; it appears each time you open the app until you do, and **Not now** puts it off until your next visit. The copy is written into your project folder as **keyguard-settings.json** — beside the files it belongs with, and where the app can find it for you afterwards. If you have no project open, you'll be asked to open one first; if you'd rather not, the copy is downloaded instead. Your settings are held by your browser against the app's web address rather than in your project folder, so a saved copy is what lets you carry them to the new address, to another computer, or back after a browser clear-out.
+
 - **Settings → About now has a "Reload the app" button.** Use it any time the app looks wrong or seems stuck — it starts the app fresh and picks up the newest version. You'll need to open your project again afterwards. The old advice to press Ctrl-Shift-R has been removed: you no longer need to know that two kinds of refresh exist.
 
 ### Fixes
