@@ -8,6 +8,8 @@ The release number shown here matches the one on **Settings → About**.
 
 ## Unreleased (next release)
 
+## Release 21
+
 ### New features
 
 - **Keyguard Designer is moving to a web address of its own, and the app can now save a copy of your settings.** Whenever you open a project that has no saved copy in it, a notice at the top of the app asks you to save one, and **Not now** puts it off until your next visit. The app looks in the folder itself, so if you delete the copy you are asked again, and a project that has never had one gets its own. The copy is written into that project folder as **keyguard-settings.json** — beside the files it belongs with, and where the app can find it for you afterwards, so saving is a single click. Your settings are held by your browser against the app's web address rather than in your project folder, so a saved copy is what lets you carry them to the new address, to another computer, or back after a browser clear-out.
