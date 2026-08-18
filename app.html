@@ -1557,6 +1557,7 @@ const RELEASE_NOTES = {
     "Keyguard Designer is moving to a web address of its own, and the app can now save a copy of your settings. A notice at the top of the app asks you to save one; it appears each time you open the app until you do, and Not now puts it off until your next visit. The copy is written into your project folder as keyguard-settings.json — beside the files it belongs with, and where the app can find it for you afterwards. If you have no project open, you'll be asked to open one first; if you'd rather not, the copy is downloaded instead. Your settings are held by your browser against the app's web address rather than in your project folder, so a saved copy is what lets you carry them to the new address, to another computer, or back after a browser clear-out.",
     "When the app moves, it takes your settings with it. Once the new address is ready, opening the app carries your settings across and lands you there; you'll be asked to open your project again, because permission to read a folder on your computer can't move between web addresses — nothing in the folder changes. If your settings don't make the crossing, opening your project puts them back from the copy saved there, without you having to find anything. A reminder then appears with a link to a short page explaining how to update your bookmark and replace the app's icon.",
     "Settings → About now has a \"Reload the app\" button. Use it any time the app looks wrong or seems stuck — it starts the app fresh and picks up the newest version. You'll need to open your project again afterwards. The old advice to press Ctrl-Shift-R has been removed: you no longer need to know that two kinds of refresh exist.",
+    "The app now looks for its updates in its own home rather than on GitHub. On a school network that blocks GitHub, the app could never find out that a new version existed — so once it moves to its new address, where it is reachable again, updates will reach you too. It also removes a timing fault that could tell the app to fetch a version that wasn't being served yet, leaving you on the older one.",
     "An update could install and leave you on the old version anyway. The app fetched the new version through the browser's own short-term store, which could hand back the copy it had just been given — so the update reported success and nothing actually changed. It now always fetches a genuinely fresh copy.",
     "The app could give up on an update that would have worked. After one unsuccessful attempt it refused to try that version again for the rest of the session, even when a later attempt would have succeeded, leaving you on the older version until you next opened the app. It now retries sensibly instead.",
     "Bookmarking the app's folder address rather than the page itself left you without an offline copy. The app opened normally with a connection but not without one. Both forms of the address now work offline."
@@ -1601,7 +1602,25 @@ const UPDATE_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;   // "Remind me in a week"
 // app force-refreshes through the service worker so clinicians stop needing the
 // manual Ctrl-Shift-R. Checked only at app load and project load (see
 // checkForAppUpdate), where there can be no unsaved edits to disturb.
-const APP_MANIFEST_URL = 'https://raw.githubusercontent.com/Volksswitch/keyguard-designer-web/main/latest_app_version.json';
+//
+// ⚠ SERVED FROM THIS APP'S OWN ADDRESS, not from GitHub. Two reasons, both
+// load-bearing:
+//
+// 1. REACHABILITY. The whole point of moving to keyguard.volksswitch.org is that
+//    school networks block GitHub. Fetching the update manifest from GitHub means
+//    a clinician on such a network can reach the app but can never be told an
+//    update exists — the app would be permanently frozen for exactly the people
+//    the move is for.
+// 2. NO RACE. The manifest and the app it describes now ship in one deploy and
+//    cannot disagree. Fetched from GitHub they arrive through a different network
+//    with its own timing: the 2025 rehearsal measured the manifest leading the
+//    deploy by 45 seconds in one direction and lagging it by 203 seconds in the
+//    other, on the same infrastructure. In the leading case clients are told to
+//    fetch a release that is not being served yet, burn their one attempt, and
+//    sit on the old version.
+//
+// Relative to the document, so it follows the app to whichever address serves it.
+const APP_MANIFEST_URL = './latest_app_version.json';
 
 // Reports the currently loaded screenshot image, matching rescanScreenshot's
 // existing wording. Logged with the version banner on an on-demand render.

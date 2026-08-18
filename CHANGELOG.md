@@ -18,6 +18,8 @@ The release number shown here matches the one on **Settings → About**.
 
 ### Fixes
 
+- **The app now looks for its updates in its own home rather than on GitHub.** On a school network that blocks GitHub, the app could never find out that a new version existed — so once it moves to its new address, where it is reachable again, updates will reach you too. It also removes a timing fault that could tell the app to fetch a version that wasn't being served yet, leaving you on the older one.
+
 - **An update could install and leave you on the old version anyway.** The app fetched the new version through the browser's own short-term store, which could hand back the copy it had just been given — so the update reported success and nothing actually changed. It now always fetches a genuinely fresh copy.
 
 - **The app could give up on an update that would have worked.** After one unsuccessful attempt it refused to try that version again for the rest of the session, even when a later attempt would have succeeded, leaving you on the older version until you next opened the app. It now retries sensibly instead.
