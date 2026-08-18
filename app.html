@@ -2965,7 +2965,14 @@ async function readSettingsFileFromProject() {
 // opaque response resolves even on a 404 and would happily move people onto a
 // host that is not serving yet. Asked once per session; before the new address
 // exists this simply fails and the answer is no.
-let _armedAnswer = null;
+// ⚠ Memoize the REQUEST, not the answer. Two callers ask this on every load — the
+// notice, to choose its wording, and the move itself. Caching a value meant the
+// first caller wrote "not armed" as a placeholder before its request came back,
+// and the second caller read that placeholder and was told no. The move then
+// never fired on its own, on any load, while still working perfectly whenever it
+// was called by hand — which is precisely why calling it by hand is not a test.
+// Sharing the promise gives every caller the one real answer.
+let _armedProbe = null;
 async function moveIsArmed() {
   // Test hook, so both wordings of the notice can be exercised without a live
   // address to point at. Undefined in every real session.
@@ -2975,17 +2982,19 @@ async function moveIsArmed() {
   // exist, which fails noisily in the console on every load for no benefit, and
   // the answer is a foregone "no" in any case.
   if (!onRetiringAddress) return false;
-  if (_armedAnswer !== null) return _armedAnswer;
-  _armedAnswer = false;
-  try {
-    const c = new AbortController();
-    const t = setTimeout(() => c.abort(), MOVE.PROBE_TIMEOUT_MS);
-    const r = await fetch(MOVE.PROBE_URL + '?t=' + Date.now(),
-                          { cache: 'no-store', signal: c.signal });
-    clearTimeout(t);
-    if (r.ok) _armedAnswer = (await r.json())?.ready === true;
-  } catch { /* not reachable yet, or no network — not armed */ }
-  return _armedAnswer;
+  if (_armedProbe) return _armedProbe;
+  _armedProbe = (async () => {
+    try {
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), MOVE.PROBE_TIMEOUT_MS);
+      const r = await fetch(MOVE.PROBE_URL + '?t=' + Date.now(),
+                            { cache: 'no-store', signal: c.signal });
+      clearTimeout(t);
+      if (!r.ok) return false;
+      return (await r.json())?.ready === true;
+    } catch { return false; }   // not reachable yet, or no network — not armed
+  })();
+  return _armedProbe;
 }
 
 // ── The standing request to save a copy ────────────────────────────────────
